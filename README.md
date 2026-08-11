@@ -34,6 +34,14 @@ Survey data is not committed. Put local datasets under `data/` (gitignored).
 No runnable entry point yet — code lands under `src/`. Run steps will be added
 here as the pipeline takes shape.
 
+## Contributing
+
+- **Branches:** one per Linear issue, using the name Linear generates —
+  `<name>/it-<number>-<slug>` (e.g. `skandar/it-21-repository-setup-and-structure`).
+  Don't commit directly to `main`.
+- **Pull requests:** every PR needs at least one review approval before merge.
+  Keep PRs small and reference the Linear issue (e.g. "IT-21") in the title.
+
 ## Project management
 
 Work is tracked in Linear: https://linear.app/um-it-project
