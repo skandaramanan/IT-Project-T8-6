@@ -60,11 +60,31 @@ uv run ruff check .   # lint
 
 ## Contributing
 
-- **Branches:** one per Linear issue, using the name Linear generates —
-  `<name>/it-<number>-<slug>` (e.g. `skandar/it-21-repository-setup-and-structure`).
-  Don't commit directly to `main`.
-- **Pull requests:** every PR needs at least one review approval before merge.
-  Keep PRs small and reference the Linear issue (e.g. "IT-21") in the title.
+One branch per Linear issue, one PR per branch, reviewed by someone else.
+
+- **Branches:** use the name Linear generates, don't invent your own. Open the
+  issue in Linear and press `Cmd/Ctrl + Shift + .` to copy it, or grab it from
+  the issue's context menu. The shape is `<name>/it-<number>-<slug>`, e.g.
+  `skandar/it-21-repository-setup-and-structure`. Using Linear's name is what
+  makes the branch, the PR and the issue link to each other automatically —
+  which is how individual contribution gets evidenced for assessment.
+
+- **`main` is protected.** Direct pushes are rejected by a repository ruleset:
+
+  ```
+  remote: - Changes must be made through a pull request.
+  ```
+
+  That is expected, not a broken setup. Branch, push, open a PR.
+
+- **Pull requests:** at least one approving review before merge — no
+  self-merges, including by the repo owner. Keep them small, and put the Linear
+  issue in the title (e.g. "IT-29: add PR template"). The PR template asks what
+  changed, which issue, and how you tested it; fill it in rather than deleting
+  it.
+
+- **Moving the ticket is yours.** Merging a PR doesn't move the Linear issue.
+  The assignee drags it to Done.
 
 ## Project management
 
