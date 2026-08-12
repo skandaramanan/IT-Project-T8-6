@@ -86,7 +86,8 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
 - **Moving the ticket is yours.** Merging a PR doesn't move the Linear issue.
   The assignee drags it to Done.
 
-- **Definition of Done:** See https://linear.app/um-it-project/document/definition-of-done-0fce56ee35d6
+- **Definition of Done:** before you call anything done, check it against the
+  [Definition of Done](https://linear.app/um-it-project/document/definition-of-done-0fce56ee35d6).
 
 ## Project management
 
