@@ -69,6 +69,19 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
   makes the branch, the PR and the issue link to each other automatically —
   which is how individual contribution gets evidenced for assessment.
 
+- **Commits:** `<scope>: IT-<number>: <what the commit does>`
+
+  ```
+  repo: IT-33: add GitHub Actions workflow running Ruff and pytest
+  ```
+
+  Scope is `repo` for tooling, config and docs; use `src`, `tests`, or a module
+  name once there's code to name. Write the description in the imperative
+  ("add", not "added"), lowercase, no full stop. One logical change per commit —
+  a reviewer should be able to read the subject lines and know what happened
+  without opening the diff. The issue number in every commit is what ties the
+  work back to Linear even when a branch outlives its PR.
+
 - **`main` is protected.** Direct pushes are rejected by a repository ruleset:
 
   ```
