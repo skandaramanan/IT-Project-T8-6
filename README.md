@@ -96,8 +96,10 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
   changed, which issue, and how you tested it; fill it in rather than deleting
   it.
 
-- **Moving the ticket is yours.** Merging a PR doesn't move the Linear issue.
-  The assignee drags it to Done.
+- **Closing the ticket is yours.** Merging a PR moves its Linear issue to Done
+  automatically, so whoever merges is the one closing it — don't merge someone
+  else's work for them. Tickets with no PR, like documents and spikes, get moved
+  by their assignee.
 
 - **Definition of Done:** before you call anything done, check it against the
   [Definition of Done](https://linear.app/um-it-project/document/definition-of-done-0fce56ee35d6).

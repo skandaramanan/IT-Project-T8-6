@@ -17,4 +17,4 @@
 - [ ] Checks pass (`uv run ruff check .`, `uv run pytest`)
 - [ ] Docs updated if behaviour or setup changed
 - [ ] Reviewed by someone else
-- [ ] I have moved the Linear issue myself
+- [ ] Linear issue is linked, and closes when this merges
