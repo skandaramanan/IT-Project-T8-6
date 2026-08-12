@@ -9,6 +9,9 @@ dependencies = []
 # Application, not a library - nothing here gets packaged or published.
 package = false
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
