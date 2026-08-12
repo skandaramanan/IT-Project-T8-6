@@ -17,22 +17,46 @@ findings the client can use.
 
 ## Setup
 
-Requires Python 3.10+.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) once:
+
+```bash
+brew install uv                   # macOS
+winget install --id=astral-sh.uv  # Windows
+```
+
+Then clone and sync:
 
 ```bash
 git clone https://github.com/skandaramanan/IT-Project-T8-6.git
 cd IT-Project-T8-6
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # once requirements.txt exists
+uv sync
 ```
+
+That is the whole setup. `uv sync` creates the virtualenv and installs
+everything from `uv.lock`. You do not need to install Python yourself — the
+version is pinned in `.python-version` and uv fetches it for you. The first
+sync downloads Python and the packages, so give it a minute; later ones are
+near-instant.
+
+Don't activate the venv by hand and don't `pip install` into it — that change
+would exist only on your machine. Run things with `uv run`, and add
+dependencies with `uv add <package>`, which updates `pyproject.toml` and
+`uv.lock` together so everyone gets them.
+
+Why uv, and why Python 3.12:
+[docs/decisions/D001-dependency-manager.md](docs/decisions/D001-dependency-manager.md).
 
 Survey data is not committed. Put local datasets under `data/` (gitignored).
 
 ## Running
 
-No runnable entry point yet — code lands under `src/`. Run steps will be added
-here as the pipeline takes shape.
+No runnable entry point yet — code lands under `src/`. Run anything through
+`uv run` so it uses the pinned environment:
+
+```bash
+uv run pytest         # tests (none yet)
+uv run ruff check .   # lint
+```
 
 ## Contributing
 
