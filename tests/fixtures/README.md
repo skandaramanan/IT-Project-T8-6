@@ -52,6 +52,7 @@ If you ever need to regenerate them:
 
 ```python
 from pypdf import PdfReader
+
 r = PdfReader("1973-0002-00049-1-25-1-20.pdf")
 for i, page in enumerate(r.pages, 1):
     for _, ref in page["/Resources"]["/XObject"].get_object().items():
