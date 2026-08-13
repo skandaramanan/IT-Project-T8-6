@@ -4,7 +4,7 @@ Wilfred Prest Survey IT Project — Team 8/6.
 
 ## What this is
 
-A data project analysing the Wilfred Prest survey for our client, Wilfred Prest.
+A data project analysing the Wilfred Prest survey for our client, The University of Melbourne Archives Team.
 The goal is to turn the raw survey responses into clean, analysable data and
 findings the client can use.
 
@@ -91,7 +91,7 @@ No runnable entry point yet — code lands under `src/`. Run anything through
 `uv run` so it uses the pinned environment:
 
 ```bash
-uv run pytest         # tests (none yet)
+uv run pytest         # tests
 uv run ruff check .   # lint
 ```
 
