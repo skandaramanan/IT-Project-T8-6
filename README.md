@@ -46,7 +46,44 @@ dependencies with `uv add <package>`, which updates `pyproject.toml` and
 Why uv, and why Python 3.12:
 [docs/decisions/D001-dependency-manager.md](docs/decisions/D001-dependency-manager.md).
 
-Survey data is not committed. Put local datasets under `data/` (gitignored).
+## Data and secrets
+
+### The survey scans
+
+The scans are not in this repo and never will be. The archive is 6.4 GiB, which
+is well past what git is for, so it lives in a
+[shared Google Drive folder](https://drive.google.com/drive/folders/1z8_i1IYzUCZYtE5NxB9xQ8kAQ_rh-DMV),
+restricted to the five team accounts. If you land on a request-access screen,
+you're signed into the wrong Google account — switch to your student one.
+
+Provenance: sent by Lachlan Glanville (UniMelb Archives) on 6 August 2026 as
+`Prest_survey.zip` over AARNet FileSender. That transfer expired on 27 August
+2026, so the Drive copy is now the only one — treat it accordingly.
+
+Sync the scans to `data/`, which is gitignored. Nothing under `data/` is ever
+committed, including anything you derive from it.
+
+Three sets of cards exist and they are easy to confuse:
+
+| What | Size | Where it lives |
+| --- | --- | --- |
+| The scans | 6.4 GiB | Drive; locally under `data/`, gitignored |
+| Test fixtures | a handful of cards | `tests/fixtures/`, committed |
+| The benchmark set | 15–20 cards plus ground truth | Drive — see IT-37 |
+
+### Secrets
+
+API keys are never committed. Local configuration goes in `.env`, which is
+gitignored. `.env.example` lists every variable that exists, with the values
+left blank — copy it and fill yours in:
+
+```bash
+cp .env.example .env
+```
+
+If you add a variable, add it to `.env.example` in the same PR with a blank
+value. That file is the only record of what configuration the project expects,
+so a variable missing from it is a variable the next person won't know to set.
 
 ## Running
 
