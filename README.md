@@ -85,6 +85,14 @@ If you add a variable, add it to `.env.example` in the same PR with a blank
 value. That file is the only record of what configuration the project expects,
 so a variable missing from it is a variable the next person won't know to set.
 
+CI scans every pull request for committed secrets. That is detection, not
+prevention — it catches a key once it is already pushed to a branch, so treat
+any key that gets that far as compromised and rotate it, rather than deleting it
+in a follow-up commit.
+
+Why the scans live in Drive, and why secret scanning works this way:
+[docs/decisions/D004-data-storage-and-secret-scanning.md](docs/decisions/D004-data-storage-and-secret-scanning.md).
+
 ## Running
 
 No runnable entry point yet — code lands under `src/`. Run anything through

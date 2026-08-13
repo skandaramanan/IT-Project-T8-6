@@ -1,6 +1,6 @@
 # D003 — Automated checks on every pull request
 
-**Status:** Accepted
+**Status:** Accepted — amended by [D004](D004-data-storage-and-secret-scanning.md)
 **Date:** 2026-08-12
 **Decided by:** Skanda Ramanan (P1 Foundations lead)
 **Linear issue:** IT-33
@@ -16,6 +16,12 @@ there is anything to test.
 One GitHub Actions workflow on pull requests and pushes to `main`, running
 `uv sync --locked`, `ruff check`, `ruff format --check`, then `pytest`. The job
 is called `check` and is a required status check on the `main` ruleset.
+
+**Amended by [D004](D004-data-storage-and-secret-scanning.md), 2026-08-13.** The
+same `check` job now runs a gitleaks secret scan as its first step, and checkout
+is full-depth so that scan can read commit history. Everything above still
+holds — one job, one required status check — and D004 explains why the scan went
+inside `check` rather than beside it.
 
 ## Alternatives considered
 
@@ -43,3 +49,9 @@ on an empty repo is theatre.
 
 The extraction work needs heavier test dependencies or fixtures large enough
 that a plain checkout stops being cheap.
+
+Partly reached already: IT-36 added 7.2 MB of fixtures and D004 made checkout
+full-depth. Runs are still about 15 seconds, so the single-job shape holds.
+Revisit properly if CI starts costing a minute or more, or if `tests/fixtures/`
+grows past a handful of records — at which point the fixtures likely belong in
+shared storage with the benchmark set instead of in git.
