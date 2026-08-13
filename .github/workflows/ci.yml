@@ -10,6 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history. gitleaks scans commits, not the working tree, and a
+          # key deleted in a later commit is still a leaked key.
+          fetch-depth: 0
+
+      # GitHub's own secret scanning isn't available on a private repo outside
+      # Enterprise, so we run gitleaks ourselves. See docs/decisions/D004.
+      # First step in the job: a leak fails before we pay for dependencies.
+      # --redact keeps whatever it finds out of the build log.
+      - name: Scan for secrets
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks git --redact --no-banner .
 
       - uses: astral-sh/setup-uv@v6
         with:
