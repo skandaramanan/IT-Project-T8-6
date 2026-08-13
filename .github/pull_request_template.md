@@ -14,7 +14,7 @@
 ## Definition of Done
 
 - [ ] Acceptance criteria on the issue are met
-- [ ] Checks pass (`uv run ruff check .`, `uv run pytest`)
+- [ ] Checks pass (`uv run ruff check .`, `uv run pytest`; CI also runs a secret scan)
 - [ ] Docs updated if behaviour or setup changed
 - [ ] Reviewed by someone else
 - [ ] Linear issue is linked, and closes when this merges
