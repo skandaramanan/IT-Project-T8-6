@@ -24,9 +24,9 @@ and that four-page cycle is the repeating unit the pipeline has to recognise:
 | `rNN-coding-front.jpg` | The **numeric coding card** — typed field labels, handwritten numeric values. The primary extraction target |
 | `rNN-coding-back.jpg` | Blank. Carries nothing but show-through from the front |
 
-The blank backs are kept deliberately. Roughly a quarter of the corpus is blank
-pages, so page-sorting code has to handle them, and a fixture set without any
-would let blank-detection bugs through.
+The blank backs are kept deliberately. Every record here has one, so blank pages
+are structural rather than rare, and page-sorting code has to handle them. A
+fixture set with none would let blank-detection bugs through.
 
 `r01` and `r03` both carry red pencil corrections struck through earlier values —
 the crossed-out case the client flagged as implicit negation. Worth pointing
