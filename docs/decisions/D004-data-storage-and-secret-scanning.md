@@ -80,8 +80,13 @@ as D002 set it up.
 - No secret reaches `main` without CI going red, and because the scan is the
   first step it fails before we pay for dependency installation.
 - History scanning needs `fetch-depth: 0`, so checkout is no longer shallow.
-  Negligible here — gitleaks skips binaries, so the 7.2 MB of fixtures costs
-  nothing: 30 commits and 42 KB scanned in 213 ms.
+  Negligible here, and it stays negligible as the fixtures grow: gitleaks skips
+  binary files, so what it actually reads is tens of kilobytes of text and the
+  whole history scans in well under a second.
+- The scanner is fetched at run time from a pinned GitHub release over HTTPS,
+  with no checksum verification. That trusts the release artifact. Pinning the
+  version at least means it cannot change under us silently, and adding a hash
+  is cheap if this ever guards something more valuable than a student repo.
 - The gitleaks version is pinned and bumps by hand. A scanner that never updates
   slowly stops recognising new credential formats.
 - **This is detection, not prevention.** GitHub's push protection blocks a
