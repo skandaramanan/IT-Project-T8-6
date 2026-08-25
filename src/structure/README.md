@@ -78,14 +78,34 @@ are worth knowing about because both are easy to repeat.
 | --- | --- | --- | --- |
 | **S1** | Survey card, canonical | 242 | 43 |
 | **S2** | Survey card, 2nd printing — `Frontage` where S1 has `Probable Age` | 3 | 216434, 216435 |
-| **S3** | **1941/43 longitudinal card** — two dated blocks per person, plus `Reasons for Change` and `Reception` | 9 | 216459, 216461 |
+| **S3** | **1941/43 longitudinal card** — two dated blocks per person, plus `Reasons for Change` and `Reception` | 10 | 216431, 216459, 216461 |
 | **C1** | Coding card, canonical | 153 | 37 |
 | **C2** | **Coding card #2** — carries `No. of Family Boarders`, spells out `...Unearned Income` where C1 truncates to `I` | 72 | 20 |
 | **C3** | **Multi-family punch-card sheet** — fields numbered 1–80, repeating blocks for `Dominant Family` / `Family 2` / `3` / `4` | 4 | 216463 |
 | **R1** | Finance and wartime opinion, on the reverse — `Cost of Living`, `Rationing`, `War Loan`, `Attitude to Post-War` | 12 | 216431, 216459, 216461 |
 
-Example scans for every front form are in `results/reference_cards/`, indexed by
-`results/front_structures.md`.
+Example scans are in `results/reference_cards/`, indexed by
+`results/front_structures.md`. That index lists **clusters**, and one form
+scatters across several of them, so here is every front cluster mapped to its
+form — nothing in the index is unaccounted for:
+
+| cluster | pages | form |
+| --- | --- | --- |
+| `23d8099c` | 242 | S1 |
+| `58fdc422` | 3 | S2 |
+| `b007d00f` `c219dd6f` `1ac91a5f` `c8f73d61` `91d0edb6` `a4ca04a5` | 3+2+1+1+1+1 | **S3**, read to different depths |
+| `b56f9cd3` | 1 | **S3 under white blocks** — header reads `No. of Persons in Dwelling 1941/1943`, which is S3's, not S1's |
+| `36d15987` | 212 | C1 **plus 61 pages of C2** — see below |
+| `88148aab` | 10 | C2 |
+| `ee86fadc` | 1 | C2 under white blocks — its 42 readable labels are a subset of C2's |
+| `9a783cfc` | 4 | C3 |
+
+`a4ca04a5` is worth a note: it reads S3's fields *and* R1's (`war loans`,
+`rationing`, `cost of living`) on a single front page — R1 showing through from
+the reverse. It is an S3 page.
+
+R1 is **not** the back of the S3 card. The two share units, but 0 of 13 R1 pages
+sit immediately after an S3 page, so they are separate cards.
 
 S3, C3 and two thirds of R1 came from five units that had never been sampled.
 C2 was hiding in plain sight — see below.
@@ -143,8 +163,8 @@ formal FR or an explicit non-goal.
 
 | | pages | units |
 | --- | --- | --- |
-| R1 finance / wartime opinion (on the reverse) | 12 | 216431, 216459, 216461 |
-| S3 1941/43 longitudinal survey card | 9 | 216459, 216461 |
+| R1 finance / wartime opinion (on the reverse) | 13 | 216431, 216459, 216461 |
+| S3 1941/43 longitudinal survey card | 10 | 216431, 216459, 216461 |
 | C3 multi-family punch-card sheet | 4 | 216463 |
 
 Each recurs within its units rather than appearing once, so none is an
@@ -220,8 +240,9 @@ handwriting. Any plan that skips the reverses drops most of them.
 ### White blocks over the values
 
 83 pages, **~11%**, concentrated in 11 units: white rectangles sitting over the
-field values. One coding-front cluster (`ee86fadc`) is nothing but a C2 card
-under them — all 42 of its readable labels are a subset of C2's.
+field values. Two front clusters are nothing but a known card under them: `ee86fadc` (C2,
+all 42 readable labels a subset of C2's) and `b56f9cd3` (S3, only its header
+surviving).
 
 **The evidence points at a scanning fault, not archival redaction.** The blocks
 are pure white with hard, pixel-aligned edges, sitting over the scan rather than
