@@ -36,17 +36,24 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from PIL import Image
+
 from structure.inventory import open_unit, page_image
 
 DEFAULT_RESULTS = Path("results/pages.jsonl")
 DEFAULT_OUT = Path("results")
 RECORD_CYCLE = ("survey-front", "survey-back", "coding-front", "coding-back")
+# The two printed fronts, numeric card first: coding-front is the coded card
+# (counts, grades, totals), survey-front the text one. Reverses are excluded on
+# purpose -- see export_reference_cards.
+FRONT_ROLES = ("coding-front", "survey-front")
 
 
 def normalise_label(label: str) -> str:
@@ -399,6 +406,155 @@ def export_exception_images(exceptions: list[dict], out_dir: Path) -> int:
     return written
 
 
+def card_labels(card: dict) -> set[str]:
+    return {
+        normalise_label(f["label"])
+        for f in card["analysis"]["fields"]
+        if normalise_label(f["label"])
+    }
+
+
+def export_reference_cards(clusters: list[Cluster], out_dir: Path) -> tuple[int, Path]:
+    """One example scan per front-card structure, as PNG, plus an index.
+
+    The rest of the report answers "what structures exist" in labels. This
+    answers it in pictures, because you cannot tell from a label list whether
+    two clusters are two forms or one form scanned badly twice -- and on this
+    data most of them are the latter.
+
+    Fronts only. A reverse carries no printed labels, so every reverse clusters
+    on role alone and an example of one would show nothing about structure.
+    (Note that is not the same as a reverse being empty: 57% of them carry
+    handwriting, which is a transcription question, not a structural one.)
+
+    Sends nothing -- the scans come out of the PDFs already on disk.
+    """
+    # Filter by page parity, not by the model's role label. The label is the
+    # unreliable signal: a blank reverse whose printed front shows through the
+    # paper gets read as a front, mirrored, and lands in its own cluster. Four
+    # such bleed-throughs were shipped as "front structures" before this, and
+    # every one of them sat on a reverse page.
+    #
+    # The phase is per unit, not global: five units (216412, 216415, 216420,
+    # 216423, 216447) number their fronts even, so a global "fronts are odd"
+    # rule would throw away their real cards. Take the phase from the pages the
+    # model called a front -- wrong on individual pages, right in bulk.
+    phase: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for cluster in clusters:
+        if cluster.role in FRONT_ROLES:
+            for card in cluster.cards:
+                phase[card["unit"]][card["page_number"] % 2] += 1
+    front_parity = {u: (1 if c[1] >= c[0] else 0) for u, c in phase.items()}
+
+    def on_front_page(card: dict) -> bool:
+        return card["page_number"] % 2 == front_parity.get(card["unit"], 1)
+
+    fronts = []
+    for cluster in clusters:
+        if cluster.role not in FRONT_ROLES:
+            continue
+        if not any(on_front_page(card) for card in cluster.cards):
+            continue  # every page in it is a reverse: bleed-through, not a form
+        fronts.append(cluster)
+    fronts.sort(key=lambda c: (FRONT_ROLES.index(c.role), -c.size))
+    if not fronts:
+        return 0, out_dir / "front_structures.md"
+
+    # Canonical = the biggest cluster of each role, matching canonical.md.
+    canonical: dict[str, Cluster] = {}
+    for cluster in fronts:
+        canonical.setdefault(cluster.role, cluster)
+
+    images_dir = out_dir / "reference_cards"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    # Clear first. The set of front clusters shrinks as well as grows -- adding
+    # the parity filter took it from 11 to 6 -- and a stale PNG from a previous
+    # run is worse than no PNG, because it looks like a current finding.
+    for old_png in images_dir.glob("*.png"):
+        old_png.unlink()
+
+    # The card that best matches its own cluster's label set, not cards[0]: a
+    # cluster's first card can be the rotated or bled-through scan that dragged
+    # it off canonical in the first place, which is the worst thing to hand
+    # someone as "this is what this structure looks like".
+    # Overlap first, then label count as the tie-break. Overlap alone is not
+    # enough: a merged cluster keeps the label set of whichever side absorbed
+    # the other, so if that side was the sparse bad scan every card ties at its
+    # handful of labels and the bad scan wins by being first.
+    picks = [
+        (
+            c,
+            max(
+                [card for card in c.cards if on_front_page(card)] or c.cards,
+                key=lambda card: (
+                    len(card_labels(card) & c.labels),
+                    len(card_labels(card)),
+                ),
+            ),
+        )
+        for c in fronts
+    ]
+
+    by_pdf: dict[str, list[tuple[Cluster, dict]]] = defaultdict(list)
+    for cluster, card in picks:
+        by_pdf[card["pdf"]].append((cluster, card))
+
+    names: dict[str, str] = {}
+    for pdf_path, group in sorted(by_pdf.items()):
+        try:
+            reader = open_unit(Path(pdf_path))
+        except Exception as error:  # noqa: BLE001 -- 216436 is corrupt by nature
+            # One unreadable unit must not cost every other unit's reference
+            # card. The index still lists the cluster, without a link.
+            print(f"could not open {pdf_path}: {error}")
+            continue
+        for cluster, card in group:
+            name = f"{cluster.role}_{cluster.cluster_id}_{card['card_id']}.png"
+            try:
+                image = page_image(reader, card["page_number"])
+                Image.open(io.BytesIO(image.data)).save(images_dir / name)
+            except Exception as error:  # noqa: BLE001 -- one bad scan is not fatal
+                print(f"could not export {card['card_id']}: {error}")
+                continue
+            names[cluster.cluster_id] = name
+
+    lines = [
+        "# Front-card structures",
+        "",
+        f"Every cluster with role {' or '.join(FRONT_ROLES)}, one example scan each,",
+        "numeric (`coding-front`) first. Reverses are excluded by design.",
+        "",
+        "**Cluster count is not form count.** A cluster is a distinct *label set*,",
+        "so a page the model read through a rotation, a bleed-through or a white",
+        "block lands in its own cluster while being the same printed form. The",
+        "`shared with canonical` column is what separates the two: a real variant",
+        "shares few labels with the canonical set, a bad scan of the canonical form",
+        "shares some but is missing the rest. Open the PNG to settle it.",
+        "",
+        "| structure | role | cards | labels | shared with canonical | example scan |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for cluster, card in picks:
+        base = canonical[cluster.role]
+        shared = len(cluster.labels & base.labels)
+        share = f"{shared}/{len(base.labels)}"
+        if cluster.cluster_id == base.cluster_id:
+            share = "canonical"
+        name = names.get(cluster.cluster_id)
+        link = (
+            f"[{card['card_id']}](reference_cards/{name})" if name else "export failed"
+        )
+        lines.append(
+            f"| `{cluster.cluster_id}` | {cluster.role} | {cluster.size} | "
+            f"{len(cluster.labels)} | {share} | {link} |"
+        )
+    lines.append("")
+
+    index = out_dir / "front_structures.md"
+    index.write_text("\n".join(lines) + "\n")
+    return len(names), index
+
+
 def _grouped_by_pdf(exceptions: list[dict]):
     by_pdf: dict[str, list[dict]] = defaultdict(list)
     for row in exceptions:
@@ -413,6 +569,7 @@ def build_reports(
     merge_threshold: float,
     export_images: bool,
     sweep: bool = False,
+    reference_cards: bool = False,
 ) -> None:
     if not results.exists():
         raise SystemExit(f"No results at {results} -- run the analyze step first")
@@ -439,3 +596,7 @@ def build_reports(
     print(f"anomalies ranked rarest-first -> {out}/anomalies.csv")
     if export_images:
         print(f"{export_exception_images(exceptions, out)} scans exported")
+    if reference_cards:
+        written, index = export_reference_cards(clusters, out)
+        print(f"{written} front-card reference PNGs -> {out}/reference_cards/")
+        print(f"front-structure index -> {index}")

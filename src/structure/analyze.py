@@ -264,7 +264,18 @@ class Client:
                     # about this request: hold every worker, or the other
                     # fifteen spend the window re-earning the same 429. Applies
                     # whether or not the provider named a Retry-After.
-                    self.gate.pause(error.retry_after or backoff)
+                    #
+                    # Two different 429s arrive here. The daily cap
+                    # (free-models-per-day-stealth) names X-RateLimit-Reset, so
+                    # retry_after is set and the pool parks until the reset.
+                    # The shared upstream pool
+                    # (limit_source=upstream_provider_shared_pool) names no
+                    # header at all -- and it clears in minutes, so the 2/4/8/16s
+                    # ladder spends all four attempts inside 30s and records a
+                    # queue as a failure. Measured 2026-08-25: 13 of the first 97
+                    # pages, 100% of that run's failures, 4 billed requests each.
+                    # spike/ox_alpha_extractor.py already backs off 60s here.
+                    self.gate.pause(error.retry_after or 60 * attempt)
                 else:
                     time.sleep(backoff)  # a 5xx or a dropped socket is local
             except (ValueError, TypeError) as error:

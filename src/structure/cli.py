@@ -157,6 +157,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write the exception pages' scans to <out>/exception_images/",
     )
+    group.add_argument(
+        "--reference-cards",
+        action="store_true",
+        help="Write one example scan per front-card structure as PNG to "
+        "<out>/reference_cards/, plus <out>/front_structures.md indexing them. "
+        "Fronts only -- a reverse has no printed labels to have a structure. "
+        "Local: reads the PDFs, sends nothing",
+    )
 
     group = parser.add_argument_group("calibrate")
     group.add_argument(
@@ -212,6 +220,7 @@ def main(argv: list[str] | None = None) -> None:
             merge_threshold=args.merge_threshold,
             export_images=args.export_images,
             sweep=args.sweep,
+            reference_cards=args.reference_cards,
         )
         if args.sweep:
             return

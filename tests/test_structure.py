@@ -487,3 +487,137 @@ def analyze_page(card_id, unit, number):
     from structure.analyze import Page
 
     return Page(card_id=card_id, unit=unit, pdf=Path(f"{unit}.pdf"), page_number=number)
+
+
+def _row(card_id: str, role: str, labels: list[str]) -> dict:
+    return {
+        "card_id": card_id,
+        "unit": "216415",
+        "pdf": "u.pdf",
+        "page_number": 1,
+        "ok": True,
+        "analysis": {
+            "page_role": role,
+            "fields": [{"label": label, "value": ""} for label in labels],
+            "anomalies": [],
+        },
+    }
+
+
+def test_pool_429_backs_off_in_minutes_not_seconds():
+    """A 429 with no Retry-After is the shared upstream pool, which clears in
+    minutes. The 2/4/8/16s ladder spent all four attempts inside 30s and
+    recorded a queue as a failure -- 13 of 97 pages on 2026-08-25."""
+    gate = RateGate(rpm=0)
+    client = Client(
+        api_key="k",
+        model="m",
+        gate=gate,
+        max_tokens=10,
+        reasoning_effort="low",
+        attempts=4,
+    )
+
+    class Pool429(Exception):
+        status = 429
+        retry_after = None
+
+    paused: list[float] = []
+    gate.pause = paused.append  # type: ignore[method-assign]
+    client._post = lambda body: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        __import__("structure.analyze", fromlist=["RetryableError"]).RetryableError(
+            "HTTP 429: upstream_provider_shared_pool", None, 429
+        )
+    )
+    with pytest.raises(RuntimeError):
+        client.chat([{"type": "text", "text": "x"}], json_mode=False)
+
+    assert paused, "a 429 must pause the shared gate, not just this worker"
+    assert sum(paused) >= 240, (
+        f"four pool-429 attempts backed off {sum(paused)}s total; the pool "
+        "clears in minutes, so anything under 4 minutes re-earns the same 429 "
+        "and burns four billed requests for nothing"
+    )
+
+
+def test_reference_cards_pick_the_most_representative_card():
+    """The example scan must be the card that best matches its own cluster, not
+    cards[0] -- a cluster's first card can be the bled-through or rotated scan
+    that made it a separate cluster, which is the worst thing to hand someone
+    as 'this is what this structure looks like'."""
+    from structure.report import card_labels
+
+    canonical = ["age", "tenure", "kitchen", "bathroom"]
+    rows = [
+        _row("bad", "coding-front", ["age"]),  # a bad scan: read one label
+        _row("good", "coding-front", canonical),
+    ]
+    clusters = cluster_rows(rows, threshold=0.1)
+    cluster = next(c for c in clusters if c.role == "coding-front")
+
+    best = max(
+        cluster.cards,
+        key=lambda card: (
+            len(card_labels(card) & cluster.labels),
+            len(card_labels(card)),
+        ),
+    )
+    assert best["card_id"] == "good"
+
+
+def test_reference_cards_cover_fronts_only():
+    """Reverses carry no printed labels, so they cluster on role alone and an
+    example of one shows nothing about structure."""
+    from structure.report import FRONT_ROLES
+
+    assert set(FRONT_ROLES) == {"coding-front", "survey-front"}
+    assert FRONT_ROLES[0] == "coding-front", "numeric card is the primary one"
+
+
+def test_bleed_through_reverses_are_not_front_structures(tmp_path):
+    """A blank reverse whose printed front shows through the paper reads as a
+    front, mirrored, and clusters on its own. Four shipped as "front
+    structures" before the export filtered on parity instead of the role label.
+    """
+    from structure.report import export_reference_cards
+
+    labels = ["age", "tenure", "kitchen", "bathroom"]
+    rows = []
+    for page in (1, 3, 5):  # real fronts: odd pages in this unit
+        r = _row(f"u_p{page:04d}", "coding-front", labels)
+        r["page_number"] = page
+        rows.append(r)
+    bleed = _row("u_p0008", "coding-front", ["egA", "erunet"])  # mirrored gibberish
+    bleed["page_number"] = 8  # even -> a reverse
+    rows.append(bleed)
+
+    clusters = cluster_rows(rows, threshold=0.8)
+    assert any(c.cluster_id for c in clusters if c.labels == {"ega", "erunet"}), (
+        "the bleed-through must be its own cluster, or the test proves nothing"
+    )
+
+    _, index = export_reference_cards(clusters, tmp_path)
+    listed = index.read_text()
+    assert "u_p0008" not in listed, (
+        "a cluster whose every page is on a reverse is bleed-through, not a form"
+    )
+
+
+def test_front_parity_phase_is_per_unit(tmp_path):
+    """Five units number their fronts even. A global 'fronts are odd' rule would
+    drop their real cards, so the phase is taken per unit."""
+    from structure.report import export_reference_cards
+
+    labels = ["age", "tenure", "kitchen", "bathroom"]
+    rows = []
+    for page in (2, 4, 6):  # this unit's fronts are EVEN
+        r = _row(f"even_p{page:04d}", "coding-front", labels)
+        r["page_number"] = page
+        r["unit"] = "216415"
+        rows.append(r)
+    clusters = cluster_rows(rows, threshold=0.8)
+    _, index = export_reference_cards(clusters, tmp_path)
+    listed = index.read_text()
+    assert clusters[0].cluster_id in listed, (
+        "an even-numbered front in a phase-offset unit is still a front"
+    )

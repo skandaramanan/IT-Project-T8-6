@@ -27,7 +27,7 @@ network job; `report` is pure local computation you can re-run at a different
 
 ```bash
 uv run main.py analyze --per-unit 20 --workers 32 --max-requests 940
-uv run main.py report --export-images
+uv run main.py report --export-images --reference-cards
 ```
 
 880 pages across all 44 readable units, roughly half an hour. Then `report`
@@ -39,18 +39,18 @@ you can look at the real oddities yourself.
 card, and the recurring ones are punch holes in eleven spellings. Skim the top
 by `cards` and ignore the tail.
 
-**Where this is up to.** The 2026-08-24 run holds 642 pages from 34 units in
-`results/pages.jsonl`. It stopped on the `--max-requests` budget with **238 pages
-outstanding** — 211 never sent plus 27 that failed — so units **216449, 216450,
-216451, 216452, 216453, 216454, 216459, 216460, 216461, 216463 have no pages at
-all**, and 216448 has 9 of 20. 25 of the 27 failures are `200 with no choices:
-502` and 22 of those are in 216412/216413 — provider flakiness on the JPEG 2000
-units, not a structural signal. Rerunning the same command finishes them:
+**Where this is up to.** After a partial 2026-08-25 run, `results/pages.jsonl`
+holds **738 pages from 39 units** and 15 failures. It stopped early — see *A
+second 429, and it is not the daily cap* below — leaving **142 pages
+outstanding**, so units **216453, 216454, 216459, 216460, 216463** are still
+thin or empty. The 2026-08-24 `200 with no choices: 502` failures on the JPEG
+2000 units cleared on retry, which confirms they were provider flakiness rather
+than a structural signal. Rerunning the same command finishes them:
 selection is deterministic, `completed_ids` skips what is done, and failures are
 retried unless you pass `--skip-failed`. `--dry-run` prints the outstanding count
 without sending anything.
 
-That gap matters more than 238 pages suggests. The missing units are contiguous
+That gap matters more than 142 pages suggests. The missing units are contiguous
 at the tail of the archive, and 216431 has already shown that one unit can hold a
 form nothing else does — so *"no other card types exist"* is not yet a claim this
 data supports.
@@ -64,84 +64,125 @@ file that will stop you, for a reason recorded under *Concurrency* below.
 
 ## What the run found
 
-642 pages across 34 of 44 units — 3% of the archive. Shares below are sample
-rates; archive-wide figures are extrapolations, not counts.
+738 pages sampled from 39 of the 44 readable units — 3.4% of the archive. Every
+share below is a sample rate, not a count.
 
-### Two card structures, not twenty-one
+**There are three printed forms, not the twenty-one the cluster count suggests:
+a survey card in two printings, and one numeric coding card.** The rest of the
+clusters are the same forms scanned badly.
 
-`structures.csv` lists 21 clusters at `--merge-threshold 0.8`. Two are real
-forms — **survey-front** (195 pages, 52 labels on ≥90% of them) and
-**coding-front** (185 pages, 55). Four are buckets of reverses with no printed
-labels. **The remaining fifteen are singletons, and every one is a scan defect
-rather than a form**: rotated 90° or 180°, printed content visible only as
-bleed-through, or white blocks over the values. Cluster count is not form count.
+### The three forms
 
-The long tail in `canonical.md` is transcription noise, not variant fields —
-`washhouse` 59% / `washouse` 41% is one field read two ways. The threshold knee
-is at 0.75 (20 clusters, 3% off-canonical); the 0.8 default sits just above it.
+`report --reference-cards` writes one example scan per front-card structure to
+`results/reference_cards/` and indexes them in `results/front_structures.md`.
+All six were opened and looked at:
 
-### What is actually on a page
+| structure | pages | verdict |
+| --- | --- | --- |
+| `36d15987` numeric | 192 | **The coding card.** The canonical numeric form |
+| `23d8099c` survey | 215 | **The survey card.** The canonical text form |
+| `58fdc422` survey | 3 | **A second printing of the survey card** — has `Frontage` where the canonical has `Probable Age`. Units 216434 and 216435 |
+| `88148aab` numeric | 9 | Not a variant. Same card, clustered apart on transcription noise |
+| `ee86fadc` numeric | 1 | Same card, white blocks over the left column |
+| `b56f9cd3` survey | 1 | Same card, white block over ~80% of the page |
 
-Each page matched against the two canonical label sets:
+A fourth form exists on the reverse of one unit — see *The 216431 form* below.
+
+### Telling a real variant from a bad scan
+
+This is the part worth reusing, because the cluster count is misleading on its
+own and the same test settles every case: **a real variant field partitions the
+pages; a misread one is scattered across both groups.**
+
+| | appears on | verdict |
+| --- | --- | --- |
+| `Frontage` vs `Probable Age` | 3 pages vs 214, **never both on one page** | a real second printing |
+| `No. of Family Boarders` | 9 "variant" pages **and 47 of the 192 canonical ones** | one card, read inconsistently |
+
+`88148aab` also sits at 0.797 label overlap against a merge threshold of 0.8 —
+it failed to merge by 0.003. Treat anything that close to the threshold as one
+form until a field partitions it cleanly.
+
+### Separating front from reverse: use the page number
+
+FR-19 on IT-52 needs each scan split into front and reverse. **Page parity does
+it for free and the model's own role label does not.**
+
+- Odd pages are fronts on **90%** of pages; even pages are reverses on **84%**.
+- The model labelled 148 pages a "back" and was confident about 7 of them.
+- Five units (216412, 216415, 216420, 216423, 216447) number their fronts even,
+  so take the parity per unit, not globally.
+
+This also removes a trap. A blank reverse whose printed front shows through the
+paper is read as a front, mirrored, and forms its own cluster. Four of those
+were briefly reported as new "front structures". All four sat on reverse pages,
+so filtering on parity drops them without anyone having to judge.
+
+### What is on a page
 
 | | pages | share | ~archive-wide |
 | --- | --- | --- | --- |
-| Primary form — survey-front or coding-front | 376 | 58.6% | 12,700 |
-| Reverse, handwriting only, no printed fields | 144 | 22.4% | 4,900 |
-| Truly empty | 112 | 17.4% | 3,800 |
-| Printed form that is neither primary | 10 | 1.6% | 350 |
+| A printed front — survey or coding | 428 | 58.0% | 12,600 |
+| Reverse carrying handwriting | 210 | 28.5% | 6,200 |
+| Genuinely empty | 100 | 13.6% | 2,900 |
 
-Six of those last ten are the scan defects. The other four are all in one unit.
+**Reverses are not blank.** 210 of 310 — 68%, across 36 of 39 units — carry
+handwriting. Any plan that skips the reverses drops most of them.
 
-### A third printed form, in unit 216431
+### The 216431 form
 
-Typed prompts with handwritten prose beneath — household finance and wartime
-opinion, nothing to do with the dwelling grid on either primary form:
+Unit 216431 carries a form nothing else does: typed prompts with handwritten
+prose beneath, on household finance and wartime opinion — `Cost of Living`,
+`Rationing`, `War Loan`, `Attitude to Post-War`. It is on pages 268, 292 and 316,
+all **even**, so it occupies the reverse slot rather than adding a fourth card.
+See `results/reference_cards/` for page 292.
 
-```
-Expenditure of - Cost of Living:   Rationing:   Furniture, etc.:
-Savings Certificates, Stamps and Clubs:   War Loan:   Savings Bank:
-Subscriptions and Premiums:   Cash:   Attitude to Post-War:
-Miscellaneous:   Human Nature:   General Attitude:
-```
+Three pages in a 486-page unit proves the form exists and says nothing about how
+often it appears. That is the FR-21 answer for IT-73.
 
-Pages 268, 292 and 316 of 216431 carry an almost identical prompt set, so it is
-a form in repeated use, not an annotation. All three are on **even** pages, so it
-occupies the reverse slot — a variant reverse, not a fourth card in the cycle.
-The other 33 units leave the reverse unprinted, carrying at most short notes
-along the top.
+### White blocks over the values
 
-Three pages in a 486-page unit proves the form exists and says nothing about its
-rate. That is the FR-21 answer for IT-73; settling the rate costs one day's cap:
-`analyze --units 216431`, 486 pages.
+83 pages, **11.2%**, ~2,400 archive-wide, concentrated in 11 units of 39: white
+rectangles sitting over the field values.
 
-### The cycle is two pages, not four
+**The evidence points at a scanning fault, not archival redaction.** In
+`coding-front_ee86fadc_216414_p0081.png` and `survey-front_b56f9cd3_216431_p0219.png`
+the blocks are pure white with hard, pixel-aligned edges, sitting over the scan
+rather than on the card; redaction on a 1940s card is physical and would
+photograph with texture and ragged edges. Concentration in 11 units fits a
+scanning batch rather than a redaction policy.
 
-The four-page cycle holds on 48% of pages and 33 of 34 units break it. A two-page
-one holds far better: **odd pages are fronts 91%** (341/373), **even pages are
-reverses 84%** (227/269). Page parity is a free, deterministic front/reverse
-separator — which is what FR-19 on IT-52 needs, because the model's own role
-label is not: every one of the 114 pages it called a back came back below `high`
-confidence, and it scattered identical unprinted reverses across four role names
-(`coding-back` got 11 pages where the cycle implies ~160).
+This needs confirming with whoever ran the digitisation, because the two answers
+have opposite consequences: **a scanning fault can be rescanned; redaction is a
+permanent ceiling on extraction accuracy that belongs in the requirements.**
 
-`cycle_breaks` used to walk the cycle by position in the row list, which is
-meaningless on a sample taken every ~25th page; it reported 34/34 units and
-13–17 breaks per 20 pages. It now phases off the page's own number. If that
-report ever flags every unit again, suspect this first.
+### How far to trust this
 
-### Reverses are not blank
+The front inventory is complete *for the pages sampled*: no page sitting on a
+front-parity page and labelled something else carries 20 or more printed labels,
+so no printed form is hiding under a `blank` or `other` label.
 
-147 of the 259 reverses — **57%** — carry handwriting, across 31 of 34 units.
-Only 17% of all pages are genuinely empty.
+The sample is the limit, and one number sets the scale. **The survey second
+printing appears on only 3 of the 40 pages sampled from the two units that have
+it** — a form at that rate has roughly a 1 in 5 chance of being missed entirely
+in a 20-page sample of a unit that holds it. It was nearly missed.
 
-### A tenth of pages have blocks over the values
+Against that: 5 of the 44 readable units have no pages at all, four more have
+fewer than 18, and the whole sample is 3.4% of the archive. So the supportable
+claim is *"three forms are what 3.4% of the archive contains"* — not *"these are
+the only forms that exist"*.
 
-63 of 642 pages, 9.8%, ~2,100 archive-wide: white rectangular blocks obscuring
-field values, in consistent wording across many units. **Nobody has established
-whether this is archival redaction or a scanning artifact** — one is a ceiling on
-extraction accuracy that belongs in the requirements, the other is an ingest bug.
-Costs nothing to settle: open `results/exception_images/216412_p0182.jpg`.
+### Next steps
+
+| | what it settles | cost |
+| --- | --- | --- |
+| Finish the 5 empty units | Whether a fourth form exists. The biggest open risk | ~150 requests, under a day's cap |
+| Open two reference cards | Whether the white blocks are a scanning fault or redaction — a requirements decision | free, the scans are already on disk |
+| `analyze --units 216431` | How often the finance/opinion form appears | 486 requests, one day's cap |
+| Build the schema on parity | Front/reverse split for FR-19, without the model's role label | already available |
+
+The schema work can start now. It needs the two canonical label sets, plus
+`Frontage`/`Probable Age` as alternatives on the survey card.
 
 ## What we measured
 
@@ -178,6 +219,31 @@ parked run holds **zero open sockets and ~0% CPU** (`lsof -nP -p <pid> -a -i`),
 where a working one holds dozens. `curl` the API with a one-token request and
 read `X-RateLimit-Remaining`; a 429 costs nothing, because it is refused before
 generation.
+
+### A second 429, and it is not the daily cap
+
+Two different 429s arrive from this provider and they need opposite responses:
+
+| | daily cap | shared upstream pool |
+| --- | --- | --- |
+| body | `Rate limit exceeded: free-models-per-day-stealth` | `limit_source: upstream_provider_shared_pool` |
+| headers | `X-RateLimit-Reset` | none |
+| clears in | hours, at 00:00 UTC | minutes |
+| right response | park until the reset | wait a minute, retry |
+
+`retry_after_from` reads the reset header, so the daily one parks correctly. The
+pool one names no header at all, and the backoff used to fall through to
+`min(2**attempt, 30)` — 2s, 4s, 8s, 16s. All four attempts land inside 30
+seconds, well before a queue that clears in minutes, so the page is recorded as
+a failure having spent **four billed requests** on nothing.
+
+Measured 2026-08-25: 13 of the first 97 pages, **100% of that run's failures**.
+The backoff for a pool 429 is now 60s per attempt. `spike/ox_alpha_extractor.py`
+had already found this and used 60s; the structure client had not learned it.
+
+The lesson generalises past this bug: a 429 is not one condition. Read
+`limit_source` before deciding how long to wait, and treat "no `Retry-After`" as
+"the provider did not say", not as "retry immediately".
 
 ### There is a ~175 second generation ceiling
 
@@ -276,8 +342,8 @@ on exactly the same pages.
   record cycle demonstrably breaks somewhere. The pipeline labels each page's
   role and reconstructs the cycle afterwards rather than assuming it — and the
   measured answer is that the four-page cycle holds on 48% of pages while a
-  two-page front/reverse one holds on ~87%. See *The cycle is two pages, not
-  four* above.
+  two-page front/reverse one holds on ~87%. See *Separating front from reverse*
+  above.
 - Pages are never written to disk. Each scan is copied out of the PDF
   byte-for-byte, handed to a worker, and dropped; materialising all ~21.7k would
   put ~6.6 GB of derived data beside a dataset that already holds it.
@@ -289,6 +355,17 @@ on exactly the same pages.
 | `cli.py` | The one entry point. Every flag is documented in `--help` |
 | `inventory.py` | Enumerates pages, extracts scan bytes, handles the encoding oddities |
 | `analyze.py` | Pass 1 — the client, retry ladder, rate gate, batching, sampling |
-| `report.py` | Pass 2 — normalise, fingerprint, cluster, rank anomalies |
+| `report.py` | Pass 2 — normalise, fingerprint, cluster, rank anomalies, export reference cards |
 | `synthesize.py` | Pass 3 — unproven, see above |
 | `calibrate.py` | Compares finished `analyze` runs. Sends nothing, re-runnable |
+
+## Output
+
+| In `results/` | |
+| --- | --- |
+| `front_structures.md` | **Start here.** One row per front-card structure, with its example scan |
+| `reference_cards/` | One PNG per front-card structure |
+| `structures.csv` | Every cluster, including reverses and defects |
+| `canonical.md` | The two canonical label sets, with how often each field appears |
+| `processing.md` | Pages analysed, failures, retries spent |
+| `exceptions.csv`, `anomalies.csv` | Off-canonical pages, and every anomaly ranked rarest-first |
