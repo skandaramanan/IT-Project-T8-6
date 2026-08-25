@@ -608,7 +608,7 @@ def test_front_parity_phase_is_per_unit(tmp_path):
     drop their real cards, so the phase is taken per unit."""
     from structure.report import export_reference_cards
 
-    labels = ["age", "tenure", "kitchen", "bathroom"]
+    labels = [f"field {n}" for n in range(40)]  # a real printed form
     rows = []
     for page in (2, 4, 6):  # this unit's fronts are EVEN
         r = _row(f"even_p{page:04d}", "coding-front", labels)
@@ -620,4 +620,50 @@ def test_front_parity_phase_is_per_unit(tmp_path):
     listed = index.read_text()
     assert clusters[0].cluster_id in listed, (
         "an even-numbered front in a phase-offset unit is still a front"
+    )
+
+
+def test_a_front_cluster_with_no_printed_labels_is_bleed_through(tmp_path):
+    """11f015ab: four pages, all even, zero printed labels, shipped as a front
+    structure. A printed front with nothing printed on it is a contradiction."""
+    from structure.report import export_reference_cards
+
+    rows = []
+    for page in (1, 3):
+        r = _row(f"real_p{page:04d}", "coding-front", ["age", "tenure", "kitchen"])
+        r["page_number"] = page
+        rows.append(r)
+    ghost = _row("ghost_p0190", "coding-front", [])
+    ghost["page_number"] = 190
+    rows.append(ghost)
+
+    _, index = export_reference_cards(cluster_rows(rows, 0.8), tmp_path)
+    assert "ghost" not in index.read_text()
+
+
+def test_one_front_parity_page_does_not_rescue_a_reverse_cluster(tmp_path):
+    """The per-unit phase is an estimate. A cluster of four pages with three on
+    reverse parity is a reverse cluster whatever the fourth page says -- `any`
+    let 11f015ab through on one page in a unit whose phase was itself wrong."""
+    from structure.report import export_reference_cards
+
+    rows = []
+    for page in (1, 3, 5, 7):  # establishes unit A's fronts as odd
+        r = _row(f"anchor_p{page:04d}", "coding-front", ["age", "tenure", "kitchen"])
+        r["page_number"] = page
+        rows.append(r)
+    # three reverses and one odd page, sharing a distinct label set
+    for card_id, page in [
+        ("m_p0100", 100),
+        ("m_p0102", 102),
+        ("m_p0104", 104),
+        ("m_p0101", 101),
+    ]:
+        r = _row(card_id, "coding-front", ["smudge", "blur"])
+        r["page_number"] = page
+        rows.append(r)
+
+    _, index = export_reference_cards(cluster_rows(rows, 0.8), tmp_path)
+    assert "m_p" not in index.read_text(), (
+        "3 of 4 pages on reverse parity means a reverse cluster"
     )

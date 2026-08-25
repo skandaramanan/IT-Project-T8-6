@@ -54,6 +54,9 @@ RECORD_CYCLE = ("survey-front", "survey-back", "coding-front", "coding-back")
 # (counts, grades, totals), survey-front the text one. Reverses are excluded on
 # purpose -- see export_reference_cards.
 FRONT_ROLES = ("coding-front", "survey-front")
+# A cluster with at least this many labels is a real printed form rather than a
+# defect, and so is safe to take the per-unit front/reverse phase from.
+PRINTED_FORM_LABELS = 35
 
 
 def normalise_label(label: str) -> str:
@@ -439,9 +442,13 @@ def export_reference_cards(clusters: list[Cluster], out_dir: Path) -> tuple[int,
     # 216423, 216447) number their fronts even, so a global "fronts are odd"
     # rule would throw away their real cards. Take the phase from the pages the
     # model called a front -- wrong on individual pages, right in bulk.
+    # Derive the phase only from clusters carrying a real printed label set.
+    # Taking it from every front-labelled page is circular: bleed-through is
+    # labelled a front, so in a unit with enough of it the phase flips to the
+    # reverse side and then waves the bleed-through through as a front.
     phase: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     for cluster in clusters:
-        if cluster.role in FRONT_ROLES:
+        if cluster.role in FRONT_ROLES and len(cluster.labels) >= PRINTED_FORM_LABELS:
             for card in cluster.cards:
                 phase[card["unit"]][card["page_number"] % 2] += 1
     front_parity = {u: (1 if c[1] >= c[0] else 0) for u, c in phase.items()}
@@ -453,12 +460,27 @@ def export_reference_cards(clusters: list[Cluster], out_dir: Path) -> tuple[int,
     for cluster in clusters:
         if cluster.role not in FRONT_ROLES:
             continue
-        if not any(on_front_page(card) for card in cluster.cards):
-            continue  # every page in it is a reverse: bleed-through, not a form
+        if not cluster.labels:
+            # A printed front with no printed labels is a contradiction. This is
+            # bleed-through: the reverse of a card, with the front showing
+            # through the paper too faintly to read. Stronger than parity,
+            # because it needs no per-unit phase to be right.
+            continue
+        on_front = sum(on_front_page(card) for card in cluster.cards)
+        if on_front * 2 <= cluster.size:
+            # Mostly reverses. One page landing on front parity is not enough --
+            # the phase is an estimate, and a 4-page cluster with 3 reverses in
+            # it is a reverse cluster whatever the fourth page says.
+            continue
         fronts.append(cluster)
     fronts.sort(key=lambda c: (FRONT_ROLES.index(c.role), -c.size))
     if not fronts:
-        return 0, out_dir / "front_structures.md"
+        # Still write the index. Returning a path to a file that was never
+        # created makes every caller's read blow up somewhere unrelated.
+        out_dir.mkdir(parents=True, exist_ok=True)
+        index = out_dir / "front_structures.md"
+        index.write_text("# Front-card structures\n\nNo front-card structures found.\n")
+        return 0, index
 
     # Canonical = the biggest cluster of each role, matching canonical.md.
     canonical: dict[str, Cluster] = {}
@@ -524,12 +546,16 @@ def export_reference_cards(clusters: list[Cluster], out_dir: Path) -> tuple[int,
         f"Every cluster with role {' or '.join(FRONT_ROLES)}, one example scan each,",
         "numeric (`coding-front`) first. Reverses are excluded by design.",
         "",
-        "**Cluster count is not form count.** A cluster is a distinct *label set*,",
-        "so a page the model read through a rotation, a bleed-through or a white",
-        "block lands in its own cluster while being the same printed form. The",
-        "`shared with canonical` column is what separates the two: a real variant",
-        "shares few labels with the canonical set, a bad scan of the canonical form",
-        "shares some but is missing the rest. Open the PNG to settle it.",
+        "**Cluster count is not form count, and cluster size is not form size.**",
+        "A cluster is a distinct *label set*, so one printed form splits across",
+        "several clusters when the model reads it unevenly -- and two forms merge",
+        "into one cluster when they differ by less than the merge threshold.",
+        "The `cards` column below counts the cluster, not the form.",
+        "",
+        "Both happen on this data: the canonical coding cluster holds two forms,",
+        "and the 1941/43 survey card is spread over six clusters. See *The forms*",
+        "in src/structure/README.md for the per-form counts, which are what you",
+        "want. Open the PNG to settle any row.",
         "",
         "| structure | role | cards | labels | shared with canonical | example scan |",
         "| --- | --- | --- | --- | --- | --- |",

@@ -7,9 +7,10 @@ write a schema for forms you have not seen.
 The question it answers is **what structures are there**, not *what does every
 page say*. That distinction drives every design decision below.
 
-It serves IT-73 (assess secondary card types, FR-21) and FR-19 on IT-52
-(separating each scan into front, reverse and coding card). *What the run found*
-below is written against those.
+It serves **IT-52** (US-01, extract numeric coding-card information) — FR-01,
+FR-19 and FR-21 — and IT-73's assessment of secondary card types. *What this
+means for IT-52* below answers each requirement directly; read that first if
+you want the decisions rather than the method.
 
 ## The three passes
 
@@ -64,125 +65,200 @@ file that will stop you, for a reason recorded under *Concurrency* below.
 
 ## What the run found
 
-738 pages sampled from 39 of the 44 readable units — 3.4% of the archive. Every
-share below is a sample rate, not a count.
+843 pages sampled from all 44 readable units — 3.9% of the archive. Every share
+below is a sample rate, not a count.
 
-**There are three printed forms, not the twenty-one the cluster count suggests:
-a survey card in two printings, and one numeric coding card.** The rest of the
-clusters are the same forms scanned badly.
+**There are six printed front forms and one printed reverse form.** An earlier
+version of this document said three. That was wrong twice over, and both errors
+are worth knowing about because both are easy to repeat.
 
-### The three forms
+### The forms
 
-`report --reference-cards` writes one example scan per front-card structure to
-`results/reference_cards/` and indexes them in `results/front_structures.md`.
-All six were opened and looked at:
+| | form | pages | units |
+| --- | --- | --- | --- |
+| **S1** | Survey card, canonical | 242 | 43 |
+| **S2** | Survey card, 2nd printing — `Frontage` where S1 has `Probable Age` | 3 | 216434, 216435 |
+| **S3** | **1941/43 longitudinal card** — two dated blocks per person, plus `Reasons for Change` and `Reception` | 9 | 216459, 216461 |
+| **C1** | Coding card, canonical | 153 | 37 |
+| **C2** | **Coding card #2** — carries `No. of Family Boarders`, spells out `...Unearned Income` where C1 truncates to `I` | 72 | 20 |
+| **C3** | **Multi-family punch-card sheet** — fields numbered 1–80, repeating blocks for `Dominant Family` / `Family 2` / `3` / `4` | 4 | 216463 |
+| **R1** | Finance and wartime opinion, on the reverse — `Cost of Living`, `Rationing`, `War Loan`, `Attitude to Post-War` | 12 | 216431, 216459, 216461 |
 
-| structure | pages | verdict |
+Example scans for every front form are in `results/reference_cards/`, indexed by
+`results/front_structures.md`.
+
+S3, C3 and two thirds of R1 came from five units that had never been sampled.
+C2 was hiding in plain sight — see below.
+
+### What this means for IT-52
+
+IT-52 is *US-01 — extract numeric coding-card information*. Each requirement,
+answered against the data above.
+
+#### FR-01 (Must) — extract fields from the numeric coding card
+
+**The primary extraction target is not one form. It is two, and a schema built
+on C1 alone fails on roughly a third of it.**
+
+| | pages | share of coding cards |
 | --- | --- | --- |
-| `36d15987` numeric | 192 | **The coding card.** The canonical numeric form |
-| `23d8099c` survey | 215 | **The survey card.** The canonical text form |
-| `58fdc422` survey | 3 | **A second printing of the survey card** — has `Frontage` where the canonical has `Probable Age`. Units 216434 and 216435 |
-| `88148aab` numeric | 9 | Not a variant. Same card, clustered apart on transcription noise |
-| `ee86fadc` numeric | 1 | Same card, white blocks over the left column |
-| `b56f9cd3` survey | 1 | Same card, white block over ~80% of the page |
+| C1 canonical | 153 | 68% |
+| C2 | 72 | **32%** |
+| C3 multi-family punch-card sheet | 4 | 2% |
 
-A fourth form exists on the reverse of one unit — see *The 216431 form* below.
+C2 differs from C1 by a handful of fields, not a redesign, so one schema with
+C2's extra fields marked optional covers both. C3 is a different card — 80
+numbered columns, repeating per-family blocks — and needs its own schema or an
+explicit exclusion.
 
-### Telling a real variant from a bad scan
+#### FR-19 (Must) — split each scan into front, reverse and coding card
 
-This is the part worth reusing, because the cluster count is misleading on its
-own and the same test settles every case: **a real variant field partitions the
-pages; a misread one is scattered across both groups.**
+**Solved, deterministically, with no model call.** Two steps:
+
+1. **Front vs reverse — page parity.** Odd pages are fronts 91%, even are
+   reverses 84%. Take the phase per unit: five units number their fronts even.
+2. **Survey vs coding — label-set overlap.** The two canonical sets share only
+   10 labels, 17% of the smaller set. Scoring each page against both and taking
+   the winner misclassifies **0 of 495 pages**.
+
+Do not use the model's own `page_role`: it called 148 pages a "back" and was
+confident about 7.
+
+Two findings the implementation has to respect:
+
+- **The cards are interleaved, not segregated.** A real unit runs
+  `SCCCSSSCSCSSCSCSCSCS`. Nothing positional will work.
+- **"Fewer than 3 present" is the common case, not an edge case.** Only **16 of
+  44 units** hold roughly equal numbers of survey and coding fronts. Unit
+  216461 has 10 survey fronts and **zero** coding cards; 216444 has 1 survey to
+  9 coding. FR-19's clause about missing cards is load-bearing and must be
+  built for, not bolted on.
+
+#### FR-21 (TBC) — a secondary card type
+
+The ticket makes this conditional: prevalence decides whether it becomes a
+formal FR or an explicit non-goal.
+
+**The evidence says formal FR. Three distinct secondary types exist, not one:**
+
+| | pages | units |
+| --- | --- | --- |
+| R1 finance / wartime opinion (on the reverse) | 12 | 216431, 216459, 216461 |
+| S3 1941/43 longitudinal survey card | 9 | 216459, 216461 |
+| C3 multi-family punch-card sheet | 4 | 216463 |
+
+Each recurs within its units rather than appearing once, so none is an
+annotation or a stray. **Caveat: the ticket asks for a prevalence check across
+the full 6,000-card set, and this is a 3.9% sample.** It is enough to rule out
+"no secondary types exist" — it is not the prevalence figure the ticket asks
+for. What it does establish is that the answer is not a non-goal.
+
+#### NFR-06 (Should) — traceability
+
+Every row in `results/pages.jsonl` carries `card_id`, `unit`, `pdf` and
+`page_number`, so any extracted value traces to a source page without extra
+work. Field-level location within a page is not captured and would need the
+extractor to return bounding boxes.
+
+### Two mistakes this spike made
+
+**A cluster is not a form, and a big cluster is not one form.** C2 does not
+differ from C1 by enough to clear the 0.8 merge threshold, so 61 of its pages
+were absorbed into the C1 cluster and the remaining 11 looked like a fringe
+oddity. Checking whether the big cluster was internally uniform is what found
+it, and the split is total:
+
+| cards inside the C1 cluster | also carry ≥2 other C2 markers |
+| --- | --- |
+| 61 with `No. of Family Boarders` | **100%** |
+| 151 without | **0%** |
+
+Not a gradient — a partition. **C2 is roughly a third of all coding cards**, not
+a curiosity. The same test run against the S1 cluster comes back clean, so this
+was specific to the coding cards, but the check belongs on every large cluster.
+
+**A field the model reads unevenly looks exactly like a variant field.** The
+honest test is whether a candidate field *partitions* the pages:
 
 | | appears on | verdict |
 | --- | --- | --- |
-| `Frontage` vs `Probable Age` | 3 pages vs 214, **never both on one page** | a real second printing |
-| `No. of Family Boarders` | 9 "variant" pages **and 47 of the 192 canonical ones** | one card, read inconsistently |
+| `Frontage` vs `Probable Age` | 3 pages vs 241, never both | real: S2 |
+| `wkly cost transport` vs `wkly cost transpor` | 142 and 99, summing to 241 | one field, read two ways |
 
-`88148aab` also sits at 0.797 label overlap against a merge threshold of 0.8 —
-it failed to merge by 0.003. Treat anything that close to the threshold as one
-form until a field partitions it cleanly.
+Anything that sums to the cluster size is transcription noise. Anything that
+splits it is a form.
 
-### Separating front from reverse: use the page number
+### Bleed-through looks exactly like a new form
 
-FR-19 on IT-52 needs each scan split into front and reverse. **Page parity does
-it for free and the model's own role label does not.**
+A blank reverse whose printed front shows through the paper is read as a front,
+mirrored, and clusters on its own. Five of those were briefly reported as new
+front structures, and all five sat on reverse pages.
 
-- Odd pages are fronts on **90%** of pages; even pages are reverses on **84%**.
-- The model labelled 148 pages a "back" and was confident about 7 of them.
-- Five units (216412, 216415, 216420, 216423, 216447) number their fronts even,
-  so take the parity per unit, not globally.
+Two filters catch them, and the first is the one to rely on:
 
-This also removes a trap. A blank reverse whose printed front shows through the
-paper is read as a front, mirrored, and forms its own cluster. Four of those
-were briefly reported as new "front structures". All four sat on reverse pages,
-so filtering on parity drops them without anyone having to judge.
+- **A front cluster with no printed labels at all is a contradiction** — dropped
+  outright. This needs no per-unit phase, so a bad phase estimate cannot defeat it.
+- **A cluster with most of its pages on reverse parity is a reverse cluster**,
+  however the odd page out is labelled.
+
+The per-unit phase itself must be taken only from clusters carrying a real
+printed label set. Deriving it from every page the model *called* a front is
+circular: bleed-through is called a front, so in a unit with enough of it the
+phase flips and then waves the bleed-through through.
 
 ### What is on a page
 
 | | pages | share | ~archive-wide |
 | --- | --- | --- | --- |
-| A printed front — survey or coding | 428 | 58.0% | 12,600 |
-| Reverse carrying handwriting | 210 | 28.5% | 6,200 |
-| Genuinely empty | 100 | 13.6% | 2,900 |
+| A printed front | 495 | 58.7% | 12,750 |
+| Reverse carrying handwriting | 240 | 28.5% | 6,180 |
+| Genuinely empty | 108 | 12.8% | 2,780 |
 
-**Reverses are not blank.** 210 of 310 — 68%, across 36 of 39 units — carry
+**Reverses are not blank.** 240 of 348 — 69%, across 41 of 44 units — carry
 handwriting. Any plan that skips the reverses drops most of them.
-
-### The 216431 form
-
-Unit 216431 carries a form nothing else does: typed prompts with handwritten
-prose beneath, on household finance and wartime opinion — `Cost of Living`,
-`Rationing`, `War Loan`, `Attitude to Post-War`. It is on pages 268, 292 and 316,
-all **even**, so it occupies the reverse slot rather than adding a fourth card.
-See `results/reference_cards/` for page 292.
-
-Three pages in a 486-page unit proves the form exists and says nothing about how
-often it appears. That is the FR-21 answer for IT-73.
 
 ### White blocks over the values
 
-83 pages, **11.2%**, ~2,400 archive-wide, concentrated in 11 units of 39: white
-rectangles sitting over the field values.
+83 pages, **~11%**, concentrated in 11 units: white rectangles sitting over the
+field values. One coding-front cluster (`ee86fadc`) is nothing but a C2 card
+under them — all 42 of its readable labels are a subset of C2's.
 
-**The evidence points at a scanning fault, not archival redaction.** In
-`coding-front_ee86fadc_216414_p0081.png` and `survey-front_b56f9cd3_216431_p0219.png`
-the blocks are pure white with hard, pixel-aligned edges, sitting over the scan
-rather than on the card; redaction on a 1940s card is physical and would
-photograph with texture and ragged edges. Concentration in 11 units fits a
-scanning batch rather than a redaction policy.
+**The evidence points at a scanning fault, not archival redaction.** The blocks
+are pure white with hard, pixel-aligned edges, sitting over the scan rather than
+on the card; redaction on a 1940s card is physical and would photograph with
+texture and ragged edges. Concentration in 11 units fits a scanning batch.
 
-This needs confirming with whoever ran the digitisation, because the two answers
-have opposite consequences: **a scanning fault can be rescanned; redaction is a
-permanent ceiling on extraction accuracy that belongs in the requirements.**
+Confirm this with whoever ran the digitisation. **A scanning fault can be
+rescanned; redaction is a permanent ceiling on extraction accuracy that belongs
+in the requirements.**
 
 ### How far to trust this
 
-The front inventory is complete *for the pages sampled*: no page sitting on a
-front-parity page and labelled something else carries 20 or more printed labels,
-so no printed form is hiding under a `blank` or `other` label.
+All 44 readable units now have pages, which removes the largest gap. What
+remains is depth, and one number sets the scale: **S2 appears on 3 of the 40
+pages sampled from the two units that carry it.** A form at that rate is missed
+about one time in five by a 20-page sample of a unit that holds it — and C3 was
+found on 4 pages of one unit, S3 on 9 pages of two.
 
-The sample is the limit, and one number sets the scale. **The survey second
-printing appears on only 3 of the 40 pages sampled from the two units that have
-it** — a form at that rate has roughly a 1 in 5 chance of being missed entirely
-in a 20-page sample of a unit that holds it. It was nearly missed.
+So forms this rare are found by luck, not by coverage, and the sample is 3.9% of
+the archive. The supportable claim is **"seven forms exist and rare ones are
+probably still unfound"** — not "seven is the total".
 
-Against that: 5 of the 44 readable units have no pages at all, four more have
-fewer than 18, and the whole sample is 3.4% of the archive. So the supportable
-claim is *"three forms are what 3.4% of the archive contains"* — not *"these are
-the only forms that exist"*.
+37 pages remain unanalysed (all provider timeouts, not cap failures).
 
 ### Next steps
 
-| | what it settles | cost |
-| --- | --- | --- |
-| Finish the 5 empty units | Whether a fourth form exists. The biggest open risk | ~150 requests, under a day's cap |
-| Open two reference cards | Whether the white blocks are a scanning fault or redaction — a requirements decision | free, the scans are already on disk |
-| `analyze --units 216431` | How often the finance/opinion form appears | 486 requests, one day's cap |
-| Build the schema on parity | Front/reverse split for FR-19, without the model's role label | already available |
+| | what it settles | ticket | cost |
+| --- | --- | --- | --- |
+| Extend the coding schema to C2 | C2 is 32% of the primary extraction target | **FR-01** | no requests |
+| Build the splitter: parity, then label-set score | Both steps measured; 0/495 misclassified | **FR-19** | no requests |
+| Deepen 216459, 216461, 216463 | Whether S3, C3 and R1 are unit-local or archive-wide | **FR-21** | ~60 pages/unit |
+| Open two reference cards | White blocks: scanning fault or redaction | requirements | free |
+| Retry the 37 failures at `--workers 8` | Completes the sample | — | ~40 requests |
 
-The schema work can start now. It needs the two canonical label sets, plus
-`Frontage`/`Probable Age` as alternatives on the survey card.
+The first two need no further model runs and can start now. FR-21 is the one
+still open: the ticket wants prevalence across the full card set, and this is a
+3.9% sample — enough to show secondary types exist, not enough to size them.
 
 ## What we measured
 
