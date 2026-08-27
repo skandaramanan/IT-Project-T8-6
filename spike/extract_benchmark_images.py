@@ -31,8 +31,10 @@ def extract_benchmark_images(
     ground_truth_xlsx: Path = DEFAULT_GROUND_TRUTH_XLSX,
     images_dir: Path = DEFAULT_IMAGES_DIR,
 ) -> list[Path]:
-    page_ids = sorted(
-        card.page_id
+    # source_page, not page_id -- two rows record the wrong page (see
+    # ground_truth.SOURCE_PAGE_CORRECTIONS)
+    source_pages = sorted(
+        card.source_page
         for card in load_ground_truth(
             xlsx_path=ground_truth_xlsx, images_dir=images_dir
         )
@@ -41,12 +43,12 @@ def extract_benchmark_images(
 
     reader = PdfReader(pdf_path)
     written: list[Path] = []
-    for page_id in page_ids:
-        page = reader.pages[page_id - 1]
+    for source_page in source_pages:
+        page = reader.pages[source_page - 1]
         for ref in page["/Resources"]["/XObject"].get_object().values():  # type: ignore[index]
             obj = ref.get_object()
             if obj.get("/Subtype") == "/Image":
-                out_path = images_dir / f"page{page_id:03d}.jpg"
+                out_path = images_dir / f"page{source_page:03d}.jpg"
                 out_path.write_bytes(
                     obj._data
                 )  # raw stream, no re-encode -- see module docstring
