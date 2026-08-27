@@ -224,3 +224,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Pipeline outputs (per-page JSONL, reports, exported scans)
+results/
