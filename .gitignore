@@ -1,5 +1,7 @@
 # Project Files
 data/
+# extraction/analysis output derived from the scans -- same rule as data/ (D004)
+results/
 .env
 .venv/
 venv/
