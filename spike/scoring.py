@@ -8,25 +8,39 @@ from dataclasses import dataclass
 
 from ground_truth import BenchmarkCard
 
-# Three ways of writing "this cell holds no numeric code", which all have to
+# Ways of writing "this cell holds no numeric code", which all have to
 # compare equal:
-#   ""  the transcriber left it blank      (page 203's empty Family 4 block)
-#   "-" the transcriber marked it          (page 169's empty Family 3 block)
-#   "B" the 1940s coder voided the cell on the card itself, one B per code
-#       column -- so "B", "BB", "BBB". The transcriber wrote those as "-", but
-#       an extractor reading the card faithfully reports the B it can see.
+#   ""     the transcriber left it blank      (page 203's empty Family 4 block)
+#   "-"    the transcriber marked it          (page 169's empty Family 3 block)
+#   "None" ground-truth representation for no_data fields (Facilities Shared,
+#          House No. of Families O/C.) -- the GT is inconsistent between "" and
+#          "None" for absent slots; treat them the same.
+#   "B"    the 1940s coder voided the cell on the card itself, one B per code
+#          column -- so "B", "BB", "BBB". The transcriber wrote those as "-",
+#          but an extractor reading the card faithfully reports the B it sees.
 # Scoring these against each other measures transcription punctuation, not
 # extraction. 247 of 1200 ground-truth fields are "-" or "--"; no ground-truth
 # value is ever a "B", so treating a returned B as no-value can't hand out
 # credit for a real code -- a B where the card holds a digit still mismatches
 # that digit.
 VOID_MARKS = frozenset("-Bb")
+_ABSENT_WORDS = frozenset({"None", "none", "NONE"})
 
 
 def _normalise(value: str) -> str:
     stripped = value.strip()
-    # all-void-marks (or empty) means no code, however it was written
-    return "" if set(stripped) <= VOID_MARKS else stripped
+    if stripped in _ABSENT_WORDS or set(stripped) <= VOID_MARKS:
+        return ""
+    # Strip leading zeros from purely numeric values so "04" == "4".
+    # Safe for scoring: no two distinct valid codes within any field collapse
+    # to the same string after stripping (verified against code_book.py).
+    # Decode concern: fields whose code book keys are zero-padded (Municipality,
+    # Rent/Age/Length-of-Residence sentinels) need the zeros re-added before
+    # calling decode() -- use the expected key width per category, not this
+    # normalised form, as the lookup key.
+    if stripped.isdigit():
+        return str(int(stripped))
+    return stripped
 
 
 @dataclass

@@ -320,11 +320,21 @@ SENTINEL_CODES: dict[str, dict[str, str]] = {
 def decode(category: str, code: str) -> str | None:
     """Label for ``code`` under ``category``, or None if not a listed code
     (either an invalid value, or -- for a SENTINEL_CODES category -- an
-    ordinary in-range value with no special meaning)."""
+    ordinary in-range value with no special meaning).
+
+    Accepts normalised (leading-zero-stripped) codes: if a direct lookup
+    misses and the code is purely numeric, it is re-padded to the width of
+    the widest key in the table before retrying. This covers fields whose
+    code book keys are zero-padded (Municipality, Rent/Age sentinels etc.)
+    when the caller holds a value that has passed through _normalise()."""
     table = CLOSED_CATEGORIES.get(category) or SENTINEL_CODES.get(category)
     if table is None:
         return None
-    return table.get(code)
+    result = table.get(code)
+    if result is None and code.isdigit():
+        width = max(len(k) for k in table)
+        result = table.get(code.zfill(width))
+    return result
 
 
 def is_valid_closed_category_code(category: str, code: str) -> bool:
