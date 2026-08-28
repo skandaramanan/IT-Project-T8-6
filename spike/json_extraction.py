@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_prompt_schema
 
@@ -20,6 +21,30 @@ EXTRACTION_PROMPT = (
     'leading zeros ("04", not 4). Use null where no code is written.\n\n'
     + build_extraction_prompt_schema()
 )
+
+
+# The source scans are ~9MP (3740x2400). Left uncapped, a VLM's vision
+# encoder computes attention over thousands of image patches, which OOMs
+# this 12GB card (measured: qwen2.5-vl tried to allocate ~19GB at full
+# resolution). 1MP matches Qwen's own recommended max_pixels default and
+# leaves enough VRAM headroom for a 4-bit-quantized 7-8B model on this GPU.
+MAX_IMAGE_PIXELS = 1_000_000
+
+
+def load_image_for_vram(image_path: Path, max_pixels: int = MAX_IMAGE_PIXELS):
+    """Downscale to fit this GPU's VRAM budget. A deliberate quality/memory
+    tradeoff for this hardware, not a claim about the model's real accuracy
+    at full resolution -- small handwritten codes may become harder to read."""
+    from PIL import Image
+
+    img = Image.open(image_path).convert("RGB")
+    width, height = img.size
+    if width * height > max_pixels:
+        scale = (max_pixels / (width * height)) ** 0.5
+        img = img.resize(
+            (max(1, int(width * scale)), max(1, int(height * scale))), Image.LANCZOS
+        )
+    return img
 
 
 def _coerce_field(value) -> str:
