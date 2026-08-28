@@ -48,7 +48,7 @@ class StructuredScore:
     page_id: int
     total_fields: int
     correct_fields: int
-    mismatches: list[tuple[str, str, str]]  # (field, expected, got)
+    mismatches: list[tuple[str, str, str, str]]  # (field, expected, raw, got)
     # Fields where the card actually carries a code. An extractor that returns
     # nothing scores well on the empty ones, so this is the number that
     # separates candidates -- report it next to the headline accuracy.
@@ -65,14 +65,15 @@ def score_structured(card: BenchmarkCard, predicted: dict[str, str]) -> Structur
     correct = coded = correct_coded = 0
     for field, expected in card.fields.items():
         want = _normalise(expected)
-        got = _normalise(predicted.get(field) or "")
+        raw = predicted.get(field) or ""
+        got = _normalise(raw)
         if want:
             coded += 1
         if got == want:
             correct += 1
             correct_coded += bool(want)
         else:
-            mismatches.append((field, expected, got))
+            mismatches.append((field, expected, raw, got))
     return StructuredScore(
         page_id=card.page_id,
         total_fields=len(card.fields),
