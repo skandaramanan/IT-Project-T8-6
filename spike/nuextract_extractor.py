@@ -38,6 +38,7 @@ class NuExtractExtractor:
 
     def is_available(self) -> bool:
         try:
+            import bitsandbytes  # noqa: F401
             import torch  # noqa: F401
             import transformers  # noqa: F401
         except ImportError:
@@ -47,14 +48,15 @@ class NuExtractExtractor:
     def _load(self):
         if self._model is None:
             import torch
-            from transformers import AutoModelForImageTextToText, AutoProcessor
+            from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
+            bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
             self._processor = AutoProcessor.from_pretrained(
                 MODEL_ID, trust_remote_code=True
             )
             self._model = AutoModelForImageTextToText.from_pretrained(
                 MODEL_ID,
-                dtype=torch.bfloat16,
+                quantization_config=bnb_config,
                 device_map="auto",
                 trust_remote_code=True,
             ).eval()
@@ -62,7 +64,8 @@ class NuExtractExtractor:
 
     def extract(self, image_path: Path) -> ExtractionResult:
         import torch
-        from PIL import Image
+
+        from json_extraction import load_image_for_vram
 
         model, processor = self._load()
 
@@ -70,7 +73,7 @@ class NuExtractExtractor:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": Image.open(image_path).convert("RGB")}
+                    {"type": "image", "image": load_image_for_vram(image_path)}
                 ],
             }
         ]

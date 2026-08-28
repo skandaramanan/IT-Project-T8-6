@@ -28,6 +28,7 @@ class Qwen3VLExtractor:
 
     def is_available(self) -> bool:
         try:
+            import bitsandbytes  # noqa: F401
             import torch  # noqa: F401
             import transformers  # noqa: F401
         except ImportError:
@@ -36,22 +37,26 @@ class Qwen3VLExtractor:
 
     def _load(self):
         if self._model is None:
-            from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+            import torch
+            from transformers import AutoProcessor, BitsAndBytesConfig, Qwen3VLForConditionalGeneration
 
+            bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
             self._model = Qwen3VLForConditionalGeneration.from_pretrained(
-                MODEL_ID, dtype="auto", device_map="auto"
+                MODEL_ID, quantization_config=bnb_config, device_map="auto"
             )
             self._processor = AutoProcessor.from_pretrained(MODEL_ID)
         return self._model, self._processor
 
     def extract(self, image_path: Path) -> ExtractionResult:
+        from json_extraction import load_image_for_vram
+
         model, processor = self._load()
 
         messages = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": str(image_path)},
+                    {"type": "image", "image": load_image_for_vram(image_path)},
                     {"type": "text", "text": EXTRACTION_PROMPT},
                 ],
             }
