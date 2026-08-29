@@ -33,6 +33,7 @@ EXTRACTORS: dict[str, str] = {
     "molmo": "molmo_extractor:MolmoExtractor",
     "pixtral": "pixtral_extractor:PixtralExtractor",
     "nuextract3": "nuextract_extractor:NuExtractExtractor",
+    "unlimited-ocr": "unlimited_ocr_extractor:UnlimitedOcrExtractor",
     "azure-doc-intel": "azure_doc_intel_extractor:AzureDocIntelExtractor",
     "ox-alpha": "ox_alpha_extractor:OxAlphaExtractor",
 }
