@@ -1,13 +1,22 @@
-"""Runs one candidate extractor over the 20-card benchmark and reports accuracy.
+"""Runs one candidate extractor over a benchmark sheet and reports accuracy.
+
+Defaults to the C1/C2 sheet -- 30 cards from 30 units, the forms that are 98%
+of the coding cards. Its images are produced once by
+``spike/select_c1_c2_sample.py``; this script never regenerates them.
 
 Usage:
+    uv run python spike/run_benchmark.py --model qwen2.5-vl
+
+The older C3 set (20 cards, all from unit 216463) is still runnable, and is
+the only one that can rebuild its own images from the source PDF:
+
     uv run python spike/run_benchmark.py --model qwen2.5-vl \\
+        --ground-truth "data/Wilfred_Prest_Survey_Data/1262761_1973-0002-00052-sample 20.xlsx" \\
+        --images data/benchmark/images \\
         --pdf "data/Wilfred_Prest_Survey_Data/216463/1262761_1973-0002-00052.pdf"
 
---pdf is only needed the first time (or after data/benchmark/images/ is
-cleared) -- images are extracted once and cached, not re-pulled from the PDF
-on every run, since re-parsing a 182MB/492-page PDF on every one of several
-candidate-model runs would be pure waste.
+--pdf is only needed the first time (or after the image cache is cleared):
+re-parsing a 182MB/492-page PDF on every candidate-model run would be waste.
 """
 
 from __future__ import annotations
@@ -19,7 +28,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from extract_benchmark_images import extract_benchmark_images
-from ground_truth import load_ground_truth
+from ground_truth import (
+    DEFAULT_GROUND_TRUTH_XLSX,
+    DEFAULT_IMAGES_DIR,
+    load_ground_truth,
+)
 from scoring import score_structured
 
 from extraction.base import Extractor
@@ -66,13 +79,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--pages",
-        type=int,
         nargs="+",
         default=None,
         metavar="PAGE_ID",
-        help="Only run these page ids (default: all 20) -- for re-checking a "
-        "card that failed without paying for the other 19",
+        help="Only run these page ids (default: every card in the sheet) -- for "
+        "re-checking a card that failed without paying for the rest. Ids are "
+        "strings, e.g. 216412_p0125 on the C1/C2 sheet, 134 on the C3 one",
     )
+    parser.add_argument(
+        "--ground-truth",
+        type=Path,
+        default=DEFAULT_GROUND_TRUTH_XLSX,
+        help="Benchmark sheet (default: C1/C2). Pass ground_truth.C3_GROUND_TRUTH_XLSX "
+        "with --images to run the older C3 set",
+    )
+    parser.add_argument("--images", type=Path, default=DEFAULT_IMAGES_DIR)
     args = parser.parse_args()
 
     extractor = load_extractor(args.model)
@@ -81,7 +102,7 @@ def main() -> None:
             f"{args.model} is not available (missing dependency or API key)"
         )
 
-    cards = load_ground_truth()
+    cards = load_ground_truth(args.ground_truth, args.images)
     if args.pages:
         cards = [card for card in cards if card.page_id in set(args.pages)]
         unknown = set(args.pages) - {card.page_id for card in cards}
@@ -91,11 +112,14 @@ def main() -> None:
     if missing:
         if args.pdf is None:
             raise SystemExit(
-                f"{len(missing)}/{len(cards)} benchmark images aren't cached yet -- "
-                "pass --pdf to extract them (see this script's docstring)"
+                f"{len(missing)}/{len(cards)} benchmark images aren't cached yet in "
+                f"{args.images} -- run spike/select_c1_c2_sample.py for the C1/C2 set, "
+                "or pass --pdf for the C3 set (see this script's docstring)"
             )
+        # C3 only: it indexes one batch PDF by page number. C1/C2 cards come
+        # from 30 different unit PDFs, which is select_c1_c2_sample.py's job.
         print(f"Extracting {len(missing)} missing benchmark images from {args.pdf}...")
-        extract_benchmark_images(args.pdf)
+        extract_benchmark_images(args.pdf, args.ground_truth, args.images)
 
     print(
         f"Running {extractor.name} over {len(cards)} benchmark cards "
@@ -126,7 +150,7 @@ def main() -> None:
                 failed += 1
                 print(f"page {card.page_id}: FAILED ({error})", flush=True)
                 continue
-            (raw_dir / f"page{card.page_id:03d}.txt").write_text(raw_text or "")
+            (raw_dir / f"{card.page_id}.txt").write_text(raw_text or "")
             scores.append(score)
             # flush: a card can take minutes, and redirected stdout is
             # block-buffered, so without this a running benchmark looks hung

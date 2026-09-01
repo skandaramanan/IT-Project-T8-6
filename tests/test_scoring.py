@@ -10,7 +10,7 @@ from ground_truth import BenchmarkCard
 from scoring import score_structured
 
 CARD = BenchmarkCard(
-    page_id=1,
+    page_id="1",
     source_page=1,
     image_path=None,
     fields={"a": "56", "b": "04", "c": "-", "d": "", "e": "--"},
@@ -38,7 +38,7 @@ def test_leading_zero_is_not_the_same_code():
 def test_coder_void_marks_count_as_no_code():
     """A "B" per code column is how the card itself says "no code here"."""
     card = BenchmarkCard(
-        page_id=2,
+        page_id="2",
         source_page=2,
         image_path=None,
         fields={"a": "-", "b": "-", "c": "-", "d": "8"},
@@ -50,7 +50,7 @@ def test_coder_void_marks_count_as_no_code():
 
 def test_b_where_the_card_holds_a_digit_is_still_wrong():
     card = BenchmarkCard(
-        page_id=3, source_page=3, image_path=None, fields={"poverty": "3"}
+        page_id="3", source_page=3, image_path=None, fields={"poverty": "3"}
     )
     score = score_structured(card, {"poverty": "B"})
     assert score.correct_coded_fields == 0

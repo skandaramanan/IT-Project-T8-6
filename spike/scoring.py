@@ -24,6 +24,14 @@ VOID_MARKS = frozenset("-Bb")
 
 
 def _normalise(value: str) -> str:
+    """Void marks collapse to "no code". Leading zeros are left alone.
+
+    Deliberate: the ground-truth sheet is text-formatted so "04" and "4" are
+    two different transcriptions, and the code book's fixed-width codes make
+    them two different codes. Stripping zeros here would quietly hand an
+    extractor credit for reading "4" off a cell that says "04" --
+    test_leading_zero_is_not_the_same_code guards it.
+    """
     stripped = value.strip()
     # all-void-marks (or empty) means no code, however it was written
     return "" if set(stripped) <= VOID_MARKS else stripped
@@ -31,7 +39,7 @@ def _normalise(value: str) -> str:
 
 @dataclass
 class StructuredScore:
-    page_id: int
+    page_id: str
     total_fields: int
     correct_fields: int
     mismatches: list[tuple[str, str, str]]  # (field, expected, got)
