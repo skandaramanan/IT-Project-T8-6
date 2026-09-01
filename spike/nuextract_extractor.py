@@ -5,7 +5,7 @@ template-in/JSON-out shape.
 Unlike every other adapter here, the schema isn't embedded in a text prompt
 -- it's passed as a literal JSON template (field name -> type string) via
 the ``template`` chat-template kwarg, and the model fills it in directly.
-All 60 fields are typed "verbatim-string" here; NuExtract's template syntax
+Every field is typed "verbatim-string" here; NuExtract's template syntax
 supports richer per-field types (enums, dates, numbers) that could use
 extraction.field_schema's ``kind``/``code_book_category`` for a tighter
 template, not done in this first pass.

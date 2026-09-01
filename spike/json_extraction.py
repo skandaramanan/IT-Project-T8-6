@@ -9,16 +9,21 @@ import re
 
 from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_prompt_schema
 
+# Derived, not written down: the schema is now 62 fields for C1/C2 and 60 for
+# C3, and a prompt that names the wrong count while listing the right keys is
+# the kind of drift nothing fails on.
+_SCHEMA_BLOCK = build_extraction_prompt_schema()
+
 EXTRACTION_PROMPT = (
     "This is a numeric coding card from a 1941-43 social survey. Extract the "
-    "following 60 fields and return ONLY a JSON object with exactly these keys "
-    "(no markdown fences, no commentary).\n\n"
+    f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
+    "object with exactly these keys (no markdown fences, no commentary).\n\n"
     # Codes are written in fixed-width columns, so "04" and "4" are different
     # values -- as a JSON number the leading zero is unrepresentable and gets
     # silently dropped, which scored as a miss on every zero-padded field.
     "Give every value as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null where no code is written.\n\n'
-    + build_extraction_prompt_schema()
+    + _SCHEMA_BLOCK
 )
 
 

@@ -1,7 +1,7 @@
 """Azure Document Intelligence: hosted, requires a trained custom model.
 
 Prebuilt models (e.g. "prebuilt-layout") return generic key-value pairs and
-tables, not fields keyed by our 60 field names -- there's no prebuilt model
+tables, not fields keyed by our field names -- there's no prebuilt model
 for this card layout. Getting schema-matching output means training a
 custom model on a handful of labeled cards via the Azure portal/SDK first,
 which needs a live Azure account and hasn't been done -- that's a separate,
@@ -49,17 +49,33 @@ class AzureDocIntelExtractor:
 
         with image_path.open("rb") as f:
             poller = client.begin_analyze_document(model_id, body=f)
-        result = poller.result()
+        return parse_analyze_result(poller.result())
 
-        fields: dict[str, str] = {}
-        for document in result.documents or []:
-            for name, field in (document.fields or {}).items():
-                value = (
-                    field.get("valueString")
-                    or field.get("content")
-                    or field.get("valueNumber")
-                    or ""
-                )
-                fields[name] = str(value)
 
-        return ExtractionResult(fields=fields, cost_usd=None)
+def parse_analyze_result(result) -> ExtractionResult:
+    """Flatten an AnalyzeResult into fields + per-field confidence.
+
+    Split out from ``extract`` so the shape handling is testable without an
+    Azure account -- the SDK's field objects are mappings, so a plain dict of
+    dicts stands in for one.
+    """
+    fields: dict[str, str] = {}
+    # Azure returns a per-field confidence next to the value, so FR-10 costs
+    # nothing here. {} rather than None: this engine can always produce one, so
+    # an empty dict means the document came back with no fields at all -- a
+    # different thing from an engine that has no confidence to give.
+    confidence: dict[str, float] = {}
+    for document in result.documents or []:
+        for name, field in (document.fields or {}).items():
+            value = (
+                field.get("valueString")
+                or field.get("content")
+                or field.get("valueNumber")
+                or ""
+            )
+            fields[name] = str(value)
+            score = field.get("confidence")
+            if score is not None:
+                confidence[name] = float(score)
+
+    return ExtractionResult(fields=fields, confidence=confidence, cost_usd=None)

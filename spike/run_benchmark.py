@@ -130,13 +130,14 @@ def main() -> None:
         start = time.monotonic()
         result = extractor.extract(card.image_path)
         score = score_structured(card, result.fields)
-        return card, score, result.raw_text, time.monotonic() - start
+        return card, score, result, time.monotonic() - start
 
     results_dir = Path("data/benchmark/results") / extractor.name
     raw_dir = results_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     scores = []
+    confidences: list[dict[str, float] | None] = []
     failed = 0
     wall_start = time.monotonic()
 
@@ -145,13 +146,14 @@ def main() -> None:
         for future in as_completed(futures):
             card = futures[future]
             try:
-                card, score, raw_text, elapsed = future.result()
+                card, score, result, elapsed = future.result()
             except Exception as error:  # noqa: BLE001 -- one bad card shouldn't kill 19 in-flight requests
                 failed += 1
                 print(f"page {card.page_id}: FAILED ({error})", flush=True)
                 continue
-            (raw_dir / f"{card.page_id}.txt").write_text(raw_text or "")
+            (raw_dir / f"{card.page_id}.txt").write_text(result.raw_text or "")
             scores.append(score)
+            confidences.append(result.confidence)
             # flush: a card can take minutes, and redirected stdout is
             # block-buffered, so without this a running benchmark looks hung
             print(
@@ -200,6 +202,17 @@ def main() -> None:
             f"Coded-field accuracy: {coded_correct}/{coded_total} "
             f"({coded_correct / coded_total:.1%}) -- fields the card actually fills in"
         )
+        # FR-10 is a Must, so whether an engine can score its own output at all
+        # is a result in its own right -- report it beside the accuracy rather
+        # than discovering it when the review queue gets built.
+        if all(c is None for c in confidences):
+            print("Confidence: none -- this engine cannot satisfy FR-10 on its own")
+        else:
+            scored = sum(len(c) for c in confidences if c)
+            print(
+                f"Confidence: {scored}/{total_fields} fields carry a score "
+                f"({scored / total_fields:.1%})"
+            )
     else:
         raise SystemExit(f"All {failed} cards failed")
 
