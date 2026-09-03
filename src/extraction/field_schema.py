@@ -448,4 +448,6 @@ def build_extraction_prompt_schema(
     exactly these keys -- see describe_field() for what each line tells the
     model about valid values. Pass ``C3_FIELD_SCHEMA`` for the punch-card sheet.
     """
-    return "\n".join(describe_field(spec) for spec in (schema or FIELD_SCHEMA))
+    if schema is None:
+        schema = FIELD_SCHEMA
+    return "\n".join(describe_field(spec) for spec in schema)
