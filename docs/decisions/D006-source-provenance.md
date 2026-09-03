@@ -66,6 +66,25 @@ reading the card. The chain is value → role → card entry → scan file and
 page. Card-level confidence (FR-20) lives here too, alongside the image,
 rather than being duplicated onto every field.
 
+### How a role resolves to a card
+
+Cards attach to the **household**, not the dwelling. The survey front is
+physically part of a household's set, and on the common one-household dwelling
+there is nowhere else to put it — which is why `r01`'s four cards sit under
+`households[0]` and `dwelling.cards` is empty.
+
+So resolution is scoped, not a flat lookup:
+
+- a **dwelling-level** `source` resolves against the dwelling's own `cards`
+  plus those of every household under it — it looks *down*;
+- a **household-level** `source` resolves against its own `cards` plus the
+  dwelling's — it looks *up* and at itself, never sideways into a sibling
+  household.
+
+`dwelling.cards` stays in the envelope for the case where a card genuinely
+spans households — a survey front listing three families is one sheet, not
+three. `tests/test_output_schema.py` enforces both scopes.
+
 ### Which values are "traceability-relevant"
 
 **Those whose card of origin is not already implied by where they sit in the
@@ -127,6 +146,12 @@ reviewer most wants to open the scan for.
   entry in `cards`. The five fixtures do not show this and the four-page cycle
   in `tests/fixtures/README.md` argues against it, but the corpus has not been
   swept. IT-73's FR-21 spike is where that would surface.
+- Because a dwelling-level `source` resolves by looking down, it is unambiguous
+  only while no two households under that dwelling hold cards of the same role.
+  A three-family dwelling has three coding fronts, and `"source":
+  "coding-front"` on the dwelling's own `address` would match all three. The
+  same limit as above, reached one level higher, and the same fix — card ids —
+  if IT-73 says it is worth paying for.
 - `image` is a path, and paths are only as stable as the storage under them.
   Fixture paths are repo-relative and CI-checkable; corpus paths will be
   relative to the Drive layout D004 set up, and a reorganisation there breaks
