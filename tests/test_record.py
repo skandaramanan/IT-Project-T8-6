@@ -1,0 +1,149 @@
+"""A coding card becomes a valid D007 record.
+
+The fixture below is a hand-written stand-in, not a transcription -- these
+tests are about the translation, not about how well any model reads a card.
+Real model output lives under data/benchmark/, which is gitignored, so nothing
+here may depend on it.
+"""
+
+import json
+from pathlib import Path
+
+import jsonschema
+import pytest
+
+from extraction.field_schema import FIELD_SCHEMA
+from extraction.record import FIELD_MAP, build_record, build_record_id, normalise
+
+SCHEMA = json.loads(
+    (
+        Path(__file__).parent.parent / "docs" / "schema" / "record-envelope.schema.json"
+    ).read_text()
+)
+
+CARD = {
+    "Municipality": "27",
+    "Number of Dwelling": "6",
+    "Number of Household": "1",
+    "Structural Material": "1",
+    "Tenure": "1",
+    "Weekly Rent": "04",
+    "Normal Household I.": "999",
+    "Sex of Head": "0",
+    "Age of Head": "54",
+    "Number under 5": "-",
+}
+
+
+def record():
+    return build_record(CARD, region="williamstown", batch="test")
+
+
+# --- the whole card survives ------------------------------------------------
+
+
+def test_every_card_field_is_mapped():
+    """A field missing from FIELD_MAP is never emitted and never errors -- it
+    just stops existing, which is indistinguishable from a card that never had
+    it."""
+    assert {spec.name for spec in FIELD_SCHEMA} == set(FIELD_MAP)
+
+
+def test_no_two_fields_share_a_key():
+    keys = [key for key, _ in FIELD_MAP.values()]
+    assert len(keys) == len(set(keys))
+
+
+def test_the_record_carries_all_62_fields():
+    rec = record()
+    household = rec["dwelling"]["households"][0]
+    emitted = (
+        2  # municipality and dwelling_no sit on the dwelling
+        + 1  # household_no on the household
+        + len(rec["dwelling"]["house"])
+        + len(household["head"])
+        + len(household["counts"])
+        + len(household["coding"])
+    )
+    assert emitted == len(FIELD_SCHEMA)
+
+
+def test_fields_the_model_omitted_are_still_emitted():
+    """CARD holds 10 of 62. The rest are absent from the model's answer, and
+    have to come back as no_data rather than vanish."""
+    counts = record()["dwelling"]["households"][0]["counts"]
+    assert counts["home_duties"]["status"] == "no_data"
+    assert counts["home_duties"]["value"] is None
+
+
+# --- cleaning ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("1.", "1"),  # leader dots read as part of the number
+        ("1.5.", "15"),
+        ("O4", "04"),  # handwritten 0 read as a letter
+        ("!", "1"),
+        ("-", ""),  # transcriber's void mark
+        ("BB", ""),  # coder voided the cell, one B per column
+        (None, ""),
+    ],
+)
+def test_normalise(raw, expected):
+    assert normalise(raw) == expected
+
+
+def test_leading_zeros_are_kept():
+    """Fixed-width codes: 04 and 4 are two different codes, not two spellings
+    of one."""
+    assert normalise("04") == "04"
+
+
+def test_void_marks_become_no_data():
+    counts = record()["dwelling"]["households"][0]["counts"]
+    assert counts["number_under_5"]["status"] == "no_data"
+
+
+# --- decoding ---------------------------------------------------------------
+
+
+def test_codes_carry_their_meaning():
+    assert record()["dwelling"]["house"]["structural_material"]["label"] == "Wood"
+
+
+def test_sentinels_stay_values_with_a_label():
+    """FR-08: 999 means 'over £10'. It must never collapse into missing."""
+    field = record()["dwelling"]["households"][0]["coding"]["normal_household_income"]
+    assert field["value"] == "999"
+    assert field["status"] == "ok"
+    assert field["label"] == "Unknown because over £10"
+
+
+def test_confidence_is_always_null():
+    """NFR-01: no benchmarked engine produces a per-field score, and inventing
+    one would present an uncertain reading as a confident one."""
+    household = record()["dwelling"]["households"][0]
+    for group in (household["head"], household["counts"], household["coding"]):
+        assert all(field["confidence"] is None for field in group.values())
+
+
+# --- identity ---------------------------------------------------------------
+
+
+def test_record_id_is_zero_padded():
+    assert build_record_id("27", "6", "1") == "27-0006-01"
+
+
+def test_record_id_needs_all_three_parts():
+    """Dwelling number alone repeats across municipalities."""
+    with pytest.raises(ValueError):
+        build_record_id("27", "", "1")
+
+
+# --- the envelope -----------------------------------------------------------
+
+
+def test_record_validates_against_the_envelope():
+    jsonschema.validate(record(), SCHEMA)
