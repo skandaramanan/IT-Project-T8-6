@@ -5,6 +5,10 @@ dwelling -> household, every leaf a field object carrying value, code, label,
 status and confidence. This is the piece in between, and it is the only place
 that knows both vocabularies.
 
+The three choices it makes -- cleaning on the way in, what ``status`` means,
+and which group each field lands in -- are recorded in
+``docs/decisions/D010-card-to-record-mapping.md``.
+
 Three things happen here, in order:
 
 1. **Clean.** The model's string is not the card's value: leader dots come back
