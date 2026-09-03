@@ -78,7 +78,9 @@ def test_every_card_image_exists():
     it still looks trustworthy."""
     dwelling = EXAMPLE["dwelling"]
     cards = dwelling["cards"] + [
-        card for household in dwelling["households"] for card in household.get("cards", [])
+        card
+        for household in dwelling["households"]
+        for card in household.get("cards", [])
     ]
 
     assert cards, "a record with no cards cannot be traced back to anything"
