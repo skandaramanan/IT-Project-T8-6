@@ -55,3 +55,43 @@ def test_b_where_the_card_holds_a_digit_is_still_wrong():
     score = score_structured(card, {"poverty": "B"})
     assert score.correct_coded_fields == 0
     assert ("poverty", "3", "") in score.mismatches
+
+
+def test_leader_dots_are_not_part_of_the_value():
+    """The dotted line joining label to value gets read as digits: "1." for 1."""
+    card = BenchmarkCard(
+        page_id="4", source_page=4, image_path=None, fields={"a": "1", "b": "15"}
+    )
+    score = score_structured(card, {"a": "1.", "b": "1.5."})
+    assert score.correct_coded_fields == 2
+    assert score.mismatches == []
+
+
+def test_letter_lookalikes_fold_to_digits():
+    """Handwritten 0 and 1 come back as O/Q and !/L/I. No code holds a letter."""
+    card = BenchmarkCard(
+        page_id="5",
+        source_page=5,
+        image_path=None,
+        fields={"a": "0", "b": "0", "c": "1", "d": "1"},
+    )
+    score = score_structured(card, {"a": "O", "b": "Q", "c": "!", "d": "L"})
+    assert score.correct_coded_fields == 4
+
+
+def test_folding_never_rescues_a_different_code():
+    card = BenchmarkCard(
+        page_id="6", source_page=6, image_path=None, fields={"a": "0", "b": "04"}
+    )
+    score = score_structured(card, {"a": "8", "b": "4"})
+    assert score.correct_coded_fields == 0
+
+
+def test_void_mark_wins_over_lookalike_folding():
+    """A coder's "B" means no code -- it must not fold to a digit."""
+    card = BenchmarkCard(
+        page_id="7", source_page=7, image_path=None, fields={"a": "-", "b": "1"}
+    )
+    score = score_structured(card, {"a": "B.", "b": "L"})
+    assert score.correct_fields == 2
+    assert (score.correct_coded_fields, score.coded_fields) == (1, 1)

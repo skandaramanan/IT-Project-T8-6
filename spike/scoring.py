@@ -22,19 +22,44 @@ from ground_truth import BenchmarkCard
 # that digit.
 VOID_MARKS = frozenset("-Bb")
 
+# Every value on this card is a number: the code book defines no code containing
+# a letter or a period. That is what makes the two substitutions below safe --
+# neither can turn one valid code into a different valid code, so neither can
+# hand out credit for a wrong answer. Both were measured on the first Azure run
+# (2026-09-01, 20 held-out cards), where together they accounted for 305 of 731
+# apparent mismatches -- 25 accuracy points of pure scoring artefact.
+
+# The printed fields are joined to their values by a row of dots, and OCR reads
+# some of them as part of the number: "1." for 1, "1.5." for 15. Colons come off
+# the "Children of H. or wife:" heading the same way.
+_PUNCTUATION = str.maketrans("", "", ".:;, \t\n")
+
+# Handwritten 0 and 1 are read as letters: O 29x, Q 16x, ! 14x, L 6x, I 3x.
+# Deliberately not included: "/" and "D", which are plausible lookalikes but
+# were never observed -- an unobserved mapping is a guess, and a guess here
+# only ever inflates the score.
+_DIGIT_LOOKALIKES = str.maketrans(
+    {"O": "0", "o": "0", "Q": "0", "I": "1", "l": "1", "L": "1", "!": "1", "|": "1"}
+)
+
 
 def _normalise(value: str) -> str:
-    """Void marks collapse to "no code". Leading zeros are left alone.
+    """Strip print/OCR artefacts. Leading zeros are left alone.
 
-    Deliberate: the ground-truth sheet is text-formatted so "04" and "4" are
-    two different transcriptions, and the code book's fixed-width codes make
-    them two different codes. Stripping zeros here would quietly hand an
-    extractor credit for reading "4" off a cell that says "04" --
-    test_leading_zero_is_not_the_same_code guards it.
+    Zeros are deliberately kept: the ground-truth sheet is text-formatted so
+    "04" and "4" are two different transcriptions, and the code book's
+    fixed-width codes make them two different codes. Stripping them would hand
+    an extractor credit for reading "4" off a cell that says "04" --
+    test_leading_zero_is_not_the_same_code guards it. That is the difference
+    between the two rules here and that one: "04" and "4" are both valid codes
+    with different meanings, whereas "1." and "O" are not codes at all.
     """
-    stripped = value.strip()
-    # all-void-marks (or empty) means no code, however it was written
-    return "" if set(stripped) <= VOID_MARKS else stripped
+    stripped = value.strip().translate(_PUNCTUATION)
+    # all-void-marks (or empty) means no code, however it was written. Checked
+    # before folding so a coder's "B" stays a void mark rather than a digit.
+    if set(stripped) <= VOID_MARKS:
+        return ""
+    return stripped.translate(_DIGIT_LOOKALIKES)
 
 
 @dataclass
