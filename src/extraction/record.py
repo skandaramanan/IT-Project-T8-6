@@ -1,0 +1,280 @@
+"""Turns a model's raw reading of one coding card into a D007 output record.
+
+The extractor hands back ``{card label: whatever the model saw}``. D007 wants
+dwelling -> household, every leaf a field object carrying value, code, label,
+status and confidence. This is the piece in between, and it is the only place
+that knows both vocabularies.
+
+The three choices it makes -- cleaning on the way in, what ``status`` means,
+and which group each field lands in -- are recorded in
+``docs/decisions/D011-card-to-record-mapping.md``.
+
+Three things happen here, in order:
+
+1. **Clean.** The model's string is not the card's value: leader dots come back
+   as part of the number and handwritten 0/1 come back as letters. Same rules
+   as ``spike/scoring.py``, which measured them at 305 of 731 apparent
+   mismatches on the 2026-09-01 Azure run. They belong on the way in, not only
+   at scoring time -- otherwise the benchmark is clean and the dataset is not.
+
+2. **Decode.** A code book code becomes a code plus its meaning (FR-07).
+   Sentinels stay ordinary values with a label -- 999 is "over £10", never
+   missing (FR-08).
+
+3. **Place.** Each of the 62 fields goes to one of four groups. The card is one
+   flat grid; the record is nested, and nothing on the card says which level a
+   field belongs to.
+
+Deliberately not done here:
+
+- ``confidence`` is always None. No engine benchmarked so far produces a
+  per-field score, and inventing one would breach NFR-01. Null is what the
+  envelope asks for and what the reviewer needs to see.
+- ``negated`` is never set. FR-06 turns on whether red pencil means negation or
+  the coder correcting themselves, which is still with the client (IT-80).
+- ``persons`` and ``notes`` stay empty. Both come off the survey front and
+  reverse; the coding card carries neither.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
+from extraction.field_schema import FIELD_SCHEMA_BY_NAME, FieldSpec
+
+SCHEMA_VERSION = "0.1.0"
+
+# --- 1. where each field lives ----------------------------------------------
+# card label -> (key in the record, which group)
+#
+# Groups match the envelope: "dwelling" and "household" are its fixed named
+# properties; "house" describes the building, "head" the head of household,
+# "counts" the demographic aggregates, "coding" everything else about this
+# household. Address, families-in-dwelling and the person grid are absent
+# because they live on the survey front, not this card.
+
+FIELD_MAP: dict[str, tuple[str, str]] = {
+    # identity
+    "Municipality": ("municipality", "dwelling"),
+    "Number of Dwelling": ("dwelling_no", "dwelling"),
+    "Number of Household": ("household_no", "household"),
+    # the building
+    "Type of Dwelling": ("type_of_dwelling", "house"),
+    "Structural Material": ("structural_material", "house"),
+    "Age of House": ("age_of_house", "house"),
+    "Garden": ("garden", "house"),
+    "State of Repair": ("state_of_repair", "house"),
+    "Total Number of Rooms": ("total_number_of_rooms", "house"),
+    "Number of Bedrooms": ("number_of_bedrooms", "house"),
+    "Number of Living Rooms": ("number_of_living_rooms", "house"),
+    "Whether used as Bedrooms": ("whether_used_as_bedrooms", "house"),
+    "Rooms not in Daily Use": ("rooms_not_in_daily_use", "house"),
+    "Number of Sleepouts": ("number_of_sleepouts", "house"),
+    "Bathroom": ("bathroom", "house"),
+    "W.C.": ("wc", "house"),
+    "Washouse": ("washouse", "house"),
+    "Kitchen": ("kitchen", "house"),
+    "Sink and Water Service": ("sink_and_water_service", "house"),
+    "Cooking Facilities": ("cooking_facilities", "house"),
+    "Food Storage": ("food_storage", "house"),
+    "Rooms Shared": ("rooms_shared", "house"),
+    "Persons Sharing": ("persons_sharing", "house"),
+    # the head of household
+    "Earnings of Head": ("earnings_of_head", "head"),
+    "Head's Unearned I.": ("head_unearned_income", "head"),
+    "Main Source of Head's Unearned I.": ("main_source_unearned_income", "head"),
+    "Subsidiary Source of Head's I.": ("subsidiary_source_of_income", "head"),
+    "Industry of H.": ("industry_of_head", "head"),
+    "Occupation of H.": ("occupation_of_head", "head"),
+    "Grade of Occup. of H.": ("grade_of_occupation", "head"),
+    "Place of Work": ("place_of_work", "head"),
+    "Age of Head": ("age_of_head", "head"),
+    "Sex of Head": ("sex_of_head", "head"),
+    "Regularity of Work": ("regularity_of_work", "head"),
+    "Pre-War Occupation": ("pre_war_occupation", "head"),
+    # counts of people
+    "Total No. Resident Members": ("total_resident_members", "counts"),
+    "Number under 5": ("number_under_5", "counts"),
+    "Number 5-10": ("number_5_to_10", "counts"),
+    "Number over 10 M.": ("number_over_10_m", "counts"),
+    "Number over 10 F.": ("number_over_10_f", "counts"),
+    "No. of Boarders": ("number_of_boarders", "counts"),
+    "No. of Family Boarders": ("number_of_family_boarders", "counts"),
+    "No. of Participating Members": ("number_of_participating_members", "counts"),
+    "No. of Adult M. Breadwinners": ("adult_m_breadwinners", "counts"),
+    "No. of Adult F. Breadwinners": ("adult_f_breadwinners", "counts"),
+    "No. of Juvenile Breadwinners (under 21)": ("juvenile_breadwinners", "counts"),
+    "Children under 14": ("children_under_14", "counts"),
+    "Retired and Indep. Persons": ("retired_and_independent_persons", "counts"),
+    "Home Duties": ("home_duties", "counts"),
+    "Other": ("other_persons", "counts"),
+    "Children other than those at home": ("children_other_than_at_home", "counts"),
+    "Children of H. or wife: Living": ("children_living", "counts"),
+    "Children of H. or wife: Dead": ("children_dead", "counts"),
+    "Children of H. or wife: Total": ("children_total", "counts"),
+    # everything else about this household
+    "Type of Family": ("type_of_family", "coding"),
+    "Military Service": ("military_service", "coding"),
+    "Normal Household I.": ("normal_household_income", "coding"),
+    "Weekly Rent": ("weekly_rent", "coding"),
+    "Total Available I.": ("total_available_income", "coding"),
+    "Removal": ("removal", "coding"),
+    "Tenure": ("tenure", "coding"),
+    "Length of Residence": ("length_of_residence", "coding"),
+}
+
+
+# --- 2. cleaning ------------------------------------------------------------
+# Ported from spike/scoring.py. Every value on this card is a number -- the code
+# book defines no code containing a letter or a period -- which is what makes
+# both substitutions safe: neither can turn one valid code into another.
+
+VOID_MARKS = frozenset("-Bb")
+
+# Fields are joined to their values by a row of dots, and OCR reads some of them
+# as part of the number: "1." for 1, "1.5." for 15.
+_PUNCTUATION = str.maketrans("", "", ".:;, \t\n")
+
+# Handwritten 0 and 1 come back as letters: O, Q, !, L, I.
+_DIGIT_LOOKALIKES = str.maketrans(
+    {"O": "0", "o": "0", "Q": "0", "I": "1", "l": "1", "L": "1", "!": "1", "|": "1"}
+)
+
+
+def normalise(value: str | None) -> str:
+    """Strip print and OCR artefacts. Leading zeros are kept.
+
+    "04" and "4" are two different codes in a fixed-width scheme, so stripping
+    zeros would silently rewrite the card. "1." and "O" are not codes at all.
+    """
+    if value is None:
+        return ""
+    stripped = value.strip().translate(_PUNCTUATION)
+    # Checked before folding, so a coder's "B" stays a void mark, not a digit.
+    if set(stripped) <= VOID_MARKS:
+        return ""
+    return stripped.translate(_DIGIT_LOOKALIKES)
+
+
+# --- 3. one field -----------------------------------------------------------
+
+
+def build_field(
+    spec: FieldSpec, raw: str | None, *, source: str | None = None
+) -> dict[str, Any]:
+    """One card value as a D007 field object.
+
+    A value the code book cannot explain keeps its ``ok`` status and its value,
+    but its label stays null. Calling it ``no_data`` would say the cell was
+    empty, which is a different and false claim.
+
+    A null label only means "unexplained" on a ``categorical`` field, where
+    every valid code has a meaning -- that is the FR-09/FR-11 review signal. On
+    a ``numeric_sentinel`` field most values are ordinary amounts and carry no
+    label by design: Weekly Rent 04 is four shillings, not an unknown code.
+    """
+    value = normalise(raw)
+    field: dict[str, Any] = {
+        "value": value or None,
+        "code": None,
+        "label": None,
+        "status": "ok" if value else "no_data",
+        "confidence": None,  # no benchmarked engine produces one (NFR-01)
+    }
+    if source:
+        field["source"] = source
+    if not value:
+        return field
+
+    category = spec.code_book_category
+    if category and (category in CLOSED_CATEGORIES or category in SENTINEL_CODES):
+        field["code"] = value
+        field["label"] = decode(category, value)
+    return field
+
+
+# --- 4. the record ----------------------------------------------------------
+
+
+def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> str:
+    """Dwelling number alone repeats across municipalities, so identity is the
+    three of them together, zero padded: 27-0006-01."""
+    missing = [
+        name
+        for name, value in (
+            ("Municipality", municipality),
+            ("Number of Dwelling", dwelling_no),
+            ("Number of Household", household_no),
+        )
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"cannot build record_id without {', '.join(missing)}")
+    return f"{municipality:0>2}-{dwelling_no:0>4}-{household_no:0>2}"
+
+
+def build_record(
+    fields: dict[str, str],
+    *,
+    region: str,
+    batch: str | None = None,
+    image: str | None = None,
+    page: int | None = None,
+) -> dict[str, Any]:
+    """A record from one coding card's extracted fields.
+
+    ``fields`` is keyed by card label -- ``ExtractionResult.fields`` as it comes
+    off any Extractor. Keys the card does not have are ignored; fields the model
+    did not return are still emitted, as ``no_data``. A card is 62 fields either
+    way, so a dropped one is visible rather than absent.
+    """
+    groups: dict[str, dict[str, Any]] = {
+        "dwelling": {},
+        "household": {},
+        "house": {},
+        "head": {},
+        "counts": {},
+        "coding": {},
+    }
+    for label, (key, group) in FIELD_MAP.items():
+        spec = FIELD_SCHEMA_BY_NAME[label]
+        # Identity is what a value is traced back by, so it carries its source.
+        source = "coding-front" if group in ("dwelling", "household") else None
+        groups[group][key] = build_field(spec, fields.get(label), source=source)
+
+    record_id = build_record_id(
+        groups["dwelling"]["municipality"]["value"] or "",
+        groups["dwelling"]["dwelling_no"]["value"] or "",
+        groups["household"]["household_no"]["value"] or "",
+    )
+
+    household: dict[str, Any] = {
+        "record_id": record_id,
+        "household_no": groups["household"]["household_no"],
+        "head": groups["head"],
+        "counts": groups["counts"],
+        "coding": groups["coding"],
+        "cards": [
+            {
+                "role": "coding-front",
+                "image": image or "",
+                "page": page,
+                "confidence": None,
+            }
+        ]
+        if image
+        else [],
+    }
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "region": region,
+        "batch": batch,
+        "dwelling": {
+            "municipality": groups["dwelling"]["municipality"],
+            "dwelling_no": groups["dwelling"]["dwelling_no"],
+            "house": groups["house"],
+            "households": [household],
+        },
+    }

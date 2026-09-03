@@ -14,6 +14,8 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# src/ is not an installed package, so tests importing extraction.* need it on
+# the path. Without this the whole of src/extraction/ is untestable.
 pythonpath = ["src"]
 
 [dependency-groups]
