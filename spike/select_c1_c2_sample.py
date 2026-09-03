@@ -1,4 +1,4 @@
-"""Selects the C1/C2 benchmark cards and extracts them as PNGs.
+"""Selects the C1/C2 benchmark cards and extracts them as images.
 
 The IT-73 structure run already classified 843 pages into
 ``results/pages.jsonl``, so the sample is picked from that rather than by
@@ -24,6 +24,8 @@ same archive in, same cards out, on any machine.
 Usage:
     uv run python spike/select_c1_c2_sample.py
     uv run python spike/select_c1_c2_sample.py --c1 20 --c2 10
+    uv run python spike/select_c1_c2_sample.py \\
+        --format jpeg --out data/benchmark/c1c2-jpeg   # for Azure upload
 """
 
 from __future__ import annotations
@@ -116,8 +118,19 @@ def pick(rows: list[dict], count: int) -> list[dict]:
     return picked
 
 
-def extract_png(pdf_path: Path, page_number: int, out_path: Path) -> None:
-    """Write the page's largest embedded image as PNG.
+# PNG is lossless and right for the benchmark, but a card lands at ~5 MB and
+# Document Intelligence caps a *custom template* training set at 50 MB for
+# everything in the folder -- ten cards alone reach 49 MB. JPEG at this quality
+# is ~0.8 MB with no visible loss on pencil digits, and the scans are stored as
+# JPEG inside the source PDFs anyway. Custom neural's cap is 1 GB, so this only
+# matters for the template fallback.
+JPEG_QUALITY = 92
+
+
+def extract_image(
+    pdf_path: Path, page_number: int, out_path: Path, image_format: str = "png"
+) -> None:
+    """Write the page's largest embedded image.
 
     Uses pypdf's decoded ``page.images`` rather than copying the raw XObject
     stream: 7 units store pages as JPEG 2000 and 4 wrap the scan in a Form
@@ -130,7 +143,12 @@ def extract_png(pdf_path: Path, page_number: int, out_path: Path) -> None:
     if not images:
         raise ValueError(f"no image on page {page_number} of {pdf_path}")
     largest = max(images, key=lambda image: len(image.data))
-    Image.open(io.BytesIO(largest.data)).save(out_path)
+    image = Image.open(io.BytesIO(largest.data))
+    if image_format == "jpeg":
+        # JPEG has no alpha channel and some scans decode as RGBA/P
+        image.convert("RGB").save(out_path, "JPEG", quality=JPEG_QUALITY)
+    else:
+        image.save(out_path)
 
 
 def main() -> None:
@@ -139,6 +157,13 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--c1", type=int, default=20)
     parser.add_argument("--c2", type=int, default=10)
+    parser.add_argument(
+        "--format",
+        choices=("png", "jpeg"),
+        default="png",
+        help="png for the benchmark (lossless); jpeg to stay under Document "
+        "Intelligence's 50 MB custom-template training cap",
+    )
     args = parser.parse_args()
 
     rows = [json.loads(line) for line in args.pages.read_text().splitlines() if line]
@@ -156,8 +181,9 @@ def main() -> None:
         writer = csv.writer(file)
         writer.writerow(["page id", "unit", "pdf page", "card type"])
         for card_type, row in selected:
-            out_path = args.out / f"{row['card_id']}_{card_type}.png"
-            extract_png(Path(row["pdf"]), row["page_number"], out_path)
+            suffix = "jpg" if args.format == "jpeg" else "png"
+            out_path = args.out / f"{row['card_id']}_{card_type}.{suffix}"
+            extract_image(Path(row["pdf"]), row["page_number"], out_path, args.format)
             writer.writerow(
                 [row["card_id"], row["unit"], row["page_number"], card_type]
             )
