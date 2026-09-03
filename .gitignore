@@ -224,3 +224,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# IT-73 structure spike output — lives in Drive, not git
+results/
