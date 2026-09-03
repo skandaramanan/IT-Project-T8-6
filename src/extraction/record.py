@@ -7,7 +7,7 @@ that knows both vocabularies.
 
 The three choices it makes -- cleaning on the way in, what ``status`` means,
 and which group each field lands in -- are recorded in
-``docs/decisions/D010-card-to-record-mapping.md``.
+``docs/decisions/D011-card-to-record-mapping.md``.
 
 Three things happen here, in order:
 
