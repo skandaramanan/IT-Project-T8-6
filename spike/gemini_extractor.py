@@ -13,18 +13,27 @@ with no arguments:
     GEMINI_CONFIDENCE_BAND      1 to have the model self-report low/medium/high
                                 per field; off by default
 
-Default model is gemini-3.6-flash: it is Google's named replacement for
-gemini-2.5-flash, which ``models.list`` still advertises but which 404s for
-keys created after its retirement ("no longer available to new users"). Listing
-a model is not the same as being able to call it -- check by calling. Flash,
-not Pro, because Pro-class models left the free tier on 2026-04-01, and the
-$300 Google Cloud trial credit has excluded Gemini API usage since March 2026.
-gemini-3.7-flash is newer and same price but was returning 503 UNAVAILABLE
-("high demand") on every attempt as of 2026-09-02; retry it later.
+Default model is gemini-3.5-flash-lite, and the reason is throughput rather
+than accuracy. The free-tier daily cap is **per model, not per tier**: Flash is
+20 requests/day/key, Flash-Lite is 500. Across five team keys that is 100/day
+against 2,500/day -- so a single pass over ~6,500 cards is 65 days on Flash and
+2.6 days on Flash-Lite. Measured on the 30-card benchmark, Flash-Lite reads
+91.3% of coded fields against Flash's 93.7%, so 2.4 points buys the only
+configuration that can process the corpus at all. Set GEMINI_MODEL to override.
 
-Free tier is ~10-15 RPM and prompts may be used to improve Google's products --
-fine for 30 benchmark cards that are already in a shared Drive, not fine for
-the archive. Check your live numbers at https://aistudio.google.com/rate-limit.
+(The OCR spike's "-23 points" for Flash-Lite was a *batched* run, where it stops
+reading after ~3 cards and fabricates the rest. Single-card it is fine.)
+
+Pro-class models left the free tier on 2026-04-01 and the $300 Google Cloud
+trial credit has excluded Gemini API usage since March 2026, so Flash-class is
+the whole free menu. gemini-3.6-flash is the named replacement for
+gemini-2.5-flash, which ``models.list`` still advertises but which 404s for keys
+created after its retirement -- listing a model is not the same as being able to
+call it, so check by calling.
+
+Prompts may be used to improve Google's products -- fine for 30 benchmark cards
+already in a shared Drive, not fine for the archive. Check your live numbers at
+https://aistudio.google.com/rate-limit.
 
 Media resolution caps the tokens Gemini spends looking at the image, so it is
 the knob that decides whether the model sees these cards at all: ~2660x1715 of
@@ -81,7 +90,7 @@ from json_extraction import (
 from extraction.base import ExtractionResult
 from extraction.field_schema import build_extraction_prompt_schema
 
-DEFAULT_MODEL = "gemini-3.6-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 # USD per million tokens (input, output). Thought tokens bill at the output
 # rate. Only models we have actually priced go in here -- an unlisted model

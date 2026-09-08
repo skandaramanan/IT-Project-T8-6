@@ -1,22 +1,11 @@
-"""Runs one candidate extractor over a benchmark sheet and reports accuracy.
+"""Runs one candidate extractor over the benchmark sheet and reports accuracy.
 
-Defaults to the C1/C2 sheet -- 30 cards from 30 units, the forms that are 98%
-of the coding cards. Its images are produced once by
-``spike/select_c1_c2_sample.py``; this script never regenerates them.
+The C1/C2 sheet -- 30 cards from 30 units, the forms that are 98% of the coding
+cards. Its images are produced once by ``spike/select_c1_c2_sample.py``; this
+script never regenerates them.
 
 Usage:
     uv run python spike/run_benchmark.py --model qwen2.5-vl
-
-The older C3 set (20 cards, all from unit 216463) is still runnable, and is
-the only one that can rebuild its own images from the source PDF:
-
-    uv run python spike/run_benchmark.py --model qwen2.5-vl \\
-        --ground-truth "data/Wilfred_Prest_Survey_Data/1262761_1973-0002-00052-sample 20.xlsx" \\
-        --images data/benchmark/images \\
-        --pdf "data/Wilfred_Prest_Survey_Data/216463/1262761_1973-0002-00052.pdf"
-
---pdf is only needed the first time (or after the image cache is cleared):
-re-parsing a 182MB/492-page PDF on every candidate-model run would be waste.
 """
 
 from __future__ import annotations
@@ -33,7 +22,6 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
 
-from extract_benchmark_images import extract_benchmark_images
 from ground_truth import (
     DEFAULT_GROUND_TRUTH_XLSX,
     DEFAULT_IMAGES_DIR,
@@ -78,12 +66,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, choices=sorted(EXTRACTORS))
     parser.add_argument(
-        "--pdf",
-        type=Path,
-        default=None,
-        help="Source batch PDF -- only needed if data/benchmark/images/ isn't populated yet",
-    )
-    parser.add_argument(
         "--workers",
         type=int,
         default=5,
@@ -103,8 +85,7 @@ def main() -> None:
         "--ground-truth",
         type=Path,
         default=DEFAULT_GROUND_TRUTH_XLSX,
-        help="Benchmark sheet (default: C1/C2). Pass ground_truth.C3_GROUND_TRUTH_XLSX "
-        "with --images to run the older C3 set",
+        help="Benchmark sheet (default: the C1/C2 set)",
     )
     parser.add_argument("--images", type=Path, default=DEFAULT_IMAGES_DIR)
     parser.add_argument(
@@ -150,16 +131,10 @@ def main() -> None:
             raise SystemExit(f"No benchmark card with page id {sorted(unknown)}")
     missing = [card for card in cards if not card.image_path.exists()]
     if missing and not args.rescore:  # rescore never looks at the images
-        if args.pdf is None:
-            raise SystemExit(
-                f"{len(missing)}/{len(cards)} benchmark images aren't cached yet in "
-                f"{args.images} -- run spike/select_c1_c2_sample.py for the C1/C2 set, "
-                "or pass --pdf for the C3 set (see this script's docstring)"
-            )
-        # C3 only: it indexes one batch PDF by page number. C1/C2 cards come
-        # from 30 different unit PDFs, which is select_c1_c2_sample.py's job.
-        print(f"Extracting {len(missing)} missing benchmark images from {args.pdf}...")
-        extract_benchmark_images(args.pdf, args.ground_truth, args.images)
+        raise SystemExit(
+            f"{len(missing)}/{len(cards)} benchmark images aren't cached yet in "
+            f"{args.images} -- run spike/select_c1_c2_sample.py to rebuild them"
+        )
 
     results_dir = args.results_root / extractor.name
     raw_dir = results_dir / "raw"
