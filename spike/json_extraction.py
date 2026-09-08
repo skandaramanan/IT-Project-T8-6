@@ -26,6 +26,50 @@ EXTRACTION_PROMPT = (
     + _SCHEMA_BLOCK
 )
 
+# The bands a model may self-report against a value. Categorical rather than a
+# percentage, per Standup #7: raw LLM confidence numbers were judged too
+# unreliable to drive an automated accept/reject, while a three-way banding is
+# coarse enough to be meaningful and is what the review queue routes on.
+CONFIDENCE_BANDS = ("low", "medium", "high")
+
+# An opt-in variant of the prompt above, asking the model to say how sure it is
+# of each value. Deliberately a second prompt rather than an edit to the first:
+# changing EXTRACTION_PROMPT in place would make every previously saved raw
+# response incomparable with new ones, and put D012's ~95% figure in doubt with
+# no way to check it short of re-running everything. Keeping both means IT-100
+# can measure whether asking for a band *costs* accuracy, which is a finding in
+# its own right rather than an assumption.
+BANDED_EXTRACTION_PROMPT = (
+    "This is a numeric coding card from a 1941-43 social survey. Extract the "
+    f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
+    "object with exactly these keys (no markdown fences, no commentary).\n\n"
+    'The value for each key is an object: {"value": <the code>, "confidence": '
+    '<"low"|"medium"|"high">}.\n\n'
+    "Give every code as a JSON string, copied exactly as written, keeping any "
+    'leading zeros ("04", not 4). Use null as the value where no code is '
+    "written.\n\n"
+    'Judge confidence on how clearly you can read that cell: "high" if the '
+    'digits are unambiguous, "medium" if you had to choose between plausible '
+    'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
+    "Say low when it is low -- a wrong value marked high is worse than an "
+    "honest one marked low, because a reviewer will never look at it.\n\n"
+    + _SCHEMA_BLOCK
+)
+
+
+def _unwrap(value) -> tuple[object, str | None]:
+    """Split a banded ``{"value": ..., "confidence": ...}`` into its two halves.
+
+    Tolerates the flat shape too, so one parser reads both prompts' output and
+    nothing downstream has to know which prompt produced a given raw file --
+    including a raw/ directory copied in from another machine.
+    """
+    if isinstance(value, dict) and "value" in value:
+        band = value.get("confidence")
+        band = band.lower() if isinstance(band, str) else None
+        return value["value"], band if band in CONFIDENCE_BANDS else None
+    return value, None
+
 
 def _coerce_field(value) -> str:
     """Ground truth is stringly-typed; models emit JSON natives. null means the
@@ -103,10 +147,13 @@ def _repair_truncated_object(candidate: str) -> dict | None:
     return None
 
 
-def parse_json_fields(text: str | None) -> dict[str, str] | None:
-    """Models routinely wrap JSON in ```json fences or add a sentence before/after
+def _parse_object(text: str | None) -> dict | None:
+    """The response's JSON object, however the model wrapped it.
+
+    Models routinely wrap JSON in ```json fences or add a sentence before/after
     despite being told not to -- pull out the first {...} block rather than
-    requiring the whole response to be clean JSON."""
+    requiring the whole response to be clean JSON.
+    """
     if not text:
         return None
     match = re.search(r"\{.*\}", text, re.DOTALL) or re.search(r"\{.*", text, re.DOTALL)
@@ -116,11 +163,15 @@ def parse_json_fields(text: str | None) -> dict[str, str] | None:
         parsed = json.loads(match.group(0))
     except json.JSONDecodeError:
         parsed = _repair_truncated_object(match.group(0))
-        if parsed is None:
-            return None
-    if not isinstance(parsed, dict):
+    return parsed if isinstance(parsed, dict) else None
+
+
+def parse_json_fields(text: str | None) -> dict[str, str] | None:
+    """The card's values, from either prompt's output."""
+    parsed = _parse_object(text)
+    if parsed is None:
         return None
-    fields = {str(k): _coerce_field(v) for k, v in parsed.items()}
+    fields = {str(k): _coerce_field(_unwrap(v)[0]) for k, v in parsed.items()}
     # A response sharing no key with the schema is not a partial answer, it is a
     # different answer -- models sometimes emit a placeholder like
     # {"A": null, ..., "E": null}. That parses cleanly and every schema field
@@ -129,3 +180,21 @@ def parse_json_fields(text: str | None) -> dict[str, str] | None:
     if not any(name in FIELD_SCHEMA_BY_NAME for name in fields):
         return None
     return fields
+
+
+def parse_confidence_bands(text: str | None) -> dict[str, str]:
+    """The model's self-reported confidence per field, where it gave one.
+
+    Empty for output of the unbanded prompt, and empty for any field the model
+    answered flatly or banded with something outside CONFIDENCE_BANDS -- a
+    made-up band is not a band. Absence has to stay distinguishable from "low",
+    since one means the model was not asked and the other means it was and said
+    it could not read the cell.
+    """
+    parsed = _parse_object(text) or {}
+    bands = {}
+    for name, value in parsed.items():
+        band = _unwrap(value)[1]
+        if band is not None:
+            bands[str(name)] = band
+    return bands
