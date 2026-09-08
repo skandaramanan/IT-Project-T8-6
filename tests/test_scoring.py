@@ -95,3 +95,73 @@ def test_void_mark_wins_over_lookalike_folding():
     score = score_structured(card, {"a": "B.", "b": "L"})
     assert score.correct_fields == 2
     assert (score.correct_coded_fields, score.coded_fields) == (1, 1)
+
+
+# --- agreement between two extractors (IT-98 AC2) ---------------------------
+# Same comparison the scorer uses, so a pair of readings can never count as
+# agreeing while scoring as a mismatch.
+
+import pytest
+from scoring import agrees
+
+
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        ("56", "56"),  # the easy case
+        ("1", "1."),  # leader dots read as part of the number
+        ("15", "1.5."),
+        ("0", "O"),  # handwritten 0 comes back as a letter
+        ("0", "Q"),
+        ("1", "!"),
+        ("1", "L"),
+        ("", "-"),  # the transcriber's blank vs their dash
+        ("-", "B"),  # ... vs the coder's void mark on the card
+        ("B", "BBB"),
+        (None, ""),  # a model omitting the key vs returning it empty
+        (None, "-"),
+        (" 3 ", "3"),  # surrounding whitespace
+    ],
+)
+def test_noise_only_differences_agree(first, second):
+    assert agrees(first, second)
+    assert agrees(second, first)  # order can't matter
+
+
+@pytest.mark.parametrize("first, second", [("04", "4"), ("4", "04"), ("060", "60")])
+def test_leading_zero_is_a_real_disagreement(first, second):
+    """IT-98's AC2 originally asked for these to agree. Dropped: under a
+    fixed-width code book they are different codes, so one model has misread a
+    real value. Papering over it would hide the disagreement a reviewer needs
+    (D011, and test_leading_zero_is_not_the_same_code above)."""
+    assert not agrees(first, second)
+
+
+@pytest.mark.parametrize("first, second", [("3", "8"), ("0", "8"), ("1", "7")])
+def test_different_codes_disagree(first, second):
+    assert not agrees(first, second)
+
+
+def test_a_value_never_agrees_with_no_value():
+    """The case that would silently inflate every confidence score downstream:
+    one model read a code, the other read nothing. That is a disagreement, not
+    a match."""
+    for blank in ("", "-", "B", None):
+        assert not agrees("3", blank)
+        assert not agrees(blank, "3")
+
+
+def test_agreement_matches_the_scorer():
+    """agrees() and score_structured() must never disagree about equality --
+    two definitions of "same value" is the bug this shares one function to
+    avoid."""
+    pairs = [("04", "4"), ("1", "1."), ("0", "O"), ("-", "B"), ("3", "8"), ("56", "56")]
+    card = BenchmarkCard(
+        page_id="8",
+        source_page=8,
+        image_path=None,
+        fields={f"f{i}": expected for i, (expected, _) in enumerate(pairs)},
+    )
+    score = score_structured(card, {f"f{i}": got for i, (_, got) in enumerate(pairs)})
+    scored_ok = {f"f{i}" for i in range(len(pairs))} - {m[0] for m in score.mismatches}
+    assert scored_ok == {f"f{i}" for i, (a, b) in enumerate(pairs) if agrees(a, b)}
