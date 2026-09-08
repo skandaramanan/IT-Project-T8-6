@@ -97,8 +97,8 @@ def main() -> None:
 
     client = genai.Client()
     os.environ["GEMINI_MODEL"] = args.model
+    os.environ.pop("GEMINI_CONFIDENCE_BAND", None)  # keep the probe unbanded
     extractor = GeminiExtractor()
-
     raw_dir = Path("data/benchmark/results") / args.model / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
