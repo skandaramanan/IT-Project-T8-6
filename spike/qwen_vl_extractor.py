@@ -6,12 +6,18 @@ JSON scores as an empty ``fields`` dict; ``raw_text`` still carries what the
 model actually said, for debugging.
 
 Needs a real GPU -- not meant to run on this laptop. torch/transformers/
-qwen_vl_utils aren't resolved into uv.lock from here (disk-constrained
-machine, wrong target anyway); add them and re-run `uv lock` on the machine
-that'll actually run this. As of the model's HF card, Qwen2_5_VLForCondition-
-alGeneration may need transformers installed from source rather than the
-latest PyPI release -- check before assuming a plain `uv add transformers`
-is enough.
+bitsandbytes/accelerate/qwen_vl_utils aren't resolved into uv.lock: locking a
+CUDA stack across three platforms for the one machine that runs it costs more
+than it buys, so they are installed on that machine instead. See
+spike/colab_qwen_arm.ipynb, which does exactly that on a free Colab T4. As of
+the model's HF card, Qwen2_5_VLForConditionalGeneration may need transformers
+installed from source rather than the latest PyPI release -- check before
+assuming a plain `pip install transformers` is enough.
+
+Loaded 4-bit: the 7B weights are ~15GB at full precision, past a 12GB card and
+level with a 16GB one before activations. Compute dtype follows the hardware --
+bf16 needs compute capability 8.0, so an Ampere card gets it and a Turing T4,
+which is what Colab's free tier hands out, gets fp16.
 """
 
 from __future__ import annotations
@@ -24,6 +30,10 @@ from extraction.base import ExtractionResult
 
 MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
 
+# Qwen counts image tokens in 28x28 units. The scans are ~9MP; uncapped, the
+# vision encoder tried to allocate ~19GB of attention and OOM'd every card.
+MAX_PIXELS = 1280 * 28 * 28
+
 
 class QwenVLExtractor:
     name = "qwen2.5-vl"
@@ -34,6 +44,7 @@ class QwenVLExtractor:
 
     def is_available(self) -> bool:
         try:
+            import bitsandbytes  # noqa: F401
             import qwen_vl_utils  # noqa: F401
             import torch  # noqa: F401
             import transformers  # noqa: F401
@@ -43,12 +54,26 @@ class QwenVLExtractor:
 
     def _load(self):
         if self._model is None:
-            from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+            import torch
+            from transformers import (
+                AutoProcessor,
+                BitsAndBytesConfig,
+                Qwen2_5_VLForConditionalGeneration,
+            )
 
             self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                MODEL_ID, torch_dtype="auto", device_map="auto"
+                MODEL_ID,
+                quantization_config=BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16
+                    if torch.cuda.is_bf16_supported()
+                    else torch.float16,
+                ),
+                device_map="auto",
             )
-            self._processor = AutoProcessor.from_pretrained(MODEL_ID)
+            self._processor = AutoProcessor.from_pretrained(
+                MODEL_ID, max_pixels=MAX_PIXELS
+            )
         return self._model, self._processor
 
     def extract(self, image_path: Path) -> ExtractionResult:
