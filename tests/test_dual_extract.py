@@ -15,9 +15,6 @@ from pathlib import Path
 import pytest
 from dual_extract import (
     AGREE,
-    ARM_NO_OUTPUT,
-    ARM_OK,
-    ARM_UNPARSEABLE,
     BOTH_BLANK,
     DISAGREE,
     NO_SECOND_OPINION,
@@ -127,13 +124,15 @@ def _write(root, model, page_id, payload):
     )
 
 
-def test_load_arm_reports_why_a_card_has_no_reading(tmp_path):
+def test_load_arm_distinguishes_an_unusable_answer_from_no_answer(tmp_path):
+    """A model that answered unusably is None; a card never answered is absent.
+    Both pair as no_second_opinion, but only one is worth re-requesting."""
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
     _write(tmp_path, "a", "p2", "the model apologised instead of answering")
-    fields, statuses, _ = load_arm(tmp_path, "a")
+    fields, _ = load_arm(tmp_path, "a")
     assert fields["p1"] == {"Municipality": "56"}
-    assert statuses == {"p1": ARM_OK, "p2": ARM_UNPARSEABLE}
     assert fields["p2"] is None
+    assert "p3" not in fields
 
 
 def test_pair_cards_takes_the_union_not_the_intersection(tmp_path):
@@ -147,8 +146,7 @@ def test_pair_cards_takes_the_union_not_the_intersection(tmp_path):
     assert set(records) == {"p1", "p2"}
     assert records["p1"]["fields"]["Municipality"]["agreement"] == AGREE
     assert records["p2"]["fields"]["Municipality"]["agreement"] == NO_SECOND_OPINION
-    assert records["p2"]["arms"]["b"]["status"] == ARM_NO_OUTPUT
-    assert records["p2"]["arms"]["a"]["status"] == ARM_OK
+    assert records["p2"]["models"] == {"a": "a", "b": "b"}
 
 
 def test_counts_add_up_to_the_field_count(tmp_path):
@@ -177,7 +175,7 @@ def test_missing_pages_is_everything_when_the_arm_never_ran(tmp_path):
 def test_fetch_command_limits_the_run_to_the_missing_cards():
     """A wrong flag here fails silently as a full re-run, which on a 20/day cap
     is a day of quota."""
-    command = fetch_command("gemini", ["p2", "p4"], Path("gt.xlsx"), Path("imgs"), 5)
+    command = fetch_command("gemini", ["p2", "p4"], Path("gt.xlsx"), Path("imgs"))
     assert command[1].endswith("run_benchmark.py")
     assert command[command.index("--model") + 1] == "gemini"
     assert command[command.index("--ground-truth") + 1] == "gt.xlsx"
@@ -201,8 +199,6 @@ def test_a_card_both_arms_failed_is_reported_not_dropped(tmp_path):
     }
     assert set(listed) == {"p1", "p9"}
     assert listed["p9"]["counts"] == {NO_SECOND_OPINION: len(FIELDS)}
-    assert listed["p9"]["arms"]["a"]["status"] == ARM_NO_OUTPUT
-    assert listed["p9"]["arms"]["b"]["status"] == ARM_NO_OUTPUT
 
 
 # --- self-reported confidence bands (step 5) --------------------------------
@@ -221,8 +217,7 @@ def test_banded_output_still_yields_plain_values(tmp_path):
     """A banded raw file has to read back like any other, or --rescore, scoring
     and every existing extractor path break on it."""
     _write(tmp_path, "a", "p1", BANDED)
-    fields, statuses, _ = load_arm(tmp_path, "a")
-    assert statuses["p1"] == ARM_OK
+    fields, _ = load_arm(tmp_path, "a")
     assert fields["p1"]["Municipality"] == "56"
     assert fields["p1"]["Weekly Rent"] == "04"  # leading zero survives the unwrap
     assert fields["p1"]["Garden"] == ""
@@ -243,7 +238,7 @@ def test_an_unasked_model_has_no_bands_not_low_ones(tmp_path):
     could not read it. Defaulting one to the other would route the whole
     unbanded corpus into review."""
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
-    _, _, bands = load_arm(tmp_path, "a")
+    _, bands = load_arm(tmp_path, "a")
     assert bands["p1"] == {}
     record = pair_cards("a", "a", tmp_path, FIELDS)[0]
     assert "a_band" not in record["fields"]["Municipality"]
@@ -262,9 +257,9 @@ def test_an_empty_raw_file_is_not_a_saved_reading(tmp_path):
     (raw / "p2.txt").write_text(json.dumps({"Municipality": "56"}))
 
     assert missing_pages(tmp_path, "a", ["p1", "p2"]) == ["p1"]
-    fields, statuses, _ = load_arm(tmp_path, "a")
-    assert "p1" not in fields  # no answer, so no reading -- not "unparseable"
-    assert statuses == {"p2": ARM_OK}
+    fields, _ = load_arm(tmp_path, "a")
+    assert "p1" not in fields  # no answer at all, not an unusable one
+    assert set(fields) == {"p2"}
 
 
 def test_fetch_command_forwards_the_results_root():
@@ -272,6 +267,32 @@ def test_fetch_command_forwards_the_results_root():
     pairing reads a custom one, so every card reports no_second_opinion and each
     re-run re-buys all 30 against a 20/day cap."""
     command = fetch_command(
-        "gemini", ["p1"], Path("gt.xlsx"), Path("imgs"), 5, Path("/tmp/elsewhere")
+        "gemini", ["p1"], Path("gt.xlsx"), Path("imgs"), Path("/tmp/elsewhere")
     )
     assert command[command.index("--results-root") + 1] == "/tmp/elsewhere"
+
+
+def test_classify_never_disagrees_with_the_scorer():
+    """One definition of "the same value". Two would let a pair count as
+    agreeing here while scoring as a mismatch there, which is the bug sharing
+    scoring.normalise exists to prevent."""
+    from ground_truth import BenchmarkCard
+    from scoring import score_structured
+
+    pairs = [("04", "4"), ("1", "1."), ("0", "O"), ("-", "B"), ("3", "8"), ("56", "56")]
+    card = BenchmarkCard(
+        page_id="x",
+        source_page=1,
+        image_path=None,
+        fields={f"f{i}": want for i, (want, _) in enumerate(pairs)},
+    )
+    score = score_structured(card, {f"f{i}": got for i, (_, got) in enumerate(pairs)})
+    scored_equal = {f"f{i}" for i in range(len(pairs))} - {
+        m[0] for m in score.mismatches
+    }
+    classified_equal = {
+        f"f{i}"
+        for i, (a, b) in enumerate(pairs)
+        if classify(a, b) in (AGREE, BOTH_BLANK)
+    }
+    assert scored_equal == classified_equal

@@ -53,7 +53,7 @@ from ground_truth import (
 )
 from json_extraction import parse_confidence_bands, parse_json_fields
 from run_benchmark import DEFAULT_RESULTS_ROOT, EXTRACTORS, load_extractor
-from scoring import agrees, normalise
+from scoring import normalise
 
 from extraction.field_schema import FIELD_SCHEMA
 
@@ -75,15 +75,6 @@ ONE_BLANK = "one_blank"
 BOTH_BLANK = "both_blank"
 NO_SECOND_OPINION = "no_second_opinion"
 
-# Per-arm outcomes for one card. "unparseable" is kept apart from "no_output"
-# because they fail for different reasons -- a missing file means the request
-# failed or was never made, a present-but-unparseable one means the model
-# answered and the answer was not usable. Both yield NO_SECOND_OPINION, but
-# only one of them is worth re-running.
-ARM_OK = "ok"
-ARM_NO_OUTPUT = "no_output"
-ARM_UNPARSEABLE = "unparseable"
-
 
 def classify(first: str | None, second: str | None) -> str:
     """The agreement class for one field, given both arms' readings.
@@ -93,12 +84,12 @@ def classify(first: str | None, second: str | None) -> str:
     ``scoring.normalise``. Leading zeros are **not** collapsed: `04` and `4` are
     different codes, so a split there is a real disagreement (IT-98 AC2b).
     """
-    first_blank, second_blank = not normalise(first), not normalise(second)
-    if first_blank and second_blank:
+    a, b = normalise(first), normalise(second)
+    if not a and not b:
         return BOTH_BLANK
-    if first_blank or second_blank:
+    if not a or not b:
         return ONE_BLANK
-    return AGREE if agrees(first, second) else DISAGREE
+    return AGREE if a == b else DISAGREE
 
 
 def compare_fields(
@@ -146,9 +137,9 @@ def compare_fields(
 
 def load_arm(
     results_root: Path, model: str
-) -> tuple[dict[str, dict[str, str] | None], dict[str, str], dict[str, dict[str, str]]]:
-    """Every saved reading for one model, keyed by page id: values, why each
-    card failed, and any self-reported confidence bands.
+) -> tuple[dict[str, dict[str, str] | None], dict[str, dict[str, str]]]:
+    """Every saved reading for one model, keyed by page id, and any
+    self-reported confidence bands.
 
     Reads what ``run_benchmark.py`` already wrote. A card whose request failed
     has no raw file at all -- the runner prints FAILED and continues without
@@ -159,18 +150,15 @@ def load_arm(
     """
     raw_dir = results_root / model / "raw"
     fields: dict[str, dict[str, str] | None] = {}
-    statuses: dict[str, str] = {}
     bands: dict[str, dict[str, str]] = {}
     for path in sorted(raw_dir.glob("*.txt")):
         page_id = path.stem
         if not _has_reading(raw_dir, page_id):
             continue  # empty file: no answer, so no reading -- see _has_reading
         text = path.read_text()
-        parsed = parse_json_fields(text)
-        fields[page_id] = parsed
-        statuses[page_id] = ARM_OK if parsed is not None else ARM_UNPARSEABLE
+        fields[page_id] = parse_json_fields(text)
         bands[page_id] = parse_confidence_bands(text)
-    return fields, statuses, bands
+    return fields, bands
 
 
 def _has_reading(raw_dir: Path, page_id: str) -> bool:
@@ -203,7 +191,6 @@ def fetch_command(
     page_ids: list[str],
     ground_truth: Path,
     images: Path,
-    workers: int,
     results_root: Path = DEFAULT_RESULTS_ROOT,
 ) -> list[str]:
     """The ``run_benchmark.py`` invocation that fills in this arm's missing cards.
@@ -226,8 +213,6 @@ def fetch_command(
         str(ground_truth),
         "--images",
         str(images),
-        "--workers",
-        str(workers),
         "--results-root",
         str(results_root),
         "--pages",
@@ -255,8 +240,8 @@ def pair_cards(
     marked as having no second opinion; intersecting would make a half-failed
     run look clean.
     """
-    first_fields, first_status, first_bands = load_arm(results_root, first_model)
-    second_fields, second_status, second_bands = load_arm(results_root, second_model)
+    first_fields, first_bands = load_arm(results_root, first_model)
+    second_fields, second_bands = load_arm(results_root, second_model)
     wanted = (
         sorted(set(page_ids))
         if page_ids
@@ -277,16 +262,7 @@ def pair_cards(
         records.append(
             {
                 "page_id": page_id,
-                "arms": {
-                    "a": {
-                        "model": first_model,
-                        "status": first_status.get(page_id, ARM_NO_OUTPUT),
-                    },
-                    "b": {
-                        "model": second_model,
-                        "status": second_status.get(page_id, ARM_NO_OUTPUT),
-                    },
-                },
+                "models": {"a": first_model, "b": second_model},
                 "counts": dict(
                     Counter(field["agreement"] for field in paired.values())
                 ),
@@ -341,7 +317,6 @@ def main() -> None:
     )
     parser.add_argument("--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH_XLSX)
     parser.add_argument("--images", type=Path, default=DEFAULT_IMAGES_DIR)
-    parser.add_argument("--workers", type=int, default=5)
     parser.add_argument(
         "--no-fetch",
         action="store_true",
@@ -414,7 +389,7 @@ def _fetch_missing(key: str, model: str, page_ids: list[str], args) -> None:
 
     print(f"{model}: extracting {len(missing)} of {len(page_ids)} cards...")
     command = fetch_command(
-        key, missing, args.ground_truth, args.images, args.workers, args.results_root
+        key, missing, args.ground_truth, args.images, args.results_root
     )
     if subprocess.run(command, check=False).returncode:
         print(
