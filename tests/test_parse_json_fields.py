@@ -22,3 +22,33 @@ def test_fenced_and_truncated_output_still_parses():
     assert fenced == {"Municipality": "56"}
     truncated = parse_json_fields('{"Municipality": "56", "No. of Dwelling": "8')
     assert truncated == {"Municipality": "56"}
+
+
+def test_banded_shape_unwraps_to_the_same_fields():
+    """The banded prompt nests each value; everything downstream still expects
+    a flat {field: value}, so one parser has to read both shapes."""
+    banded = parse_json_fields(
+        '{"Municipality": {"value": "56", "confidence": "high"},'
+        ' "Weekly Rent": {"value": "04", "confidence": "low"}}'
+    )
+    assert banded == {"Municipality": "56", "Weekly Rent": "04"}
+
+
+def test_bands_are_read_back_only_where_reported():
+    from json_extraction import parse_confidence_bands
+
+    bands = parse_confidence_bands(
+        '{"Municipality": {"value": "56", "confidence": "HIGH"},'
+        ' "Weekly Rent": {"value": "04", "confidence": "not a band"},'
+        ' "Garden": "3"}'
+    )
+    # case-folded; an invented band and a flat value both report nothing rather
+    # than a made-up default
+    assert bands == {"Municipality": "high"}
+
+
+def test_unbanded_output_reports_no_bands():
+    from json_extraction import parse_confidence_bands
+
+    assert parse_confidence_bands('{"Municipality": "56"}') == {}
+    assert parse_confidence_bands(None) == {}

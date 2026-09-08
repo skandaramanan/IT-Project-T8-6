@@ -4,12 +4,14 @@ Unlike Azure Document Intelligence this needs no training step -- it takes the
 same ``EXTRACTION_PROMPT`` every VLM candidate gets, so its number is directly
 comparable to ox-alpha's rather than to a model fitted on six labelled cards.
 
-Three knobs, all env vars because ``run_benchmark.py`` constructs extractors
+Four knobs, all env vars because ``run_benchmark.py`` constructs extractors
 with no arguments:
 
     GEMINI_API_KEY              from https://aistudio.google.com/apikey
     GEMINI_MODEL                default gemini-3.6-flash
     GEMINI_MEDIA_RESOLUTION     low | medium | high; unset = the model's default
+    GEMINI_CONFIDENCE_BAND      1 to have the model self-report low/medium/high
+                                per field; off by default
 
 Default model is gemini-3.6-flash: it is Google's named replacement for
 gemini-2.5-flash, which ``models.list`` still advertises but which 404s for
@@ -37,12 +39,28 @@ MediaResolution enum: passing it warns and falls through to the API.
 FR-10: this engine returns ``confidence=None``. Gemini's ``response_logprobs``
 is not reliably enabled past 2.0 -- Gemini 3 rejects it outright ("Logprobs is
 not supported for this model") and 2.5 Flash has been observed returning
-"Logprobs is not enabled for models/gemini-2.5-flash". The two ways to get a
-per-field score out of it anyway -- asking the model to self-report one
-alongside each value, or sampling each card N times and using per-field
-agreement -- both change the prompt or the cost model, so neither is done
-here. They are worth building only if the accuracy number makes Gemini a real
-candidate.
+"Logprobs is not enabled for models/gemini-2.5-flash". Two ways round that were
+noted here as worth building only once the accuracy number made Gemini a real
+candidate: asking the model to self-report a band alongside each value, or
+sampling each card N times and using per-field agreement.
+
+D012 made it the candidate, so the first is now built, behind
+``GEMINI_CONFIDENCE_BAND``. It is off by default because it is a **different
+prompt** and therefore a different experiment: turning it on changes what the
+model is asked and could move its accuracy either way, and every raw response
+saved under the plain prompt would stop being comparable. Banded runs file
+themselves under ``<model>-banded`` so both sit side by side and IT-100 can
+report what the band costs.
+
+``confidence`` on ``ExtractionResult`` stays None even when banded. The band is
+a **category**, not a number, and turning "high" into 0.9 is IT-99's decision,
+not this adapter's -- writing a number here would quietly pre-empt it. The band
+survives in ``raw_text`` instead, which is preserved verbatim and travels with
+the raw/ directory; ``json_extraction.parse_confidence_bands`` reads it back.
+
+The batched path is unbanded: ``batch_prompt`` asks for the flat shape. Batching
+and banding have never been measured together and stacking two untested prompt
+changes would confound both.
 """
 
 from __future__ import annotations
@@ -53,7 +71,11 @@ import os
 import time
 from pathlib import Path
 
-from json_extraction import EXTRACTION_PROMPT, parse_json_fields
+from json_extraction import (
+    BANDED_EXTRACTION_PROMPT,
+    EXTRACTION_PROMPT,
+    parse_json_fields,
+)
 
 from extraction.base import ExtractionResult
 from extraction.field_schema import build_extraction_prompt_schema
@@ -144,7 +166,23 @@ class GeminiExtractor:
         # overwrites 3.6-flash's saved output and its results.csv -- and on a
         # 20-request daily cap, output you overwrote is output you cannot
         # cheaply get back.
-        self.name = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+        # Two names, and conflating them is the bug this splits apart: model_id
+        # is what the API is called with, name is what results are filed under.
+        self.model_id = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+        self.name = self.model_id
+        # GEMINI_CONFIDENCE_BAND asks the model to say how sure it is of each
+        # value (see json_extraction.BANDED_EXTRACTION_PROMPT). It is a
+        # different prompt, so it is a different run: the name carries the
+        # suffix for the same reason it carries the model id, and results from
+        # the two prompts stay side by side instead of one overwriting the
+        # other. Comparing them is how we learn what the band costs.
+        self.banded = os.environ.get("GEMINI_CONFIDENCE_BAND", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if self.banded:
+            self.name += "-banded"
 
     def is_available(self) -> bool:
         try:
@@ -194,7 +232,7 @@ class GeminiExtractor:
         client = genai.Client()
         response = _call_with_retry(
             lambda: client.models.generate_content(
-                model=self.name, contents=contents, config=self._config()
+                model=self.model_id, contents=contents, config=self._config()
             )
         )
         raw = response.text or ""
@@ -203,7 +241,7 @@ class GeminiExtractor:
         except (ValueError, json.JSONDecodeError):
             outer = {}
 
-        share = _cost_usd(self.name, response.usage_metadata)
+        share = _cost_usd(self.model_id, response.usage_metadata)
         results = []
         for index in range(1, len(image_paths) + 1):
             card = outer.get(str(index))
@@ -223,8 +261,9 @@ class GeminiExtractor:
     def extract(self, image_path: Path) -> ExtractionResult:
         from google import genai
 
-        model = self.name
-        contents = [self._part(image_path), EXTRACTION_PROMPT]
+        model = self.model_id
+        prompt = BANDED_EXTRACTION_PROMPT if self.banded else EXTRACTION_PROMPT
+        contents = [self._part(image_path), prompt]
         config = self._config()
 
         client = genai.Client()  # reads GEMINI_API_KEY

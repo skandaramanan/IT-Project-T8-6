@@ -51,7 +51,7 @@ from ground_truth import (
     DEFAULT_IMAGES_DIR,
     load_ground_truth,
 )
-from json_extraction import parse_json_fields
+from json_extraction import parse_confidence_bands, parse_json_fields
 from scoring import agrees, normalise
 
 from extraction.field_schema import FIELD_SCHEMA
@@ -106,6 +106,8 @@ def compare_fields(
     first: dict[str, str] | None,
     second: dict[str, str] | None,
     field_names: list[str] | None = None,
+    first_bands: dict[str, str] | None = None,
+    second_bands: dict[str, str] | None = None,
 ) -> dict[str, dict[str, str | None]]:
     """One card's fields, paired.
 
@@ -113,6 +115,10 @@ def compare_fields(
     not the same as producing blanks -- every field then reads
     NO_SECOND_OPINION rather than BOTH_BLANK, so a failed run cannot be mistaken
     for two models agreeing that the card is empty.
+
+    A band key appears only where the model actually reported one. Absent is not
+    "low": one means the model was never asked, the other means it was and said
+    it could not read the cell, and IT-99 has to be able to tell them apart.
     """
     names = SCHEMA_FIELD_NAMES if field_names is None else field_names
     missing_arm = first is None or second is None
@@ -120,7 +126,7 @@ def compare_fields(
     for name in names:
         first_raw = None if first is None else first.get(name)
         second_raw = None if second is None else second.get(name)
-        paired[name] = {
+        field: dict[str, str | None] = {
             "a": normalise(first_raw),
             "b": normalise(second_raw),
             # What each model literally said. The raw/*.txt files hold the whole
@@ -132,27 +138,38 @@ def compare_fields(
             if missing_arm
             else classify(first_raw, second_raw),
         }
+        for key, bands in (("a_band", first_bands), ("b_band", second_bands)):
+            if bands and name in bands:
+                field[key] = bands[name]
+        paired[name] = field
     return paired
 
 
 def load_arm(
     results_root: Path, model: str
-) -> tuple[dict[str, dict[str, str] | None], dict[str, str]]:
-    """Every saved reading for one model, keyed by page id, plus why each failed.
+) -> tuple[dict[str, dict[str, str] | None], dict[str, str], dict[str, dict[str, str]]]:
+    """Every saved reading for one model, keyed by page id: values, why each
+    card failed, and any self-reported confidence bands.
 
     Reads what ``run_benchmark.py`` already wrote. A card whose request failed
     has no raw file at all -- the runner prints FAILED and continues without
     writing one -- so absence here is the AC3 signal, not an error.
+
+    Bands come back empty for a model that was never asked for them, which is
+    the normal case; a raw/ directory does not have to say which prompt made it.
     """
     raw_dir = results_root / model / "raw"
     fields: dict[str, dict[str, str] | None] = {}
     statuses: dict[str, str] = {}
+    bands: dict[str, dict[str, str]] = {}
     for path in sorted(raw_dir.glob("*.txt")):
         page_id = path.stem
-        parsed = parse_json_fields(path.read_text())
+        text = path.read_text()
+        parsed = parse_json_fields(text)
         fields[page_id] = parsed
         statuses[page_id] = ARM_OK if parsed is not None else ARM_UNPARSEABLE
-    return fields, statuses
+        bands[page_id] = parse_confidence_bands(text)
+    return fields, statuses, bands
 
 
 def missing_pages(results_root: Path, model: str, page_ids: list[str]) -> list[str]:
@@ -223,8 +240,8 @@ def pair_cards(
     marked as having no second opinion; intersecting would make a half-failed
     run look clean.
     """
-    first_fields, first_status = load_arm(results_root, first_model)
-    second_fields, second_status = load_arm(results_root, second_model)
+    first_fields, first_status, first_bands = load_arm(results_root, first_model)
+    second_fields, second_status, second_bands = load_arm(results_root, second_model)
     wanted = (
         sorted(set(page_ids))
         if page_ids
@@ -235,7 +252,13 @@ def pair_cards(
     for page_id in wanted:
         first = first_fields.get(page_id)
         second = second_fields.get(page_id)
-        paired = compare_fields(first, second, field_names)
+        paired = compare_fields(
+            first,
+            second,
+            field_names,
+            first_bands.get(page_id),
+            second_bands.get(page_id),
+        )
         records.append(
             {
                 "page_id": page_id,

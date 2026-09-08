@@ -130,7 +130,7 @@ def _write(root, model, page_id, payload):
 def test_load_arm_reports_why_a_card_has_no_reading(tmp_path):
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
     _write(tmp_path, "a", "p2", "the model apologised instead of answering")
-    fields, statuses = load_arm(tmp_path, "a")
+    fields, statuses, _ = load_arm(tmp_path, "a")
     assert fields["p1"] == {"Municipality": "56"}
     assert statuses == {"p1": ARM_OK, "p2": ARM_UNPARSEABLE}
     assert fields["p2"] is None
@@ -203,3 +203,47 @@ def test_a_card_both_arms_failed_is_reported_not_dropped(tmp_path):
     assert listed["p9"]["counts"] == {NO_SECOND_OPINION: len(FIELDS)}
     assert listed["p9"]["arms"]["a"]["status"] == ARM_NO_OUTPUT
     assert listed["p9"]["arms"]["b"]["status"] == ARM_NO_OUTPUT
+
+
+# --- self-reported confidence bands (step 5) --------------------------------
+
+
+BANDED = json.dumps(
+    {
+        "Municipality": {"value": "56", "confidence": "high"},
+        "Weekly Rent": {"value": "04", "confidence": "low"},
+        "Garden": {"value": None, "confidence": "high"},
+    }
+)
+
+
+def test_banded_output_still_yields_plain_values(tmp_path):
+    """A banded raw file has to read back like any other, or --rescore, scoring
+    and every existing extractor path break on it."""
+    _write(tmp_path, "a", "p1", BANDED)
+    fields, statuses, _ = load_arm(tmp_path, "a")
+    assert statuses["p1"] == ARM_OK
+    assert fields["p1"]["Municipality"] == "56"
+    assert fields["p1"]["Weekly Rent"] == "04"  # leading zero survives the unwrap
+    assert fields["p1"]["Garden"] == ""
+
+
+def test_bands_reach_the_paired_output(tmp_path):
+    _write(tmp_path, "a", "p1", BANDED)
+    _write(tmp_path, "b", "p1", {"Municipality": "56", "Weekly Rent": "04"})
+    record = pair_cards("a", "b", tmp_path, FIELDS)[0]
+    assert record["fields"]["Municipality"]["a_band"] == "high"
+    assert record["fields"]["Weekly Rent"]["a_band"] == "low"
+    # arm B was never asked for a band, so it reports none rather than a default
+    assert "b_band" not in record["fields"]["Municipality"]
+
+
+def test_an_unasked_model_has_no_bands_not_low_ones(tmp_path):
+    """Absent and "low" are different claims: never asked, versus asked and
+    could not read it. Defaulting one to the other would route the whole
+    unbanded corpus into review."""
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _, _, bands = load_arm(tmp_path, "a")
+    assert bands["p1"] == {}
+    record = pair_cards("a", "a", tmp_path, FIELDS)[0]
+    assert "a_band" not in record["fields"]["Municipality"]
