@@ -1,15 +1,16 @@
 """Loads a benchmark ground-truth sheet straight from the transcriber's xlsx.
 
-Two sheets exist and they are not interchangeable:
+The sheet is the C1/C2 one: 30 cards, 62 fields, drawn one per unit from 30
+different units. C1 and C2 are 98% of the coding cards, so this is what
+measures FR-01. Built by ``spike/select_c1_c2_sample.py``, transcribed twice
+(once by model, once by hand) and reconciled; the images sit beside it.
 
-- **C1/C2** (the default) -- 30 cards, 62 fields, drawn one per unit from 30
-  different units. C1 and C2 are 98% of the coding cards, so this is the sheet
-  that measures FR-01. Built by ``spike/select_c1_c2_sample.py``, transcribed
-  twice (once by model, once by hand) and reconciled; the images sit beside it.
-- **C3** -- the original 20 cards, all from unit 216463. IT-73's structure
-  spike found C3 on 4 pages of one unit, ~2% of coding cards, so numbers
-  measured on it do not transfer to C1/C2. Kept because C3 is still a real
-  card type that needs its own extractor.
+The older C3 sheet is deliberately not supported here. C3 shares 0 of its 62
+printed labels with C1/C2, and every extractor is prompted from
+``FIELD_SCHEMA`` -- so a C3 run asked for the wrong field names entirely and
+scored ~0%, which reads as a model failure rather than the harness fault it
+was. D015 gives C3 its own schema; wire that up when the C3 extractor is built
+rather than inheriting this wiring.
 
 Field names come from the header row, not a hardcoded schema, so adding a
 column doesn't require a code change here. Everything that isn't a field is
@@ -41,30 +42,6 @@ DEFAULT_GROUND_TRUTH_XLSX = Path(
     "data/benchmark/c1c2/coding-card-c1-c2-ground-truth.xlsx"
 )
 DEFAULT_IMAGES_DIR = Path("data/benchmark/c1c2")
-
-C3_GROUND_TRUTH_XLSX = Path(
-    "data/Wilfred_Prest_Survey_Data/1262761_1973-0002-00052-sample 20.xlsx"
-)
-C3_IMAGES_DIR = Path("data/benchmark/images")
-
-# C3 only. page id -> the PDF page the card is actually on.
-#
-# A record in the batch PDF is four pages: coding front, coding back, survey
-# front, survey back (tests/fixtures/README.md). 18 of the 20 page ids land on
-# the coding front. These two land on a survey back -- free-text interviewer
-# notes with no codes on them at all -- so any extractor scores ~0 on them no
-# matter how good it is.
-#
-# Corrected by finding the nearest coding front and matching it against the row
-# on Municipality / No. of Dwelling / T.A.I. / Income from S.Letting / Net Rent,
-# by hand, 2026-08-23:
-#   row 134 -> page 131 (municipality 56, dwelling 83, 997 / 98 / 02)
-#   row 168 -> page 169 (municipality 56, dwelling 91, 997 / 97 / 98)
-# The other 18 were confirmed in place by cross-checking No. of Dwelling.
-#
-# The C1/C2 sheet needs no equivalent: it carries the source page in its own
-# ``pdf page`` column, written by the script that extracted the images.
-SOURCE_PAGE_CORRECTIONS = {134: 131, 168: 169}
 
 
 @dataclass(frozen=True)
@@ -124,13 +101,13 @@ def load_ground_truth(
         }
 
         card_type = row_dict.get("card type")
-        if card_type:  # C1/C2: the sheet records its own source page
-            source_page = int(row_dict["pdf page"])
-            image_path = images_dir / f"{page_id}_{card_type}.png"
-        else:  # C3: page id is the source page, bar the two corrections
-            source_page = SOURCE_PAGE_CORRECTIONS.get(int(page_id), int(page_id))
-            # named for the page it really came from, not the row it scores
-            image_path = images_dir / f"page{source_page:03d}.jpg"
+        if not card_type:
+            raise ValueError(
+                f"{xlsx_path} has no 'card type' column -- this loader reads the "
+                "C1/C2 sheet, which records its own source page and card type"
+            )
+        source_page = int(row_dict["pdf page"])
+        image_path = images_dir / f"{page_id}_{card_type}.png"
 
         cards.append(
             BenchmarkCard(
