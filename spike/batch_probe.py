@@ -151,13 +151,13 @@ def main() -> None:
     batch_in, batch_out = _usage(response)
 
     raw = response.text or ""
-    outer = json.loads(raw[raw.index("{") : raw.rindex("}") + 1])
+    try:
+        outer = json.loads(raw[raw.index("{") : raw.rindex("}") + 1])
+    except (ValueError, json.JSONDecodeError):
+        outer = {}
+    if not isinstance(outer, dict):
+        outer = {}
     batch_scores = []
-    for index, card in enumerate(cards, start=1):
-        # Round-tripping each card's object back through parse_json_fields
-        # reuses the single-card coercion rules (null -> "", 4.0 -> "4") rather
-        # than growing a second, subtly different set of them here.
-        fields = parse_json_fields(json.dumps(outer.get(str(index), {}))) or {}
         batch_scores.append(score_structured(card, fields))
 
     Path(f"data/benchmark/results/{args.model}-batch{len(cards)}.txt").write_text(raw)
