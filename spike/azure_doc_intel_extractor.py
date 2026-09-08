@@ -14,6 +14,7 @@ Set AZURE_DOC_INTEL_ENDPOINT, AZURE_DOC_INTEL_KEY, and AZURE_DOC_INTEL_MODEL_ID
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -78,4 +79,14 @@ def parse_analyze_result(result) -> ExtractionResult:
             if score is not None:
                 confidence[name] = float(score)
 
-    return ExtractionResult(fields=fields, confidence=confidence, cost_usd=None)
+    # raw_text is the extracted fields as JSON rather than the SDK object: this
+    # engine has no text response to quote, but run_benchmark saves raw_text per
+    # card and --rescore replays it through parse_json_fields. Leaving it None
+    # wrote an empty file, and a rescore then reported near-zero accuracy for a
+    # run that had actually worked, with no warning.
+    return ExtractionResult(
+        fields=fields,
+        raw_text=json.dumps(fields),
+        confidence=confidence,
+        cost_usd=None,
+    )

@@ -44,6 +44,11 @@ from scoring import score_structured
 
 from extraction.base import ExtractionResult, Extractor
 
+# Where every run files its output. Defined here because this is what writes it;
+# spike/dual_extract.py imports this name rather than repeating the path, so the
+# reader and the writer cannot drift onto different directories.
+DEFAULT_RESULTS_ROOT = Path("data/benchmark/results")
+
 EXTRACTORS: dict[str, str] = {
     # name -> "module:ClassName", imported lazily so picking one model doesn't
     # require every other candidate's dependencies to be installed
@@ -105,6 +110,13 @@ def main() -> None:
     )
     parser.add_argument("--images", type=Path, default=DEFAULT_IMAGES_DIR)
     parser.add_argument(
+        "--results-root",
+        type=Path,
+        default=DEFAULT_RESULTS_ROOT,
+        help="Where to save raw output and results (default: %(default)s). "
+        "dual_extract passes its own through, so both look in the same place",
+    )
+    parser.add_argument(
         "--batch",
         type=int,
         default=1,
@@ -151,7 +163,7 @@ def main() -> None:
         print(f"Extracting {len(missing)} missing benchmark images from {args.pdf}...")
         extract_benchmark_images(args.pdf, args.ground_truth, args.images)
 
-    results_dir = Path("data/benchmark/results") / extractor.name
+    results_dir = args.results_root / extractor.name
     raw_dir = results_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -220,7 +232,13 @@ def main() -> None:
                 print(f"page {ids}: FAILED ({error})", flush=True)
                 continue
             for card, score, result, elapsed in finished:
-                (raw_dir / f"{card.page_id}.txt").write_text(result.raw_text or "")
+                # Only write a raw file when there is something in it. An empty
+                # one is indistinguishable from a real saved answer to anything
+                # that tests for the file's existence -- dual_extract.missing_pages
+                # did exactly that, and a card whose slot the model skipped was
+                # then never re-requested on any later run.
+                if result.raw_text:
+                    (raw_dir / f"{card.page_id}.txt").write_text(result.raw_text)
                 scores.append(score)
                 confidences.append(result.confidence)
                 # flush: a card can take minutes, and redirected stdout is
@@ -243,10 +261,10 @@ def main() -> None:
         )
         with csv_path.open("w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["page_id", "field", "expected", "got", "match"])
+            writer.writerow(["page_id", "field", "expected", "raw", "got", "match"])
             for score in sorted(scores, key=lambda s: s.page_id):
-                for field, expected, got in score.mismatches:
-                    writer.writerow([score.page_id, field, expected, got, False])
+                for field, expected, raw, got in score.mismatches:
+                    writer.writerow([score.page_id, field, expected, raw, got, False])
         zero_pages = sorted(s.page_id for s in scores if not s.correct_fields)
         if zero_pages:
             print(f"Zero-score pages: {zero_pages} (see {raw_dir}/)")
