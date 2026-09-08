@@ -32,7 +32,7 @@ def test_empty_extraction_scores_no_coded_fields():
 def test_leading_zero_is_not_the_same_code():
     score = score_structured(CARD, {"a": "56", "b": "4"})
     assert score.correct_coded_fields == 1
-    assert ("b", "04", "4") in score.mismatches
+    assert ("b", "04", "4", "4") in score.mismatches
 
 
 def test_coder_void_marks_count_as_no_code():
@@ -54,7 +54,10 @@ def test_b_where_the_card_holds_a_digit_is_still_wrong():
     )
     score = score_structured(card, {"poverty": "B"})
     assert score.correct_coded_fields == 0
-    assert ("poverty", "3", "") in score.mismatches
+    # The raw "B" is kept beside the normalised "": a mismatch row showing only
+    # the empty value cannot tell a model that read a void mark from one that
+    # read nothing at all, and that is the first thing a reviewer checks.
+    assert ("poverty", "3", "B", "") in score.mismatches
 
 
 def test_leader_dots_are_not_part_of_the_value():

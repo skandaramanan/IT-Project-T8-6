@@ -68,6 +68,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import time
 from pathlib import Path
 
@@ -117,9 +118,20 @@ RETRYABLE = {
 
 
 def _retry_wait(error: Exception, attempt: int) -> float | None:
-    """Seconds to wait before retrying this error, or None if it is terminal."""
+    """Seconds to wait before retrying this error, or None if it is terminal.
+
+    Markers are matched on word boundaries, not as bare substrings. A plain
+    ``"500" in text`` also fires on any message that happens to contain those
+    digits -- ``400 INVALID_ARGUMENT: The input token count (1500) exceeds ...``
+    is terminal, and treating it as a 500 spends three attempts and a minute of
+    backoff before showing the one line worth reading.
+    """
     text = str(error)
-    waits = [base for marker, base in RETRYABLE.items() if marker in text]
+    waits = [
+        base
+        for marker, base in RETRYABLE.items()
+        if re.search(rf"\b{re.escape(marker)}\b", text)
+    ]
     return max(waits) * attempt if waits else None
 
 
@@ -282,8 +294,18 @@ class GeminiExtractor:
         The second case is the one worth spending a retry on: a card that is
         mostly empty cells scores ~70% against an empty field dict, so banking
         a failed parse would read as a near-pass rather than a failure.
+
+        A model that answered and kept answering unusably is **returned, not
+        raised**, once the retries are spent. Raising wrote no raw file, and the
+        harness treats an absent raw file as a card never attempted -- so every
+        later run re-bought that card at three requests each, converged on the
+        same unusable answer, and never recorded what it said. Returning it
+        saves the response, scores it as the miss it is, and lets the pairing
+        report it as ``unparseable`` rather than silently unread. Only a call
+        that never came back at all still raises.
         """
         last_error: Exception | None = None
+        last_response = None
         for attempt in range(1, attempts + 1):
             try:
                 response = client.models.generate_content(
@@ -291,12 +313,20 @@ class GeminiExtractor:
                 )
             except Exception as error:  # SDK error types vary by transport
                 wait = _retry_wait(error, attempt)
-                if wait is None:
+                # Sleeping after the final attempt buys nothing: the outcome is
+                # already decided, and at 30s x 3 that is 90 seconds per card of
+                # dead wall time on a throttled run.
+                if wait is None or attempt == attempts:
+                    if last_response is not None:
+                        return last_response
                     raise
                 last_error = error
                 time.sleep(wait)
                 continue
+            last_response = response
             if parse_json_fields(response.text) is not None:
+                return response
+            if attempt == attempts:
                 return response
             # Usually thinking ate the output budget (finish_reason MAX_TOKENS)
             # and the JSON is cut off past what _repair_truncated_object can

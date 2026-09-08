@@ -247,3 +247,31 @@ def test_an_unasked_model_has_no_bands_not_low_ones(tmp_path):
     assert bands["p1"] == {}
     record = pair_cards("a", "a", tmp_path, FIELDS)[0]
     assert "a_band" not in record["fields"]["Municipality"]
+
+
+# --- regressions from the IT-98 review --------------------------------------
+
+
+def test_an_empty_raw_file_is_not_a_saved_reading(tmp_path):
+    """The card-stranding bug. run_benchmark used to write a zero-byte file for
+    a batch slot the model skipped; missing_pages tested existence, so that card
+    was never re-requested and paired as no_second_opinion forever."""
+    raw = tmp_path / "a" / "raw"
+    raw.mkdir(parents=True)
+    (raw / "p1.txt").write_text("")
+    (raw / "p2.txt").write_text(json.dumps({"Municipality": "56"}))
+
+    assert missing_pages(tmp_path, "a", ["p1", "p2"]) == ["p1"]
+    fields, statuses, _ = load_arm(tmp_path, "a")
+    assert "p1" not in fields  # no answer, so no reading -- not "unparseable"
+    assert statuses == {"p2": ARM_OK}
+
+
+def test_fetch_command_forwards_the_results_root():
+    """Without this the subprocess extracts into the default root while the
+    pairing reads a custom one, so every card reports no_second_opinion and each
+    re-run re-buys all 30 against a 20/day cap."""
+    command = fetch_command(
+        "gemini", ["p1"], Path("gt.xlsx"), Path("imgs"), 5, Path("/tmp/elsewhere")
+    )
+    assert command[command.index("--results-root") + 1] == "/tmp/elsewhere"

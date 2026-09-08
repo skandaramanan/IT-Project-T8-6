@@ -90,7 +90,11 @@ class StructuredScore:
     page_id: str
     total_fields: int
     correct_fields: int
-    mismatches: list[tuple[str, str, str]]  # (field, expected, got)
+    # (field, expected, raw, got) -- raw is what the model literally returned,
+    # got is that after normalise(). Both, because a mismatch CSV showing only
+    # the cleaned value hides the difference between a model that read "B" and
+    # one that read nothing, which is the first thing a reviewer needs.
+    mismatches: list[tuple[str, str, str, str]]
     # Fields where the card actually carries a code. An extractor that returns
     # nothing scores well on the empty ones, so this is the number that
     # separates candidates -- report it next to the headline accuracy.
@@ -103,18 +107,19 @@ class StructuredScore:
 
 
 def score_structured(card: BenchmarkCard, predicted: dict[str, str]) -> StructuredScore:
-    mismatches: list[tuple[str, str, str]] = []
+    mismatches: list[tuple[str, str, str, str]] = []
     correct = coded = correct_coded = 0
     for field, expected in card.fields.items():
+        raw = predicted.get(field)
         want = normalise(expected)
-        got = normalise(predicted.get(field))
+        got = normalise(raw)
         if want:
             coded += 1
         if got == want:
             correct += 1
             correct_coded += bool(want)
         else:
-            mismatches.append((field, expected, got))
+            mismatches.append((field, expected, raw or "", got))
     return StructuredScore(
         page_id=card.page_id,
         total_fields=len(card.fields),

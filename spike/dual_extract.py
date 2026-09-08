@@ -52,11 +52,10 @@ from ground_truth import (
     load_ground_truth,
 )
 from json_extraction import parse_confidence_bands, parse_json_fields
+from run_benchmark import DEFAULT_RESULTS_ROOT, EXTRACTORS, load_extractor
 from scoring import agrees, normalise
 
 from extraction.field_schema import FIELD_SCHEMA
-
-DEFAULT_RESULTS_ROOT = Path("data/benchmark/results")
 
 # Every card emits every schema field, whatever the models returned. A card is
 # 62 fields either way, so a field one model silently dropped shows up as a
@@ -164,12 +163,27 @@ def load_arm(
     bands: dict[str, dict[str, str]] = {}
     for path in sorted(raw_dir.glob("*.txt")):
         page_id = path.stem
+        if not _has_reading(raw_dir, page_id):
+            continue  # empty file: no answer, so no reading -- see _has_reading
         text = path.read_text()
         parsed = parse_json_fields(text)
         fields[page_id] = parsed
         statuses[page_id] = ARM_OK if parsed is not None else ARM_UNPARSEABLE
         bands[page_id] = parse_confidence_bands(text)
     return fields, statuses, bands
+
+
+def _has_reading(raw_dir: Path, page_id: str) -> bool:
+    """Whether this card has a saved answer worth reading back.
+
+    Content, not existence. An empty raw file is not an answer -- it is what a
+    batch slot the model skipped used to leave behind -- and treating one as a
+    saved reading strands that card forever: never re-requested, always paired
+    as no_second_opinion. run_benchmark no longer writes them, but a raw/
+    directory copied in from another machine may still hold some.
+    """
+    path = raw_dir / f"{page_id}.txt"
+    return path.is_file() and path.stat().st_size > 0
 
 
 def missing_pages(results_root: Path, model: str, page_ids: list[str]) -> list[str]:
@@ -181,9 +195,7 @@ def missing_pages(results_root: Path, model: str, page_ids: list[str]) -> list[s
     model had answered.
     """
     raw_dir = results_root / model / "raw"
-    return [
-        page_id for page_id in page_ids if not (raw_dir / f"{page_id}.txt").exists()
-    ]
+    return [page_id for page_id in page_ids if not _has_reading(raw_dir, page_id)]
 
 
 def fetch_command(
@@ -192,6 +204,7 @@ def fetch_command(
     ground_truth: Path,
     images: Path,
     workers: int,
+    results_root: Path = DEFAULT_RESULTS_ROOT,
 ) -> list[str]:
     """The ``run_benchmark.py`` invocation that fills in this arm's missing cards.
 
@@ -215,6 +228,8 @@ def fetch_command(
         str(images),
         "--workers",
         str(workers),
+        "--results-root",
+        str(results_root),
         "--pages",
         *page_ids,
     ]
@@ -381,8 +396,6 @@ def _fetch_missing(key: str, model: str, page_ids: list[str], args) -> None:
     reads ``no_second_opinion``, not a crash. That is a true statement about
     what we know, and the summary says so plainly.
     """
-    from run_benchmark import EXTRACTORS
-
     missing = missing_pages(args.results_root, model, page_ids)
     if not missing:
         print(f"{model}: all {len(page_ids)} cards already extracted")
@@ -400,7 +413,9 @@ def _fetch_missing(key: str, model: str, page_ids: list[str], args) -> None:
         return
 
     print(f"{model}: extracting {len(missing)} of {len(page_ids)} cards...")
-    command = fetch_command(key, missing, args.ground_truth, args.images, args.workers)
+    command = fetch_command(
+        key, missing, args.ground_truth, args.images, args.workers, args.results_root
+    )
     if subprocess.run(command, check=False).returncode:
         print(
             f"\n!! {model}: run_benchmark exited non-zero -- {len(missing)} card(s) "
@@ -417,8 +432,6 @@ def _resolve(name: str) -> str:
     passed through as a directory name, which is what a raw/ copied in from
     another machine will be.
     """
-    from run_benchmark import EXTRACTORS, load_extractor
-
     return load_extractor(name).name if name in EXTRACTORS else name
 
 
