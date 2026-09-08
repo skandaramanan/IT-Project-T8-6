@@ -5,12 +5,21 @@ tell us what "correct" means is directional at best (Client Meeting #3). So the
 trust signal is manufactured instead: read every card twice, with two
 independent extractors, and treat their agreement as a proxy for correctness.
 
-This module is the comparison half. It does **not** call an API. Both arms have
-already been run by ``run_benchmark.py``, which saves each card's raw response
-under ``data/benchmark/results/<model>/raw/<page_id>.txt`` -- so pairing is a
-pure function over two directories, and the two arms need not have run on the
-same machine. That matters here: the hosted arm runs anywhere, the local VLM
-needs a real GPU, and their raw directories meet by being copied together.
+``run_benchmark.py`` saves each card's raw response under
+``data/benchmark/results/<model>/raw/<page_id>.txt``, so the comparison itself
+is a pure function over two directories -- which means the two arms need never
+have run on the same machine. That matters here: the hosted arm runs anywhere,
+the local VLM needs a real GPU, and their raw directories meet by being copied
+together.
+
+One command, because an arm with nothing saved is extracted first:
+
+    uv run python spike/dual_extract.py --models gemini qwen2.5-vl
+
+Only the cards actually missing are requested, and extraction is delegated to
+``run_benchmark.py`` rather than reimplemented -- so an interrupted run resumes
+instead of re-buying cards, which matters against Flash's 20-request daily cap.
+Pass ``--no-fetch`` to pair only what is already on disk and never call a model.
 
 What this deliberately does not do:
 
@@ -21,16 +30,13 @@ What this deliberately does not do:
 - **Turn a class into a number.** Mapping ``agree`` to a confidence value is
   IT-99. This emits the class; that ticket owns the arithmetic.
 - **Decide which value wins.** That is IT-86's resolution policy.
-
-Usage, once both arms have been run:
-
-    uv run python spike/dual_extract.py --models gemini qwen2.5-vl
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
@@ -40,6 +46,11 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
 
+from ground_truth import (
+    DEFAULT_GROUND_TRUTH_XLSX,
+    DEFAULT_IMAGES_DIR,
+    load_ground_truth,
+)
 from json_extraction import parse_json_fields
 from scoring import agrees, normalise
 
@@ -144,24 +155,84 @@ def load_arm(
     return fields, statuses
 
 
+def missing_pages(results_root: Path, model: str, page_ids: list[str]) -> list[str]:
+    """The cards this arm has no saved reading for, in sheet order.
+
+    Absence is the whole test. A card whose request failed left no raw file, so
+    it looks identical to one never attempted -- which is correct here: both
+    need the model called again, and neither should be paired as though the
+    model had answered.
+    """
+    raw_dir = results_root / model / "raw"
+    return [
+        page_id for page_id in page_ids if not (raw_dir / f"{page_id}.txt").exists()
+    ]
+
+
+def fetch_command(
+    model: str,
+    page_ids: list[str],
+    ground_truth: Path,
+    images: Path,
+    workers: int,
+) -> list[str]:
+    """The ``run_benchmark.py`` invocation that fills in this arm's missing cards.
+
+    Shelling out to the existing runner rather than reimplementing extraction
+    here is the point: it already owns retry-on-throttle, batching, concurrency,
+    and the rule that a raised call writes no raw file while a useless answer
+    writes one. A second copy of that would drift, and the two failure modes it
+    distinguishes are exactly what ``load_arm`` reads back.
+
+    ``--pages`` limits it to what is missing, so an interrupted run resumes
+    instead of re-buying cards -- which matters on a 20-request daily cap.
+    """
+    return [
+        sys.executable,
+        str(_ROOT / "spike" / "run_benchmark.py"),
+        "--model",
+        model,
+        "--ground-truth",
+        str(ground_truth),
+        "--images",
+        str(images),
+        "--workers",
+        str(workers),
+        "--pages",
+        *page_ids,
+    ]
+
+
 def pair_cards(
     first_model: str,
     second_model: str,
     results_root: Path = DEFAULT_RESULTS_ROOT,
     field_names: list[str] | None = None,
+    page_ids: list[str] | None = None,
 ) -> list[dict]:
     """Both arms' saved output, paired card by card.
 
-    The card set is the union of what the two arms produced, not the benchmark
-    sheet -- a card only one arm reached still belongs in the output, marked as
-    having no second opinion. Taking the intersection instead would make a
-    half-failed run look like a clean one.
+    ``page_ids`` is the authoritative card list when there is one -- the
+    benchmark sheet. Without it the card set is the union of what the two arms
+    produced, which is right when pairing raw directories copied in from
+    elsewhere but wrong after a run: a card *both* arms failed appears in
+    neither directory and would vanish from the output entirely, rather than
+    showing up as the total failure it was.
+
+    Union, never intersection. A card only one arm reached still belongs here,
+    marked as having no second opinion; intersecting would make a half-failed
+    run look clean.
     """
     first_fields, first_status = load_arm(results_root, first_model)
     second_fields, second_status = load_arm(results_root, second_model)
+    wanted = (
+        sorted(set(page_ids))
+        if page_ids
+        else sorted(set(first_fields) | set(second_fields))
+    )
 
     records = []
-    for page_id in sorted(set(first_fields) | set(second_fields)):
+    for page_id in wanted:
         first = first_fields.get(page_id)
         second = second_fields.get(page_id)
         paired = compare_fields(first, second, field_names)
@@ -230,18 +301,41 @@ def main() -> None:
         default=None,
         help="Paired output (default: <results-root>/dual/<A>__<B>.json)",
     )
+    parser.add_argument("--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH_XLSX)
+    parser.add_argument("--images", type=Path, default=DEFAULT_IMAGES_DIR)
+    parser.add_argument("--workers", type=int, default=5)
+    parser.add_argument(
+        "--no-fetch",
+        action="store_true",
+        help="Pair only what is already saved, never call a model. Use when both "
+        "raw/ directories were produced elsewhere -- the local VLM arm normally "
+        "comes from the machine with the GPU",
+    )
     args = parser.parse_args()
 
     first_model, second_model = (_resolve(name) for name in args.models)
-    for model in (first_model, second_model):
-        if not (args.results_root / model / "raw").is_dir():
-            raise SystemExit(
-                f"No saved output for {model!r} in {args.results_root}. Run "
-                f"`uv run python spike/run_benchmark.py --model ...` for that arm "
-                f"first, or copy its raw/ directory across."
-            )
 
-    records = pair_cards(first_model, second_model, args.results_root)
+    page_ids: list[str] | None = None
+    if args.no_fetch:
+        for model in (first_model, second_model):
+            if not (args.results_root / model / "raw").is_dir():
+                raise SystemExit(
+                    f"No saved output for {model!r} in {args.results_root}, and "
+                    f"--no-fetch was given. Drop that arm's raw/ directory in, or "
+                    f"rerun without --no-fetch to have it extracted."
+                )
+    else:
+        # The sheet is the authoritative card list. Without it a card both arms
+        # failed on would be absent from both raw/ directories and so vanish
+        # from the output, instead of being reported as the total failure it is.
+        cards = load_ground_truth(args.ground_truth, args.images)
+        page_ids = [card.page_id for card in cards]
+        for key, model in zip(args.models, (first_model, second_model)):
+            _fetch_missing(key, model, page_ids, args)
+
+    records = pair_cards(
+        first_model, second_model, args.results_root, page_ids=page_ids
+    )
     if not records:
         raise SystemExit("Both arms are empty -- nothing to pair")
 
@@ -253,6 +347,43 @@ def main() -> None:
 
     print(summarise(records))
     print(f"\nPaired output written to {output}")
+
+
+def _fetch_missing(key: str, model: str, page_ids: list[str], args) -> None:
+    """Extract whatever this arm is missing, if anything.
+
+    A failure here is reported and stepped over rather than fatal. The most
+    likely one is an arm that cannot run on this machine at all -- the local VLM
+    needs a GPU -- and the honest result then is a pairing where every field
+    reads ``no_second_opinion``, not a crash. That is a true statement about
+    what we know, and the summary says so plainly.
+    """
+    from run_benchmark import EXTRACTORS
+
+    missing = missing_pages(args.results_root, model, page_ids)
+    if not missing:
+        print(f"{model}: all {len(page_ids)} cards already extracted")
+        return
+
+    if key not in EXTRACTORS:
+        # A bare directory name, not a runnable model -- the normal shape for
+        # the local VLM arm, whose raw/ is copied in from the GPU machine.
+        # Trying to run it would fail on every invocation and say nothing useful.
+        print(
+            f"{model}: {len(missing)} card(s) unread, and {key!r} is not a model "
+            f"this harness can run -- copy the rest of its raw/ directory across. "
+            f"Pairing continues; the gap is reported as no_second_opinion."
+        )
+        return
+
+    print(f"{model}: extracting {len(missing)} of {len(page_ids)} cards...")
+    command = fetch_command(key, missing, args.ground_truth, args.images, args.workers)
+    if subprocess.run(command, check=False).returncode:
+        print(
+            f"\n!! {model}: run_benchmark exited non-zero -- {len(missing)} card(s) "
+            f"may still be unread. Pairing continues; anything still missing is "
+            f"reported as no_second_opinion rather than assumed to agree.\n"
+        )
 
 
 def _resolve(name: str) -> str:

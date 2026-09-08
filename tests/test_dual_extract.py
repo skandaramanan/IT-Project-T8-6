@@ -10,6 +10,7 @@ files under tmp_path.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from dual_extract import (
@@ -24,7 +25,9 @@ from dual_extract import (
     SCHEMA_FIELD_NAMES,
     classify,
     compare_fields,
+    fetch_command,
     load_arm,
+    missing_pages,
     pair_cards,
 )
 
@@ -154,3 +157,49 @@ def test_counts_add_up_to_the_field_count(tmp_path):
     record = pair_cards("a", "b", tmp_path, FIELDS)[0]
     assert sum(record["counts"].values()) == len(FIELDS)
     assert record["counts"] == {AGREE: 1, DISAGREE: 1, BOTH_BLANK: 1}
+
+
+# --- filling in what's missing (step 4, AC5) --------------------------------
+
+
+def test_missing_pages_lists_only_what_has_no_reading(tmp_path):
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _write(tmp_path, "a", "p3", "unparseable, but the model did answer")
+    # p3 has a file, so it is not missing -- re-requesting it would spend quota
+    # to learn what load_arm already knows: the answer was unusable.
+    assert missing_pages(tmp_path, "a", ["p1", "p2", "p3", "p4"]) == ["p2", "p4"]
+
+
+def test_missing_pages_is_everything_when_the_arm_never_ran(tmp_path):
+    assert missing_pages(tmp_path, "never-run", ["p1", "p2"]) == ["p1", "p2"]
+
+
+def test_fetch_command_limits_the_run_to_the_missing_cards():
+    """A wrong flag here fails silently as a full re-run, which on a 20/day cap
+    is a day of quota."""
+    command = fetch_command("gemini", ["p2", "p4"], Path("gt.xlsx"), Path("imgs"), 5)
+    assert command[1].endswith("run_benchmark.py")
+    assert command[command.index("--model") + 1] == "gemini"
+    assert command[command.index("--ground-truth") + 1] == "gt.xlsx"
+    assert command[command.index("--images") + 1] == "imgs"
+    assert command[command.index("--pages") + 1 :] == ["p2", "p4"]
+
+
+def test_a_card_both_arms_failed_is_reported_not_dropped(tmp_path):
+    """The hole an explicit card list closes: with neither arm holding a raw
+    file, a union over the directories would omit the card entirely and the run
+    would look complete."""
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _write(tmp_path, "b", "p1", {"Municipality": "56"})
+
+    union = {r["page_id"] for r in pair_cards("a", "b", tmp_path, FIELDS)}
+    assert union == {"p1"}  # p9 is invisible without a card list
+
+    listed = {
+        r["page_id"]: r
+        for r in pair_cards("a", "b", tmp_path, FIELDS, page_ids=["p1", "p9"])
+    }
+    assert set(listed) == {"p1", "p9"}
+    assert listed["p9"]["counts"] == {NO_SECOND_OPINION: len(FIELDS)}
+    assert listed["p9"]["arms"]["a"]["status"] == ARM_NO_OUTPUT
+    assert listed["p9"]["arms"]["b"]["status"] == ARM_NO_OUTPUT
