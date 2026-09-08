@@ -4,9 +4,17 @@ version = "0.1.0"
 description = "Structured data extraction from the 1941-43 social survey cards, for University of Melbourne Archives"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "google-genai>=2.21.0",
     "numpy>=2.5.2",
+    "openpyxl>=3.1.5",
     "pillow>=12.3.0",
+    "pypdf>=6.16.1",
 ]
+# The local VLM candidates (torch, transformers, qwen_vl_utils) are deliberately
+# absent: they are GPU-only, were never locked during IT-37, and every extractor
+# imports them lazily behind is_available(). Install them by hand on the machine
+# that runs them -- see spike/qwen_vl_extractor.py. Keeping them out is what
+# holds `uv sync --locked` in CI to seconds.
 
 [tool.uv]
 # Application, not a library - nothing here gets packaged or published.
@@ -14,9 +22,14 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# src/ is not an installed package, so tests importing extraction.* need it on
-# the path. Without this the whole of src/extraction/ is untestable.
-pythonpath = ["src"]
+# Neither src/ nor spike/ is an installed package, so tests importing
+# extraction.* or the harness modules need both on the path. Without this the
+# whole of src/extraction/ is untestable.
+pythonpath = ["src", "spike"]
+
+[tool.pyright]
+# Same two paths, so editors resolve the imports pytest already resolves.
+extraPaths = ["src", "spike"]
 
 [dependency-groups]
 dev = [
