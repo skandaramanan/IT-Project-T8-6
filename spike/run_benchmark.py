@@ -53,16 +53,14 @@ EXTRACTORS: dict[str, str] = {
     # name -> "module:ClassName", imported lazily so picking one model doesn't
     # require every other candidate's dependencies to be installed
     #
-    # Only the candidates IT-37 left standing came across to main. The rest --
-    # qwen3-vl, nuextract3, molmo, internvl3, pixtral, ox-alpha -- stay on the
-    # IT-37 branch as that spike's record: three of them never ran at all
-    # (transformers API break, no Windows vLLM) and the others were beaten on
-    # coded-field accuracy. Lazy importlib means a stale entry here would
-    # survive import and fail at --model with a bare ModuleNotFoundError, so
-    # the dict lists what is actually present.
+    # The two candidates that survived IT-37 and D012. The rest stay on the
+    # IT-37 branch as that spike's record: three never ran at all (transformers
+    # API break, no Windows vLLM), the others were beaten on coded-field
+    # accuracy, and azure-doc-intel needs a custom-trained model nobody set up.
+    # Lazy importlib means a stale entry here would survive import and fail at
+    # --model with a bare ModuleNotFoundError, so the dict lists what is present.
     "gemini": "gemini_extractor:GeminiExtractor",  # primary, D012
     "qwen2.5-vl": "qwen_vl_extractor:QwenVLExtractor",  # local second opinion
-    "azure-doc-intel": "azure_doc_intel_extractor:AzureDocIntelExtractor",
 }
 
 

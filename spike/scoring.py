@@ -54,9 +54,9 @@ def normalise(value: str | None) -> str:
     between the two rules here and that one: "04" and "4" are both valid codes
     with different meanings, whereas "1." and "O" are not codes at all.
 
-    Public because ``agrees()`` and the IT-98 dual-extraction path share this
-    one definition of "the same value" with the scorer. Two definitions would
-    let a pair of readings count as agreeing while scoring as a mismatch.
+    Public because the IT-98 dual-extraction path decides agreement with this
+    same function. Two definitions of "the same value" would let a pair of
+    readings count as agreeing while scoring as a mismatch.
     """
     if value is None:
         return ""
@@ -66,23 +66,6 @@ def normalise(value: str | None) -> str:
     if set(stripped) <= VOID_MARKS:
         return ""
     return stripped.translate(_DIGIT_LOOKALIKES)
-
-
-def agrees(first: str | None, second: str | None) -> bool:
-    """Whether two extractors read the same value off a cell (IT-98 AC2).
-
-    Deliberately the scorer's own comparison, not a looser one. IT-98's AC2 as
-    first written also asked for "04" and "4" to count as agreeing; that was
-    dropped, because it contradicts D011 and the rule it asks to reuse. Under a
-    fixed-width code book those are two different codes, so one of the two
-    models has misread a real value -- that is a genuine disagreement and
-    should pull the confidence down, not a formatting artefact to paper over.
-
-    What does collapse is everything that is only ever noise: leader dots read
-    as digits, handwritten 0/1 coming back as O/Q/I/L, the coder's "B" void
-    marks, None against "", and surrounding whitespace.
-    """
-    return normalise(first) == normalise(second)
 
 
 @dataclass
