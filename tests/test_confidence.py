@@ -70,3 +70,105 @@ def test_an_unknown_class_is_an_error_not_a_default():
     """A silent default here is a field carrying a number that means nothing."""
     with pytest.raises(KeyError):
         confidence_for("probably_fine")
+
+
+# --- scoring a whole card ---------------------------------------------------
+
+from confidence import assert_every_field_scored, score_fields
+from dual_extract import compare_fields
+
+MODELS = {"a": "gemini-3.5-flash", "b": "qwen2.5-vl"}
+FIELDS = ["Municipality", "Weekly Rent", "Garden"]
+
+
+def test_each_field_gets_the_triple():
+    """AC1: {value, confidence, source_agreement} on every field."""
+    paired = compare_fields({"Municipality": "56"}, {"Municipality": "56"}, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert set(scored["Municipality"]) == {"value", "confidence", "source_agreement"}
+    assert scored["Municipality"]["source_agreement"] == AGREE
+    assert scored["Municipality"]["confidence"] == 0.99
+
+
+def test_the_value_is_the_primary_arms_reading():
+    """The score was measured about arm A's reading, so it travels with it.
+    IT-86 may overwrite the value; the score then has to be recomputed."""
+    paired = compare_fields({"Municipality": "56"}, {"Municipality": "57"}, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert scored["Municipality"]["value"] == "56"
+    assert scored["Municipality"]["source_agreement"] == DISAGREE
+
+
+def test_a_blank_primary_reading_is_still_the_primary_reading():
+    """A dropped key is a reading of "no code", not a dead arm. The one_blank
+    constant is P(gemini correct) measured over exactly these cases, so the
+    value has to stay gemini's blank -- swapping in qwen's value would attach
+    0.85 to a reading it was never measured about. This is the Washouse shape:
+    qwen omits the key on 29 of 30 cards, and there gemini's blank is the one
+    that was right."""
+    paired = compare_fields({"Municipality": None}, {"Municipality": "56"}, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert scored["Municipality"]["source_agreement"] == ONE_BLANK
+    assert scored["Municipality"]["value"] == ""
+    assert scored["Municipality"]["confidence"] == 0.85
+
+
+def test_a_missing_arm_is_scored_by_the_surviving_one():
+    """AC4 end to end: gemini answered, qwen did not."""
+    paired = compare_fields({"Municipality": "56"}, None, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert scored["Municipality"]["source_agreement"] == NO_SECOND_OPINION
+    assert scored["Municipality"]["confidence"] == 0.94
+    assert scored["Municipality"]["value"] == "56"
+
+
+def test_the_surviving_arm_can_be_the_second_one():
+    """gemini died, qwen answered -- worth less, and the score must say so."""
+    paired = compare_fields(None, {"Municipality": "56"}, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert scored["Municipality"]["confidence"] == 0.75
+    assert scored["Municipality"]["value"] == "56"
+
+
+def test_a_card_neither_arm_read_scores_zero():
+    paired = compare_fields(None, None, FIELDS)
+    scored = score_fields(paired, MODELS)
+    assert scored["Municipality"]["confidence"] == 0.0
+    assert scored["Municipality"]["value"] == ""
+
+
+def test_assertion_passes_a_fully_scored_card():
+    paired = compare_fields({"Municipality": "56"}, {"Municipality": "56"})
+    assert_every_field_scored(score_fields(paired, MODELS))  # 62 fields, no raise
+
+
+def test_assertion_fails_a_missing_score():
+    """AC1: the run must fail, not warn."""
+    scored = score_fields(compare_fields({}, {}), MODELS)
+    del scored["Municipality"]["confidence"]
+    with pytest.raises(AssertionError, match="Municipality"):
+        assert_every_field_scored(scored)
+
+
+def test_assertion_fails_an_out_of_range_score():
+    scored = score_fields(compare_fields({}, {}), MODELS)
+    scored["Municipality"]["confidence"] = 1.4
+    with pytest.raises(AssertionError, match="1.4"):
+        assert_every_field_scored(scored)
+
+
+def test_assertion_fails_a_short_card():
+    """62, not 60. An assertion hardcoded to the C3 count fails every real
+    card -- the correction IT-99 was reopened for."""
+    scored = score_fields(compare_fields({}, {}, FIELDS), MODELS)
+    with pytest.raises(AssertionError, match="62"):
+        assert_every_field_scored(scored)
+
+
+def test_a_non_numeric_score_is_rejected():
+    """AC1 says numeric. A band string here would validate as 'present' under
+    a truthiness check and breach D007's number type on the way out."""
+    scored = score_fields(compare_fields({}, {}), MODELS)
+    scored["Municipality"]["confidence"] = "high"
+    with pytest.raises(AssertionError, match="Municipality"):
+        assert_every_field_scored(scored)

@@ -104,3 +104,68 @@ def confidence_for(agreement: str, surviving_model: str | None = None) -> float:
     if surviving_model is None:
         return 0.0
     return STANDALONE_ACCURACY.get(surviving_model, min(STANDALONE_ACCURACY.values()))
+
+
+def score_fields(
+    paired: dict[str, dict[str, str | None]],
+    models: dict[str, str],
+) -> dict[str, dict[str, object]]:
+    """One card's paired fields, priced.
+
+    ``paired`` is what ``dual_extract.compare_fields`` returns; ``models`` is
+    the ``{"a": ..., "b": ...}`` block ``pair_cards`` already puts on every
+    record.
+
+    ``value`` is arm A's normalised reading -- the one the confidence was
+    measured about -- and stays A's **even when A read a blank**. The
+    one_blank constant is P(A correct), measured over cases that include A
+    correctly reading an empty cell; emitting B's value there would attach a
+    number to a reading it was never measured about. Only when A is dead
+    entirely does B's reading stand in, and NO_SECOND_OPINION is what says so.
+
+    This is not a resolution policy (IT-86 owns that); it is naming which
+    reading the number refers to, because a confidence with no value attached
+    says nothing.
+    """
+    scored: dict[str, dict[str, object]] = {}
+    for name, field in paired.items():
+        agreement = field["agreement"]
+        surviving = None
+        value = field["a"]
+        if agreement == NO_SECOND_OPINION:
+            # The only case where an arm is *dead* rather than merely blank.
+            # a_raw is None for both, so the class is what separates them:
+            # inside any other class, a None a_raw means A answered the card
+            # and omitted this key, which is a real reading of "no code".
+            if field["a_raw"] is not None:
+                surviving = models.get("a")
+            elif field["b_raw"] is not None:
+                surviving = models.get("b")
+                value = field["b"]
+        scored[name] = {
+            "value": value,
+            "confidence": confidence_for(agreement, surviving),
+            "source_agreement": agreement,
+        }
+    return scored
+
+
+def assert_every_field_scored(
+    scored: dict[str, dict[str, object]], expected_fields: int = 62
+) -> None:
+    """AC1. Raises rather than warns: a field that reaches the Archives with no
+    confidence is indistinguishable from one that was checked.
+
+    62 is the C1/C2 card, 98% of the coding cards. 60 is the C3 sheet, which
+    D015 gives its own schema -- an assertion hardcoded to 60 fails on every
+    real card, which is what this ticket was reopened to correct.
+    """
+    assert len(scored) == expected_fields, (
+        f"expected {expected_fields} scored fields, got {len(scored)}"
+    )
+    for name, field in scored.items():
+        score = field.get("confidence")
+        assert isinstance(score, (int, float)) and not isinstance(score, bool), (
+            f"{name}: confidence must be numeric, got {score!r}"
+        )
+        assert 0.0 <= score <= 1.0, f"{name}: confidence {score} is outside 0.0-1.0"
