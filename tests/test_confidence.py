@@ -6,6 +6,8 @@ properties the formula has to hold whatever the numbers are: in range,
 ordered, deterministic, and never treating a missing arm as agreement.
 """
 
+from collections import Counter
+
 import pytest
 from confidence import CONFIDENCE_BY_CLASS, STANDALONE_ACCURACY, confidence_for
 from dual_extract import AGREE, BOTH_BLANK, DISAGREE, NO_SECOND_OPINION, ONE_BLANK
@@ -172,3 +174,85 @@ def test_a_non_numeric_score_is_rejected():
     scored["Municipality"]["confidence"] = "high"
     with pytest.raises(AssertionError, match="Municipality"):
         assert_every_field_scored(scored)
+
+
+# --- the constants are measured, and stay measured --------------------------
+
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).parent.parent
+GROUND_TRUTH = REPO_ROOT / "data/benchmark/c1c2/coding-card-c1-c2-ground-truth.xlsx"
+RESULTS = REPO_ROOT / "data/benchmark/results"
+
+
+@pytest.mark.skipif(
+    not GROUND_TRUTH.is_file(),
+    reason="needs data/ (Drive), absent in CI -- see D004",
+)
+def test_constants_still_match_the_benchmark():
+    """AC3/AC6: the constants are measured, not chosen. This re-derives them
+    from the saved arms and fails if they have drifted -- which is what adding
+    cards to the benchmark should do, as a prompt to recalibrate D016 rather
+    than a silent divergence between the doc and the code.
+
+    Reads the sheet, never writes it.
+    """
+    from dual_extract import pair_cards
+    from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
+    from scoring import normalise
+
+    cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
+    truth = {c.page_id: c.fields for c in cards}
+    records = pair_cards(
+        "gemini-3.5-flash",
+        "qwen2.5-vl",
+        RESULTS,
+        page_ids=[c.page_id for c in cards],
+    )
+
+    right: Counter = Counter()
+    seen: Counter = Counter()
+    for record in records:
+        for name, field in record["fields"].items():
+            if name not in truth[record["page_id"]]:
+                continue
+            seen[field["agreement"]] += 1
+            right[field["agreement"]] += field["a"] == normalise(
+                truth[record["page_id"]][name]
+            )
+
+    for agreement in (AGREE, ONE_BLANK, DISAGREE):
+        measured = right[agreement] / seen[agreement]
+        assert abs(measured - CONFIDENCE_BY_CLASS[agreement]) < 0.03, (
+            f"{agreement}: constant is {CONFIDENCE_BY_CLASS[agreement]}, "
+            f"benchmark now says {measured:.3f} over {seen[agreement]} fields. "
+            f"Recalibrate D016 rather than widening this tolerance."
+        )
+
+
+@pytest.mark.skipif(
+    not GROUND_TRUTH.is_file(),
+    reason="needs data/ (Drive), absent in CI -- see D004",
+)
+def test_the_unmeasured_classes_are_still_unmeasured():
+    """both_blank and no_second_opinion have n=0 on this benchmark, which is
+    why their constants are reasoned rather than measured. If a future
+    benchmark produces some, D016's caveat is stale and needs rewriting."""
+    from dual_extract import pair_cards
+    from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
+
+    cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
+    records = pair_cards(
+        "gemini-3.5-flash",
+        "qwen2.5-vl",
+        RESULTS,
+        page_ids=[c.page_id for c in cards],
+    )
+    observed: Counter = Counter()
+    for record in records:
+        observed.update(record["counts"])
+
+    assert observed[BOTH_BLANK] == 0 and observed[NO_SECOND_OPINION] == 0, (
+        "a class D016 records as unmeasured now has data -- measure it and "
+        "replace the reasoned constant"
+    )
