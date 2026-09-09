@@ -67,9 +67,15 @@ not this adapter's -- writing a number here would quietly pre-empt it. The band
 survives in ``raw_text`` instead, which is preserved verbatim and travels with
 the raw/ directory; ``json_extraction.parse_confidence_bands`` reads it back.
 
-The batched path is unbanded: ``batch_prompt`` asks for the flat shape. Batching
-and banding have never been measured together and stacking two untested prompt
-changes would confound both.
+The batched path follows ``self.banded`` too, via ``banded_batch_prompt`` --
+same per-field ``{"value": ..., "confidence": ...}`` shape as the single-card
+banded prompt, just keyed "1".."count" like the flat batch prompt. Results
+still file under ``<model>-banded`` regardless of batch size, same as the
+single-card path; keeping different batch sizes apart on disk is the caller's
+job (``run_benchmark.py --results-root``), same as it already is for the
+unbanded batched runs. Batching and banding have still never been *measured*
+together -- this only makes asking for both possible, not validated; re-run
+batch_probe-style before trusting a banded batch's numbers.
 """
 
 from __future__ import annotations
@@ -180,6 +186,35 @@ def _parse_batch_object(raw: str) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def banded_batch_prompt(count: int) -> str:
+    """``batch_prompt``, but each card's field object holds ``{"value": ...,
+    "confidence": ...}`` pairs instead of bare values -- the batched form of
+    ``json_extraction.BANDED_EXTRACTION_PROMPT``. Same schema builder and same
+    per-card keying, so a banded batch is comparable to an unbanded one on
+    everything except the one thing being asked for differently.
+    """
+    schema = build_extraction_prompt_schema()
+    return (
+        f"You are given {count} numeric coding cards from a 1941-43 social "
+        f"survey, labelled CARD 1 to CARD {count}, each immediately after its "
+        "label.\n\n"
+        "Return ONLY a JSON object (no markdown fences, no commentary) whose "
+        f'keys are "1" to "{count}" and whose value for each key is that '
+        f"card's field object, containing exactly these "
+        f"{len(schema.splitlines())} keys.\n\n"
+        'The value for each key is an object: {"value": <the code>, "confidence": '
+        '<"low"|"medium"|"high">}.\n\n'
+        "Read each card independently and completely. Give every code as a "
+        'JSON string, copied exactly as written, keeping any leading zeros ("04", '
+        "not 4). Use null as the value where no code is written.\n\n"
+        'Judge confidence on how clearly you can read that cell: "high" if the '
+        'digits are unambiguous, "medium" if you had to choose between plausible '
+        'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
+        "Say low when it is low -- a wrong value marked high is worse than an "
+        "honest one marked low, because a reviewer will never look at it.\n\n" + schema
+    )
+
+
 def _call_with_retry(call, attempts: int = 3):
     """Retry transient API failures. Shared by the single and batched paths --
     a 503 on a batched request would otherwise throw away every card in it."""
@@ -257,10 +292,16 @@ class GeminiExtractor:
         The tell is output tokens per card collapsing against the single-card
         baseline, so ``cost_usd`` here is deliberately the per-card share --
         watch it, and re-measure before trusting a new model or a bigger batch.
+
+        Follows ``self.banded`` the same way ``extract`` does: banded_batch_
+        prompt when set, so a banded run stays banded across the batch/single
+        split rather than silently dropping bands the moment ``--batch`` is
+        passed.
         """
         from google import genai
 
-        contents: list = [batch_prompt(len(image_paths))]
+        prompt = banded_batch_prompt if self.banded else batch_prompt
+        contents: list = [prompt(len(image_paths))]
         for index, path in enumerate(image_paths, start=1):
             contents += [f"CARD {index}:", self._part(path)]
 

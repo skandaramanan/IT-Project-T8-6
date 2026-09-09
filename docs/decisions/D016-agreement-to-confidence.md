@@ -206,9 +206,12 @@ saved banded output, at a wider ±0.05 tolerance than the flat class
 constants' ±0.03 — every cell here has thinner support, and the tolerance
 says so honestly rather than implying precision the sample doesn't support.
 
-Measured on `gemini-3.5-flash-lite` only. Whether `gemini-3.5-flash`'s band
-behaves the same way is unmeasured; nothing here assumes it does, and nothing
-depends on it — flash-lite is the arm that ships.
+The constants above are measured on `gemini-3.5-flash-lite` only, and nothing
+here assumes they carry to another arm — flash-lite is what ships. They do
+not carry: `gemini-3.5-flash` batched at 10 was measured later the same day
+and bands almost everything `high`, with no usable `low` cell at all. See
+Addendum B, which leaves these constants unchanged and records the
+alternative rather than adopting it.
 
 ## Deliberately not done here
 
@@ -306,9 +309,13 @@ the flat class value — `test_band_constants_still_match_the_live_run` checks
 only the cells currently in the table, so a newly-measurable cell needs adding
 by hand, not just a passing test.
 
-**`gemini-3.5-flash`'s band behaviour gets measured.** Nothing here assumes it
-matches flash-lite's; if flash is ever reconsidered for production, its band
-needs its own live run, not an inherited table.
+**`gemini-3.5-flash`'s band behaviour gets measured.** ~~Nothing here assumes
+it matches flash-lite's; if flash is ever reconsidered for production, its band
+needs its own live run, not an inherited table.~~ **Done — see Addendum B.** It
+does not match: flash batched at 10 bands 98% of fields `high` and produces no
+usable `low` cell at all. It is the more accurate arm and the less informative
+one. The trigger that remains is the production decision itself, which is
+D012/IT-100's, not this document's.
 
 **IT-86 settles the resolution policy.** If it writes the non-primary arm's
 value on a disagreement, the score attached to that field has to be
@@ -342,3 +349,162 @@ from the same 30 cards:
 **Provisional**, consistent with the FR-01 spike decision record, pending the
 1980s dataset — which Client Meeting #3 already agreed is directional rather
 than ground truth, so it would not settle these figures even once reviewed.
+
+---
+
+## Addendum A — qwen cannot usefully self-report a band (09/09/2026)
+
+§6 measured the band on Gemini only, and left open whether the other arm could
+supply one too. It was built and run: `QWEN_CONFIDENCE_BAND`, mirroring
+`GEMINI_CONFIDENCE_BAND`, sending the same model-agnostic
+`BANDED_EXTRACTION_PROMPT`. One live run, the same 30 cards, on a Colab T4.
+
+**The answer is no, and not marginally.**
+
+| What was measured | Result |
+| -- | -- |
+| Confidence values emitted | 1,104 — **every one of them `high`** |
+| `medium` / `low` emitted | 0 / 0 |
+| Cards that banded at all | 18 of 30 |
+| Cards returning the flat shape, ignoring the prompt | 12 of 30 |
+| Coded-field accuracy, banded vs unbanded | 74.4% vs 74.8% |
+| Wall time per card, banded | ~310s (see cost note below) |
+
+Not a parsing artifact — `high` is the literal value in the raw JSON, and
+`parse_confidence_bands` filtered nothing out.
+
+**Why this kills it.** A band is only worth reading if it separates: the whole
+value of §6's table is that `P(correct | low)` is far below `P(correct |
+high)`. qwen is 74.4% accurate and says `high` on all of it, so `P(correct |
+qwen says high)` is just qwen's base rate. It cannot distinguish the quarter
+of its readings that are wrong from the three quarters that are not. Compare
+what makes Gemini's worth having:
+
+| Arm | high | medium | low |
+| -- | -- | -- | -- |
+| `gemini-3.5-flash-lite` | 91.7% | 71.5% | **9.1%** |
+| `qwen2.5-vl` | 74.4% *(all of them)* | — | — |
+
+**This is about self-report, not about qwen.** Nothing here says qwen is a
+poor second arm — its readings are exactly as useful as they were, and the
+dual-extraction design already extracts that value structurally, through
+whether it *agrees*. What it cannot do is introspect. The two signals are
+independent, and only one of them was ever coming from this arm.
+
+**Mechanism is inferred, not measured.** A 7B open-weight model loaded 4-bit,
+with no training toward calibrated self-assessment, producing an
+all-`high` distribution and dropping a nested output shape on 40% of cards, is
+consistent with weak instruction-following on a compound structural change —
+but this run does not isolate that, and a differently-prompted or
+differently-quantised qwen was not tried. The finding that stands is the
+measured one: no variance, therefore no signal.
+
+**Cost, for completeness.** The banded run's first card took 590.8s, of which
+~280s was the one-time 16.6GB model download and 4-bit load (`extract()` loads
+lazily, inside the timed region), leaving **~310s of actual inference per
+card**. The banded output is **2.1x the size of the unbanded** (median 3,862
+bytes against 1,817), and decode dominates on a 4-bit T4, so roughly double
+the per-card time is what that ratio predicts.
+
+The unbanded arm's per-card time was never recorded, so "roughly double" is
+the prediction from the output-size ratio plus the recollection that the
+original run took about an hour — **not a measured comparison**. The 590.8s
+and the 2.1x are measured; the unbanded baseline is not.
+
+Coded accuracy cost 0.4 points, which is inside noise at this n.
+
+### The key-completeness prompt fix, tested in the same run — also negative
+
+qwen omits schema keys outright rather than answering `null`: `Washouse`
+missing on 29 of 30 cards, `Pre-War Occupation` on 13, the three `Children of
+H. or wife` fields on 11 each. A prompt hint was appended to qwen's request
+(and only qwen's — the shared `EXTRACTION_PROMPT` was left alone precisely so
+these constants stay comparable) demanding every key be present, `null` where
+blank.
+
+**`Washouse` stayed missing on 29 of 30. The hint moved nothing.**
+
+Total missing keys went 78 → 87 across the run, but **that delta is
+confounded and should not be quoted**: this run changed banding *and* the hint
+at once, which is the exact trap `gemini_extractor.py`'s docstring warns about
+when stacking untested prompt changes. Isolating the hint needs an
+unbanded-with-hint run that has not been done. What is not confounded is the
+headline case: `Washouse` absent either way.
+
+Not truncation — banded output peaked at 4,668 bytes, roughly 1,300 tokens
+against the 2,048 `max_new_tokens` cap, so the omissions are genuine
+omissions rather than a response cut off mid-JSON and salvaged by
+`_repair_truncated_object`.
+
+**Consequence: both changes were reverted — neither ships.** The banding
+is opt-in and off by default, so it costs nothing at runtime, but it is
+measured-dead capability; the key-completeness hint is worse, being an
+unconditional change to qwen's live prompt that bought nothing. A negative
+result recorded here is worth more than either sitting in the tree.
+
+## Addendum B — `gemini-3.5-flash` batched-and-banded, paired against qwen (09/09/2026)
+
+§6 closes by noting flash's band behaviour is unmeasured and that nothing
+depends on it. It has now been measured, because batching made flash
+reconsiderable: `extract_batch` previously hardcoded the flat prompt and
+could not carry a band at all, which is now fixed, so a banded batch=10 run
+is possible for the first time. 30 cards, 3 requests, `GEMINI_CONFIDENCE_BAND=1`.
+
+Both arms paired against the same unbanded qwen, so only the Gemini side varies:
+
+| Class | Band | flash-lite-banded (single) | flash-banded batch=10 |
+| -- | -- | -- | -- |
+| `agree` | (all) | 1,317 / 96.4% | 1,358 / **98.7%** |
+| | high | 1,211 / 96.9% | 1,339 / 99.0% |
+| | medium | 104 / 91.3% | 19 / 78.9% |
+| | low | 2 *(n<10)* | — |
+| `disagree` | (all) | 418 / 67.9% | 390 / **87.7%** |
+| | high | 332 / 75.0% | 374 / 89.3% |
+| | medium | 78 / 44.9% | 16 / 50.0% |
+| | low | 8 *(n<10)* | — |
+| `one_blank` | (all) | 124 / 68.5% | 112 / **92.0%** |
+| | high | 90 / 82.2% | 110 / 93.6% |
+| | medium | 11 / 72.7% | 1 *(n<10)* |
+| | low | 22 / 13.6% | 1 *(n<10)* |
+
+**flash-batch10 is better in every class** — `disagree` by 19.8 points,
+`one_blank` by 23.5.
+
+**But its band stops earning its keep.** 1,823 of its 1,860 fields come back
+`high` (98%). Only `agree`/medium (n=19) and `disagree`/medium (n=16) clear
+the n ≥ 10 rule; there is effectively no `low` band at all (one field, whole
+run). `one_blank`/low — 13.6%, the single most informative cell in §6 — has no
+counterpart here. On this arm `BAND_ACCURACY_BY_CLASS` would collapse to
+almost entirely flat class constants. **The band's value, as measured, is
+substantially a flash-lite phenomenon**: the weaker arm is the one that knows
+when it is struggling.
+
+**The decisive figure is unflagged error** — wrong values the formula scores
+as `agree`/high, which no reviewer would ever look at:
+
+| Arm | Errors | Flagged | **Ships unflagged** | % of all fields |
+| -- | -- | -- | -- | -- |
+| flash-lite-banded (single) | 222 | 185 (83%) | **37** | 2.0% |
+| flash-banded batch=10 | 75 | 61 (81%) | **14** | 0.75% |
+
+flash-batch10 catches a slightly smaller *share* of its errors and still ships
+2.6x fewer of them, because it makes far fewer to begin with. Better accuracy
+beats better calibration here.
+
+**The trade is throughput, and it is not free:**
+
+| Config | Full ~6,500-card pass |
+| -- | -- |
+| flash-lite, single-card | ~2.6 days (2,500 req/day) |
+| flash, batch=10 | ~6.5 days (650 requests, 100/day across 5 keys) |
+| flash-lite, batched | not viable — loses 23 points, stops reading after ~3 cards |
+
+2.5x the calendar time for 2.6x fewer silent errors.
+
+**Nothing in this document changes on the strength of this.** The constants
+above stay calibrated to flash-lite, which is still what ships (D012). This
+addendum records that a better-quality configuration now exists and what it
+would cost — the choice belongs to IT-100 and any revision of D012, not here.
+Taking it would mean recalibrating these constants a third time, and retiring
+most of §6 along with them.
+
