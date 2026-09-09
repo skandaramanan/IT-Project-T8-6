@@ -240,6 +240,12 @@ def pair_cards(
     marked as having no second opinion; intersecting would make a half-failed
     run look clean.
     """
+    # Imported here, not at module load: confidence.py names its five classes
+    # by importing them from this module, so a top-level import back the other
+    # way is circular. By the time pair_cards runs, both modules are fully
+    # initialised.
+    from confidence import assert_every_field_scored, score_fields
+
     first_fields, first_bands = load_arm(results_root, first_model)
     second_fields, second_bands = load_arm(results_root, second_model)
     # Sheet order when there is a sheet -- deduplicated, not sorted, so the
@@ -262,14 +268,22 @@ def pair_cards(
             first_bands.get(page_id),
             second_bands.get(page_id),
         )
+        models = {"a": first_model, "b": second_model}
+        scored = score_fields(paired, models)
+        # AC1: fail the run rather than write a field with no score. Here
+        # rather than at the call site, so every consumer of pair_cards --
+        # IT-100's benchmark, IT-85's aggregation -- inherits the guarantee
+        # instead of each having to remember it.
+        assert_every_field_scored(scored, expected_fields=len(paired))
         records.append(
             {
                 "page_id": page_id,
-                "models": {"a": first_model, "b": second_model},
+                "models": models,
                 "counts": dict(
                     Counter(field["agreement"] for field in paired.values())
                 ),
                 "fields": paired,
+                "scored": scored,
             }
         )
     return records
@@ -294,6 +308,16 @@ def summarise(records: list[dict]) -> str:
             f"\nAgreement on fields where both read a code: "
             f"{totals.get(AGREE, 0)}/{coded} ({totals.get(AGREE, 0) / coded:.1%})"
         )
+    # The distribution, not just a mean: a card of 0.99s and one of 0.79s
+    # average to something no field actually has (IT-100 AC5).
+    spread = Counter(
+        field["confidence"] for record in records for field in record["scored"].values()
+    )
+    if spread:
+        lines.append("\nConfidence distribution:")
+        for score, count in sorted(spread.items(), reverse=True):
+            lines.append(f"  {score:.2f}  {count:>6}  ({count / total:.1%})")
+
     stranded = [r["page_id"] for r in records if r["counts"].get(NO_SECOND_OPINION)]
     if stranded:
         lines.append(f"\nCards with only one reading ({len(stranded)}): {stranded}")
