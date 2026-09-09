@@ -1,0 +1,344 @@
+# D016 — Agreement to confidence: the formula and its constants
+
+**Status:** Accepted
+**Date:** 2026-09-09 (recalibrated to flash-lite same day — see §1)
+**Decided by:** Skanda Ramanan (Design Lead)
+**Linear issue:** IT-99
+
+## Context
+
+FR-10 wants a numeric confidence score on every extracted field, and no
+benchmarked engine produces one. IT-98 manufactures the evidence instead: two
+independent extractors read every card, and their agreement stands in for a
+signal no single engine gives. What IT-98 does not do is turn that agreement
+into a number — it emits one of five agreement classes per field
+(`spike/dual_extract.py`) and stops there by design, leaving the arithmetic to
+this issue.
+
+D007 already committed the shape this has to fill: `confidence` is
+`["number", "null"]`, 0–1, on every field object. `src/extraction/base.py`
+independently confirms it — `ExtractionResult.confidence` is
+`dict[str, float] | None`. Both predate this decision and both say the same
+thing: a float, not a category.
+
+## Decision
+
+**The rule, stated once:** a field's confidence is the measured probability
+that the primary arm's reading is correct, given the agreement class the field
+fell into, refined by the primary arm's self-reported band when it gave one.
+One rule for all 62 fields — the same constant applies regardless of which
+field it is (IT-99 AC3).
+
+The constants were measured 2026-09-09 by pairing `gemini-3.5-flash-lite`
+against `qwen2.5-vl` (30 cards, 1,860 field comparisons) against the
+hand-typed benchmark sheet, and are checked against it on every test run —
+`test_constants_still_match_the_benchmark` in `tests/test_confidence.py`
+re-derives them and fails if they drift by more than 0.03.
+
+| Class | n | Measured | Constant | Status |
+| -- | -- | -- | -- | -- |
+| `agree` | 1,343 | 97.0% | **0.97** | measured |
+| `disagree` | 398 | 75.1% | **0.75** | measured |
+| `one_blank` | 118 | 73.7% | **0.74** | measured |
+| `both_blank` | 1 | — | **0.97** | reasoned |
+| `no_second_opinion` | 0 | — | *per surviving arm* | reasoned |
+
+### 1. Calibrated to `gemini-3.5-flash-lite`, not `gemini-3.5-flash`
+
+**This supersedes the constants this document originally shipped with, on the
+same day.** The first version measured `agree`/`disagree`/`one_blank` on a
+`gemini-3.5-flash` × `qwen2.5-vl` pairing, because that was the pairing IT-98
+happened to produce. But flash does not ship: the findings doc's own go/no-go
+puts `gemini-3.5-flash-lite` into production (2.6-day corpus pass against
+flash's 65), so a formula priced on flash was pricing confidence for a model
+nobody runs.
+
+Pairing flash-lite against qwen directly instead:
+
+| Class | flash (superseded) | flash-lite (current) | Δ |
+| -- | -- | -- | -- |
+| `agree` | 99.0% | 97.0% | −2.0 |
+| `disagree` | 79.1% | 75.1% | −4.0 |
+| `one_blank` | 85.1% | 73.7% | **−11.4** |
+
+`one_blank` moved the most, and moved past `disagree`: on flash it was the
+stronger evidence (85.1% > 79.1%), on flash-lite the two are a near-tie with
+`disagree` fractionally ahead (75.1% vs 73.7%). `test_agreement_scores_
+higher_than_disagreement` no longer asserts that ordering — it asserted an
+artefact of which model happened to get measured, not a property IT-99 AC2
+actually requires (AC2 only asks that agreement scores high and disagreement
+scores materially lower than agreement, not that the two disagreement-adjacent
+classes rank a particular way against each other).
+
+`one_blank` still earns its keep as a separate class: once band is folded in
+(§6), `one_blank`'s and `disagree`'s numbers diverge sharply again —
+`one_blank`/low (13.6%) is the single worst cell in the whole table, well
+below `disagree`/low's fallback. The flat constants converging does not mean
+the class distinction stopped mattering; it means the class distinction alone
+stopped being enough, which is exactly what §6 addresses.
+
+### 2. `no_second_opinion` varies by which arm survived, not one constant
+
+A hosted-path failure (IT-98 AC3) leaves exactly one reading. What that one
+reading is worth depends on which model produced it — a lone `gemini-3.5-flash`
+reading is not worth the same as a lone `qwen2.5-vl` reading. A single constant
+here would either understate the stronger arm or flatter the weaker one, so the
+value is the surviving arm's own standalone accuracy, harness-scored in the
+findings doc:
+
+| Arm | Coded-field accuracy | Constant |
+| -- | -- | -- |
+| `gemini-3.5-flash` | 93.7% | 0.94 |
+| `gemini-3.5-flash-lite` | 91.3% | 0.91 |
+| `qwen2.5-vl` | 74.8% | 0.75 |
+| unrecognised arm | — | falls back to the weakest (0.75) |
+| neither arm read the card | no evidence at all | 0.0 |
+
+This table is untouched by §1's recalibration — it was already keyed per arm,
+including flash-lite, before this document's first version shipped. This is
+still one uniform rule (AC3) — it is keyed on which arm answered, never on
+which field. An unrecognised model name falls back to the *weakest* measured
+arm rather than the strongest: understating a field's confidence routes it to
+review, which is recoverable; overstating ships an unchecked value, which
+breaches NFR-01. Two arms both failing to read a card is the one place a zero
+is honest — there is no evidence of any kind to price.
+
+### 3. `both_blank` is reasoned, not measured
+
+n=1 on the flash-lite pairing (up from n=0 on flash — one field, banded
+`low`, wrong): all 30 cards are dense (1,834 of 1,860 fields carry a code),
+so a card being empty on *both* arms is rare regardless of which arm is
+paired. `both_blank` inherits `agree`'s flat constant on the argument that it
+is the same kind of evidence — two independent readings corroborating each
+other, just about emptiness rather than about a code.
+
+This is a judgement call, not a measurement, and it has a known gap: two
+models both missing a faint code looks identical to two models correctly
+reading an empty cell, and 0.97 cannot tell them apart. One wrong observation
+does not close that gap — flagged as a `ponytail:` comment in
+`spike/confidence.py`, alongside `test_both_blank_is_still_too_thin_to_
+measure`, which fails the moment a benchmark run produces enough of them to
+actually calibrate against.
+
+### 4. What the score is attached to
+
+`score_fields()` in `spike/confidence.py` emits `{value, confidence,
+source_agreement}` per field. `value` is the primary arm's (gemini's)
+normalised reading, and stays the primary arm's **even when that reading is
+blank** — the `one_blank` constant is P(primary correct) measured over cases
+that include the primary correctly reading an empty cell, so swapping in the
+other arm's value there would attach a number to a reading it was never
+measured about. Only `no_second_opinion` substitutes the other arm's value,
+because that is the one case where the primary arm produced nothing at all.
+
+`assert_every_field_scored()` enforces IT-99 AC1 directly: every field numeric,
+in 0.0–1.0, on all 62 fields — 62, not 60, because 62 is the C1/C2 card (98% of
+the coding cards) and an assertion hardcoded to C3's 60 fails on every real
+card. It raises rather than warns, and sits inside `pair_cards()` rather than
+at each call site, so every consumer — IT-100's benchmark run, IT-85's
+card-level aggregation — inherits the guarantee rather than each having to
+remember to call it.
+
+### 5. `GEMINI_CONFIDENCE_BAND`, live-tested
+
+`GEMINI_CONFIDENCE_BAND` was built under IT-98 and never run against a real
+model until 09/09/2026, when it was — `gemini_extractor.py` names this issue
+as the place the band-to-number decision belongs ("turning 'high' into 0.9 is
+IT-99's decision, not this adapter's"), so it stayed unpriced rather than
+being decided by the adapter that built the plumbing.
+
+A single live run, 30 cards, `gemini-3.5-flash-lite` (the arm that ships),
+`GEMINI_CONFIDENCE_BAND=1`. **Banding costs accuracy, measured rather than
+assumed:** coded-field accuracy dropped from 91.3% unbanded to 88.8% banded —
+2.5 points, the exact risk `BANDED_EXTRACTION_PROMPT`'s docstring flagged as
+untested. The separation between bands is worth that cost for the fields it
+flags, but the cost is real and belongs in any decision about running this in
+production.
+
+### 6. The band prices `agree`/`disagree`/`one_blank` too, not only `no_second_opinion`
+
+The band was first folded in for `NO_SECOND_OPINION` only, scored standalone
+against ground truth (band, unconditioned on class — there is no agreement
+class without a second reading):
+
+| Band | Fields | Accuracy | Constant |
+| -- | -- | -- | -- |
+| high | 1,633 | 91.7% | 0.92 |
+| medium | 193 | 71.5% | 0.72 |
+| low | 33 | 9.1% | **0.09** |
+
+`low` is a far stronger "do not trust this" than `disagree`'s flat 0.75 —
+worth acting on precisely because it is more decisive, and cheaper to obtain
+(one model, one call, versus two).
+
+**Extended the same day** by pairing the banded flash-lite run against qwen —
+rather than scoring it standalone — giving real `(class, band)` accuracy
+instead of accuracy-by-band alone:
+
+| Class | Band | n | Accuracy | Constant |
+| -- | -- | -- | -- | -- |
+| `agree` | high | 1,211 | 96.9% | 0.97 |
+| `agree` | medium | 104 | 91.3% | 0.91 |
+| `agree` | low | 2 | 0.0% | *n<10, falls back to 0.97* |
+| `disagree` | high | 332 | 75.0% | 0.75 |
+| `disagree` | medium | 78 | 44.9% | **0.45** |
+| `disagree` | low | 8 | 0.0% | *n<10, falls back to 0.75* |
+| `one_blank` | high | 90 | 82.2% | 0.82 |
+| `one_blank` | medium | 11 | 72.7% | 0.73 |
+| `one_blank` | low | 22 | 13.6% | **0.14** |
+
+**One documented rule, not a per-cell choice:** a `(class, band)` cell is
+trusted only at n ≥ 10. `agree`/low (n=2) and `disagree`/low (n=8) are
+excluded on that rule and fall back to the flat class constant — `disagree`/
+low's 0/8 is suggestive (every single one was wrong) but eight observations
+is not a measurement, and a documented threshold applied uniformly beats a
+judgement call about which thin cells "feel" trustworthy.
+
+This is where the band earns its keep beyond `NO_SECOND_OPINION`:
+`disagree`/medium (0.45) is barely better than a coin flip, well below plain
+`disagree`'s 0.75 — a disagreeing field is not one uniform kind of uncertain,
+and a band tells you which kind. `one_blank`/low (0.14) is the single worst
+cell in the entire formula, lower than any flat constant this document
+defines.
+
+`test_band_constants_still_match_the_live_run` pins both tables against the
+saved banded output, at a wider ±0.05 tolerance than the flat class
+constants' ±0.03 — every cell here has thinner support, and the tolerance
+says so honestly rather than implying precision the sample doesn't support.
+
+Measured on `gemini-3.5-flash-lite` only. Whether `gemini-3.5-flash`'s band
+behaves the same way is unmeasured; nothing here assumes it does, and nothing
+depends on it — flash-lite is the arm that ships.
+
+## Deliberately not done here
+
+- **Banding `both_blank`.** n=1, banded, wrong — one observation is not a
+  cell. `both_blank` always reads as the flat (inherited) constant regardless
+  of band; see §3.
+- **Choosing which value wins a disagreement.** IT-86's resolution policy. The
+  score attaches to the primary arm's reading because that is what it was
+  measured about; if IT-86 writes the other arm's value instead, the score has
+  to be recomputed against what it actually wrote.
+- **Writing into a D007 record.** `src/extraction/record.py` still emits
+  `confidence: None`. D007's field object is `additionalProperties: false`
+  with no `source_agreement` key, so carrying this triple into a real record
+  needs a D007 amendment first — IT-86's call to make, not one to take here by
+  widening the schema unilaterally.
+
+## Alternatives considered
+
+**Keep the flash-based constants; treat flash-lite as close enough.** Rejected
+— the gap is too large to wave off as noise, worst on `one_blank` at 11.4
+points, and flash-lite is not an approximation of flash for this purpose, it
+is the actual production arm. A formula whose numbers describe a model nobody
+runs is not a formula that describes production, whatever its accuracy in the
+abstract.
+
+**One constant per class, no split by surviving arm and no band.** Simpler,
+but on flash-lite `disagree` and `one_blank`'s flat constants are within a
+point of each other — a single merged number would hide that the band still
+separates them sharply (§6). Rejected: AC3 asks for a rule, not the *simplest*
+possible rule, and the split is supported by data already in hand.
+
+**Categorical output (low/medium/high) instead of a number.** Rejected before
+this decision was written — D007 and `ExtractionResult.confidence` both
+already commit to a float, and changing that would mean reopening D007.
+
+**Leave `no_second_opinion` and `both_blank` unscored until measured.**
+Rejected: IT-99 AC1 fails the run on a missing score, and IT-98 AC3 requires
+the run to complete on a hosted-path failure. The two ACs together force a
+number even where the evidence is thin — better to write down a reasoned
+number and its ceiling than to leave a gap the assertion cannot pass.
+
+**Trust every `(class, band)` cell regardless of n.** Rejected — `agree`/low
+(n=2) and `disagree`/low (n=8) would otherwise hand out numbers from single-
+or low-digit samples. The n ≥ 10 threshold is arbitrary in the sense that any
+cutoff is, but it is one documented number applied to every cell alike, not a
+judgement call made cell by cell.
+
+## Consequences
+
+- Every field the dual path produces carries a numeric confidence, in
+  0.0–1.0, sourced to one of five agreement classes and, where available, a
+  self-reported band.
+- **The recalibration is a real behaviour change, not a rounding fix.** Every
+  `agree`/`disagree`/`one_blank` field scores differently than it did on the
+  version of this document published earlier the same day — `one_blank`
+  fields drop the most, by 11.4 points.
+- `disagree` and `one_blank`'s flat constants are now a near-tie (75.1% vs
+  73.7%), reversed from flash's clear separation (79.1% vs 85.1%). The class
+  distinction is still real once band is considered (§6); it is materially
+  weaker when band is absent.
+- Three of the five constants (`both_blank`, `no_second_opinion`'s per-arm
+  table, and seven of `BAND_ACCURACY_BY_CLASS`'s nine possible cells) rest on
+  thin or zero support and are reasoned or thresholded rather than flatly
+  measured. They are marked as such in `spike/confidence.py` and here.
+- `no_second_opinion`'s score depends on which arm survived, and now — like
+  every other class — on the surviving/primary arm's band when it gave one.
+  The same class can carry different confidence values on different fields;
+  that is by design, not drift.
+- The constants are pinned against the live benchmark by
+  `test_constants_still_match_the_benchmark` and `test_band_constants_still_
+  match_the_live_run`; adding cards to the benchmark, or a fresh banded run,
+  that shift the measured percentages beyond tolerance fails those tests
+  rather than silently drifting from this document.
+- Running `GEMINI_CONFIDENCE_BAND=1` in production costs 2.5 points of
+  coded-field accuracy against the unbanded prompt. That trade is not this
+  document's to make — it belongs to whoever decides whether the band ships
+  at corpus scale — but the number it would be made against now exists, for
+  both the standalone and the class-conditioned case.
+- `src/` is unaffected. `src/extraction/record.py` still writes
+  `confidence: None`; nothing here changes production behaviour.
+
+## Revisit if
+
+**The band is proposed for production at corpus scale.** §5/§6's 2.5-point
+accuracy cost, and the thin support behind most `(class, band)` cells, both
+belong in that decision.
+
+**A sparser benchmark produces enough `both_blank` fields to measure.**
+`test_both_blank_is_still_too_thin_to_measure` will fail when it does — that
+is the trigger to replace the inherited `agree` constant with a real one.
+
+**A sparser benchmark pushes any `(class, band)` cell past n=10.** `agree`/low
+and `disagree`/low would then get real constants instead of falling back to
+the flat class value — `test_band_constants_still_match_the_live_run` checks
+only the cells currently in the table, so a newly-measurable cell needs adding
+by hand, not just a passing test.
+
+**`gemini-3.5-flash`'s band behaviour gets measured.** Nothing here assumes it
+matches flash-lite's; if flash is ever reconsidered for production, its band
+needs its own live run, not an inherited table.
+
+**IT-86 settles the resolution policy.** If it writes the non-primary arm's
+value on a disagreement, the score attached to that field has to be
+recomputed against the value actually written, not the primary arm's.
+
+**D007 is amended to carry `source_agreement`.** Then `src/extraction/record.py`
+can stop emitting `confidence: None` for dual-extracted fields, and this
+formula's output has somewhere real to land.
+
+## How far to trust this
+
+Carried over from the findings doc's own limits, because the constants come
+from the same 30 cards:
+
+- **Dev-set figures.** All 30 cards were used to derive these constants; no
+  held-out split exists yet (Test Plan §5.1).
+- **Ground truth is single-keyed and unverified** (Test Plan §5.2). An error
+  in it is indistinguishable from a model error on any of these constants —
+  which could make them understate or overstate the real reliability, not
+  predictably either way.
+- **n = 30 cards, and several `(class, band)` cells are thinner than that.**
+  The flat class constants' direction is clear at n ≈ 100–1,300 fields; the
+  band-conditioned cells range from n=1,211 (`agree`/high) down to the n ≥ 10
+  threshold itself. The closer a cell sits to that floor, the less its second
+  decimal place means.
+- **The recalibration itself has not been independently re-verified.** One
+  pairing run, one day, one person. The magnitude of the flash → flash-lite
+  shift (§1) is real and reproducible from saved data, but has not yet been
+  sanity-checked by a second pass or a second reviewer.
+
+**Provisional**, consistent with the FR-01 spike decision record, pending the
+1980s dataset — which Client Meeting #3 already agreed is directional rather
+than ground truth, so it would not settle these figures even once reviewed.

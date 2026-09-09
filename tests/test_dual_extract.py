@@ -328,19 +328,24 @@ def test_paired_records_carry_a_confidence_score(tmp_path):
 def test_a_stranded_card_is_scored_low_not_skipped(tmp_path):
     """A card only one arm reached still gets a number -- AC1 admits no
     exemption, and skipping it would hide the half-failed run."""
+    from confidence import CONFIDENCE_BY_CLASS
+
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
     records = {r["page_id"]: r for r in pair_cards("a", "b", tmp_path, FIELDS)}
     scored = records["p1"]["scored"]["Municipality"]
 
     assert scored["source_agreement"] == NO_SECOND_OPINION
-    assert scored["confidence"] < 0.99
+    assert scored["confidence"] < CONFIDENCE_BY_CLASS[AGREE]
 
 
 def test_summarise_reports_the_confidence_distribution(tmp_path):
     """AC5 of IT-100 needs a distribution, not a headline number."""
+    from confidence import CONFIDENCE_BY_CLASS
+
     _write(tmp_path, "a", "p1", {"Municipality": "56", "Weekly Rent": "04"})
     _write(tmp_path, "b", "p1", {"Municipality": "56", "Weekly Rent": "4"})
     text = summarise(pair_cards("a", "b", tmp_path, FIELDS))
 
     assert "confidence" in text.lower()
-    assert "0.99" in text and "0.79" in text
+    assert f"{CONFIDENCE_BY_CLASS[AGREE]:.2f}" in text
+    assert f"{CONFIDENCE_BY_CLASS[DISAGREE]:.2f}" in text
