@@ -70,7 +70,7 @@ CONFIDENCE_BY_CLASS = {
     # other, about emptiness rather than about a code.
     # ponytail: unmeasured (n=1). A single wrong observation is weak evidence
     # either way. Re-measure on a sparser benchmark before trusting this at
-    # corpus scale -- test_the_unmeasured_classes_are_still_unmeasured flags
+    # corpus scale -- test_both_blank_is_still_too_thin_to_measure flags
     # the moment more data exists.
     BOTH_BLANK: 0.97,
     # Not a fixed number -- see confidence_for. What one surviving reading is
