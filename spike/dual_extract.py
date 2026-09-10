@@ -242,8 +242,11 @@ def pair_cards(
     """
     first_fields, first_bands = load_arm(results_root, first_model)
     second_fields, second_bands = load_arm(results_root, second_model)
+    # Sheet order when there is a sheet -- deduplicated, not sorted, so the
+    # paired output lines up with the benchmark sheet it came from. The union
+    # fallback has no authoritative order, so it sorts.
     wanted = (
-        sorted(set(page_ids))
+        list(dict.fromkeys(page_ids))
         if page_ids
         else sorted(set(first_fields) | set(second_fields))
     )

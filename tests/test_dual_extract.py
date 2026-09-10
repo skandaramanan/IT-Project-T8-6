@@ -149,6 +149,18 @@ def test_pair_cards_takes_the_union_not_the_intersection(tmp_path):
     assert records["p2"]["models"] == {"a": "a", "b": "b"}
 
 
+def test_pair_cards_keeps_the_sheet_order(tmp_path):
+    """The sheet is the authoritative card list, so the paired output follows
+    it rather than the alphabet -- otherwise the JSON cannot be read alongside
+    the sheet it came from. Duplicates in the list collapse."""
+    for page_id in ("p3", "p1", "p2"):
+        _write(tmp_path, "a", page_id, {"Municipality": "56"})
+        _write(tmp_path, "b", page_id, {"Municipality": "56"})
+
+    records = pair_cards("a", "b", tmp_path, FIELDS, page_ids=["p3", "p1", "p3", "p2"])
+    assert [r["page_id"] for r in records] == ["p3", "p1", "p2"]
+
+
 def test_counts_add_up_to_the_field_count(tmp_path):
     _write(tmp_path, "a", "p1", {"Municipality": "56", "Weekly Rent": "04"})
     _write(tmp_path, "b", "p1", {"Municipality": "56", "Weekly Rent": "4"})
