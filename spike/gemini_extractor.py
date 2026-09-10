@@ -166,6 +166,20 @@ def batch_prompt(count: int) -> str:
     )
 
 
+def _parse_batch_object(raw: str) -> dict:
+    """The ``{"1": {...}, "2": {...}}`` object out of a batched response.
+
+    Anything else -- no JSON at all, or JSON that is a list or a bare string --
+    is an empty batch, not an exception: a model that answered with a list would
+    otherwise take down every card in the request at ``outer.get``.
+    """
+    try:
+        parsed = json.loads(raw[raw.index("{") : raw.rindex("}") + 1])
+    except (ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _call_with_retry(call, attempts: int = 3):
     """Retry transient API failures. Shared by the single and batched paths --
     a 503 on a batched request would otherwise throw away every card in it."""
@@ -251,16 +265,23 @@ class GeminiExtractor:
             contents += [f"CARD {index}:", self._part(path)]
 
         client = genai.Client()
-        response = _call_with_retry(
-            lambda: client.models.generate_content(
-                model=self.model_id, contents=contents, config=self._config()
+        # Retry an unusable answer, the same way _generate does for a single
+        # card: a response that parses to nothing costs the whole batch, so
+        # banking the first one makes the batched arm look worse than the model
+        # is for reasons that have nothing to do with batching. The last
+        # response is kept either way -- raw_text and cost_usd still get
+        # recorded, and the empty batch scores as the failure it is.
+        outer: dict = {}
+        for attempt in range(1, 4):
+            response = _call_with_retry(
+                lambda: client.models.generate_content(
+                    model=self.model_id, contents=contents, config=self._config()
+                )
             )
-        )
-        raw = response.text or ""
-        try:
-            outer = json.loads(raw[raw.index("{") : raw.rindex("}") + 1])
-        except (ValueError, json.JSONDecodeError):
-            outer = {}
+            outer = _parse_batch_object(response.text or "")
+            if outer or attempt == 3:
+                break
+            time.sleep(2**attempt)
 
         share = _cost_usd(self.model_id, response.usage_metadata)
         results = []
