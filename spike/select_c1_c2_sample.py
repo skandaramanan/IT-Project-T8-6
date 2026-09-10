@@ -136,6 +136,12 @@ def extract_image(
     stream: 7 units store pages as JPEG 2000 and 4 wrap the scan in a Form
     XObject, and a raw top-level stream copy handles neither.
     """
+    # Pages are 1-based here. A 0 or a negative from a bad upstream row would
+    # index from the end instead of failing, and quietly put the wrong scan in
+    # the ground-truth set.
+    if page_number < 1:
+        raise ValueError(f"page number {page_number} is not 1-based ({pdf_path})")
+
     from PIL import Image
 
     page = PdfReader(pdf_path).pages[page_number - 1]
