@@ -38,6 +38,7 @@ sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
 import mimetypes
 import os
 
+from dual_extract import _has_reading
 from ground_truth import load_ground_truth
 from json_extraction import parse_json_fields
 from scoring import score_structured
@@ -111,7 +112,11 @@ def main() -> None:
     start = time.monotonic()
     for card in cards:
         cached = raw_dir / f"{card.page_id}.txt"
-        if cached.exists():
+        # Content, not existence -- an empty raw file is not an answer, and
+        # treating one as cached scores that card blank on every future probe.
+        # Same rule dual_extract reads raw/ back with, imported rather than
+        # restated so the two cannot drift.
+        if _has_reading(raw_dir, card.page_id):
             fields = parse_json_fields(cached.read_text()) or {}
             reused += 1
         else:
