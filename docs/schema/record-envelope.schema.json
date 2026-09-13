@@ -43,7 +43,7 @@
         },
         "status": {
           "enum": ["ok", "no_data", "illegible", "damaged", "omitted"],
-          "description": "FR-09. Slashed-out columns map to no_data, pending final client confirmation."
+          "description": "FR-09. ok: The field was read successfully and contains a usable value. no_data: The source field is present but contains no value to extract. illegible: The source field contains markings that cannot be read reliably. damaged: The source field cannot be read because its source area is damaged or obscured. omitted: The expected field was not returned by the extractor."
         },
         "confidence": {
           "type": ["number", "null"],
