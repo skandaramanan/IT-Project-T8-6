@@ -44,6 +44,12 @@ def test_field_kind_excludes_no_data():
 
 
 def test_c3_unobserved_fields_are_unknown_kind():
+    """Keep this provisional expectation until nonblank C3 examples establish
+    each field's shape or code-book mapping.
+
+    The two O/C. fields may become numeric_free counts, while Facilities Shared
+    may become categorical if its values match the Shared vocabulary.
+    """
     names = {
         "Facilities Shared",
         "House No. of Families O/C. (Liv.B)",
