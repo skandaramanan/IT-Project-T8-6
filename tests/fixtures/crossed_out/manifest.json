@@ -1,0 +1,117 @@
+{
+  "schema_version": "0.2.0",
+  "fixtures": [
+    {
+      "id": "family_boarders_negation",
+      "required_case": "clean_strike",
+      "source": "real",
+      "description": "No. of Family Boarders struck through, whole row, no value written. Unit 216413, pages 43/63 (C2-only field).",
+      "marks": [
+        { "image": "crossed_out/family_boarders_1.jpg", "field": "No. of Family Boarders", "original_value": null, "expect_negated": true, "expected_value": null },
+        { "image": "crossed_out/family_boarders_2.jpg", "field": "No. of Family Boarders", "original_value": null, "expect_negated": true, "expected_value": null }
+      ]
+    },
+    {
+      "id": "no_strike_control",
+      "required_case": "no_strike_control",
+      "source": "real",
+      "description": "Real unmarked fields -- baseline, nothing here resolves as struck.",
+      "must_not_negate": [
+        { "image": "r04-coding-front.jpg", "field": "Age of Head" },
+        { "image": "r05-coding-front.jpg", "field": "Type of Family" },
+        { "image": "r01-coding-front.jpg", "field": "Sex of Head" }
+      ]
+    },
+    {
+      "id": "real_marks_r01",
+      "required_case": null,
+      "source": "real",
+      "image": "r01-coding-front.jpg",
+      "description": "Marks classified by Jacob against the scan, 2026-09-16.",
+      "marks": [
+        { "field": "Pre-War Occupation", "original_value": "9", "expect_negated": true, "expected_value": null },
+        { "field": "Removal", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Total Number of Rooms", "original_value": "6", "expect_negated": true, "expected_value": null },
+        { "field": "Number of Bedrooms", "original_value": "2", "expect_negated": true, "expected_value": null },
+        { "field": "Number of Sleepouts", "original_value": "4", "expect_negated": true, "expected_value": null },
+        { "field": "Garden", "original_value": "3", "expect_negated": true, "expected_value": null }
+      ]
+    },
+    {
+      "id": "real_marks_r02",
+      "required_case": null,
+      "source": "real",
+      "image": "r02-coding-front.jpg",
+      "description": "Marks classified by Jacob against the scan, 2026-09-16.",
+      "marks": [
+        { "field": "Normal Household I.", "original_value": "997", "expect_negated": true, "expected_value": null },
+        { "field": "Total Available I.", "original_value": "997", "expect_negated": true, "expected_value": null },
+        { "field": "Earnings of Head", "original_value": "997", "expect_negated": true, "expected_value": null },
+        { "field": "Place of Work", "original_value": "31", "expect_negated": true, "expected_value": null },
+        { "field": "Regularity of Work", "original_value": "8", "expect_negated": true, "expected_value": null },
+        { "field": "State of Repair", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Bathroom", "original_value": "6", "expect_negated": true, "expected_value": null }
+      ],
+      "must_not_negate": [
+        { "field": "Retired and Indep. Persons", "note": "correction: '0' revised to '1'" },
+        { "field": "Other", "note": "correction: '1' revised to '0'" }
+      ],
+      "non_field_annotations": [
+        { "image": "r02-coding-front.jpg", "location": "blue oval, 'Total No. Resident Members' to 'Number over 10 M.'", "note": "reviewer annotation, not a struck option" }
+      ]
+    },
+    {
+      "id": "real_marks_r03",
+      "required_case": null,
+      "source": "real",
+      "image": "r03-coding-front.jpg",
+      "description": "Marks classified by Jacob against the scan, 2026-09-16.",
+      "marks": [
+        { "field": "Weekly Rent", "original_value": "24", "expect_negated": true, "expected_value": null },
+        { "field": "Pre-War Occupation", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Removal", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Garden", "original_value": "3", "expect_negated": true, "expected_value": null }
+      ]
+    },
+    {
+      "id": "real_marks_r04",
+      "required_case": null,
+      "source": "real",
+      "image": "r04-coding-front.jpg",
+      "description": "Marks classified by Jacob against the scan, 2026-09-16.",
+      "marks": [
+        { "field": "Normal Household I.", "original_value": "997", "expect_negated": true, "expected_value": null },
+        { "field": "Regularity of Work", "original_value": "0", "expect_negated": true, "expected_value": null },
+        { "field": "Pre-War Occupation", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Removal", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Garden", "original_value": "3", "expect_negated": true, "expected_value": null }
+      ],
+      "must_not_negate": [
+        { "field": "Industry of H.", "note": "correction: '787' revised to '781'" }
+      ]
+    },
+    {
+      "id": "real_marks_r05",
+      "required_case": null,
+      "source": "real",
+      "image": "r05-coding-front.jpg",
+      "description": "Marks classified by Jacob against the scan, 2026-09-16.",
+      "marks": [
+        { "field": "Normal Household I.", "original_value": "132", "expect_negated": true, "expected_value": null },
+        { "field": "Total Available I.", "original_value": "103", "expect_negated": true, "expected_value": null },
+        { "field": "State of Repair", "original_value": "1", "expect_negated": true, "expected_value": null },
+        { "field": "Bathroom", "original_value": "6", "expect_negated": true, "expected_value": null }
+      ]
+    },
+    {
+      "id": "card_level_annotations",
+      "required_case": null,
+      "source": "real",
+      "description": "Card-level stamps, constant position across all cards -- not struck options.",
+      "must_not_negate": [
+        { "images": ["r01-coding-front.jpg", "r02-coding-front.jpg", "r03-coding-front.jpg", "r04-coding-front.jpg", "r05-coding-front.jpg"], "location": "top-left, over/near 'Municipality'", "note": "same red X/asterisk on every card regardless of its Municipality value" },
+        { "images": ["r01-coding-front.jpg", "r02-coding-front.jpg", "r03-coding-front.jpg", "r04-coding-front.jpg", "r05-coding-front.jpg"], "location": "bottom-left, below 'Other'", "note": "circled tally number and heart mark on every card" }
+      ]
+    }
+  ]
+}
