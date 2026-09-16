@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import statistics
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +37,10 @@ from extraction.base import ExtractionResult, Extractor
 # spike/dual_extract.py imports this name rather than repeating the path, so the
 # reader and the writer cannot drift onto different directories.
 DEFAULT_RESULTS_ROOT = Path("data/benchmark/results")
+
+# Corpus size for the cost extrapolation IT-100 AC4 asks for. Approximate, and
+# the roadmap's figure -- the full-scale run in Cycle 4 is what sizes it exactly.
+CORPUS_CARDS = 6_500
 
 EXTRACTORS: dict[str, str] = {
     # name -> "module:ClassName", imported lazily so picking one model doesn't
@@ -190,6 +195,12 @@ def main() -> None:
 
     scores = []
     confidences: list[dict[str, float] | None] = []
+    # IT-100 AC4 wants cost and latency per card, extrapolated to the corpus.
+    # Both were already measured per request and then dropped here -- the
+    # extractor computes cost_usd from real token counts and run_group times
+    # every request -- so the gap was reporting, not measurement.
+    costs: list[float | None] = []
+    latencies: list[float] = []
     failed = 0
     wall_start = time.monotonic()
 
@@ -214,6 +225,11 @@ def main() -> None:
                     (raw_dir / f"{card.page_id}.txt").write_text(result.raw_text)
                 scores.append(score)
                 confidences.append(result.confidence)
+                costs.append(result.cost_usd)
+                # On a batch this is the whole request's time, same figure for
+                # every card in it -- so the median below is a per-request
+                # latency, which is what the rate-limit arithmetic needs.
+                latencies.append(elapsed)
                 # flush: a card can take minutes, and redirected stdout is
                 # block-buffered, so without this a running benchmark looks hung
                 print(
@@ -273,6 +289,25 @@ def main() -> None:
                 f"Confidence: {scored}/{total_fields} fields carry a score "
                 f"({scored / total_fields:.1%})"
             )
+
+        # IT-100 AC4. Latency is the median request, not the mean of wall time
+        # over cards: --workers runs requests concurrently, so wall/cards
+        # understates a single card's latency by roughly the worker count.
+        if latencies:
+            print(
+                f"Latency: {statistics.median(latencies):.1f}s median per request "
+                f"({len(latencies)} requests, {args.workers} concurrent)"
+            )
+        priced = [c for c in costs if c is not None]
+        if priced:
+            per_card = sum(priced) / len(priced)
+            print(
+                f"Cost: ${sum(priced):.4f} over {len(priced)} cards "
+                f"(${per_card:.5f}/card, ~${per_card * CORPUS_CARDS:,.2f} for "
+                f"{CORPUS_CARDS:,} cards) -- list price, $0 on the free tier"
+            )
+        elif not args.rescore:
+            print("Cost: unpriced -- no per-card cost reported by this engine")
     else:
         raise SystemExit(f"All {failed} cards failed")
 
