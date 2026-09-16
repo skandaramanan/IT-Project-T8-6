@@ -30,6 +30,10 @@ class ExtractionResult:
     # independently of how accurately they read the digits.
     confidence: dict[str, float] | None = None
 
+    # Per-field strike-through signal (FR-06), keyed like ``fields``. Same
+    # None/{} distinction as ``confidence``. Only True entries are present.
+    struck: dict[str, bool] | None = None
+
 
 class Extractor(Protocol):
     name: str

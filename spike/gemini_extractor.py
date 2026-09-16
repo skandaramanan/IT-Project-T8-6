@@ -7,6 +7,10 @@ Env vars, because ``run_benchmark.py`` constructs extractors with no args:
     GEMINI_MEDIA_RESOLUTION     low | medium | high; unset = the model's default
     GEMINI_CONFIDENCE_BAND      1 to have the model self-report low/medium/high
                                 per field; off by default
+    GEMINI_STRUCK_DETECTION     1 for the struck-option signal; off by default,
+                                composable with GEMINI_CONFIDENCE_BAND in one
+                                call (extract() only -- extract_batch() ignores
+                                it)
 
 Default model is flash-lite: its free-tier cap (500/day/key) is what lets a
 ~6,500-card corpus run at all, at a 2.4-point accuracy cost vs Flash (91.3%
@@ -29,6 +33,10 @@ stays None even when banded.
 The batched path follows ``self.banded`` via ``banded_batch_prompt``, same
 shape as the single-card banded prompt. Batching + banding together is
 untested; re-measure before trusting those numbers.
+
+Struck detection (FR-06) is single-card only: ``extract_batch`` ignores
+``GEMINI_STRUCK_DETECTION`` and every result's ``struck`` stays None, even
+though ``self.name`` still carries the ``-struck`` suffix.
 """
 
 from __future__ import annotations
@@ -42,8 +50,11 @@ from pathlib import Path
 
 from json_extraction import (
     BANDED_EXTRACTION_PROMPT,
+    BANDED_STRUCK_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
+    STRUCK_EXTRACTION_PROMPT,
     parse_json_fields,
+    parse_struck_fields,
 )
 
 from extraction.base import ExtractionResult
@@ -152,6 +163,11 @@ def banded_batch_prompt(count: int) -> str:
     )
 
 
+def _env_flag(name: str) -> bool:
+    """A 1/true/yes environment switch; absent or anything else means off."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
 def _call_with_retry(call, attempts: int = 3):
     """Retry transient API failures. Shared by the single and batched paths --
     a 503 on a batched request would otherwise throw away every card in it."""
@@ -173,13 +189,14 @@ class GeminiExtractor:
         self.name = self.model_id
         # Banded is a different prompt/run, so it gets a "-banded" suffix to
         # keep results side by side instead of overwriting.
-        self.banded = os.environ.get("GEMINI_CONFIDENCE_BAND", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        self.banded = _env_flag("GEMINI_CONFIDENCE_BAND")
         if self.banded:
             self.name += "-banded"
+        # A struck signal (FR-06), composable with banded -- extract() sends
+        # both in one call when both are set.
+        self.struck_detection = _env_flag("GEMINI_STRUCK_DETECTION")
+        if self.struck_detection:
+            self.name += "-struck"
 
     def is_available(self) -> bool:
         try:
@@ -215,6 +232,9 @@ class GeminiExtractor:
         flash-lite loses ~23 accuracy points batched (stops reading after ~3
         cards, fabricates the rest) -- ``cost_usd`` is the per-card share so
         that's visible; re-measure before trusting a new model or batch size.
+
+        Ignores ``self.struck_detection``: every result's ``struck`` stays None
+        regardless of ``GEMINI_STRUCK_DETECTION`` (see the module docstring).
         """
         from google import genai
 
@@ -258,7 +278,14 @@ class GeminiExtractor:
         from google import genai
 
         model = self.model_id
-        prompt = BANDED_EXTRACTION_PROMPT if self.banded else EXTRACTION_PROMPT
+        if self.struck_detection and self.banded:
+            prompt = BANDED_STRUCK_EXTRACTION_PROMPT
+        elif self.struck_detection:
+            prompt = STRUCK_EXTRACTION_PROMPT
+        elif self.banded:
+            prompt = BANDED_EXTRACTION_PROMPT
+        else:
+            prompt = EXTRACTION_PROMPT
         contents = [self._part(image_path), prompt]
         config = self._config()
 
@@ -269,6 +296,7 @@ class GeminiExtractor:
             fields=parse_json_fields(raw_output) or {},
             raw_text=raw_output,
             cost_usd=_cost_usd(model, response.usage_metadata),
+            struck=parse_struck_fields(raw_output) if self.struck_detection else None,
         )
 
     @staticmethod
