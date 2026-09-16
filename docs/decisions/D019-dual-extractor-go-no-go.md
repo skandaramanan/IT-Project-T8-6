@@ -1,6 +1,8 @@
 # D019 — Dual extraction: go/no-go
 
-**Status:** Accepted, provisional — pending NFR-03 calibration against source images
+**Status:** Accepted as a conditional go — route pending follow-ups with the
+subject coordinator and the client. Figures provisional pending NFR-03
+calibration against source images.
 **Date:** 2026-09-16
 **Decided by:** Skanda Ramanan (Design Lead)
 **Linear issue:** IT-100, closing IT-84
@@ -16,16 +18,45 @@ running over all ~6,500 cards.
 
 ## Decision
 
-**No. Don't run two extractors on every card.**
+**Conditional go. Run both extractors over every card, on whichever of three
+compute routes clears first.**
 
-The local arm alone needs 256 GPU-hours on free Colab — about 21 twelve-hour
-sessions, with no guarantee you get them. The hosted side is cheap by
-comparison (~$19 of API across the corpus), so the GPU is what rules it out,
-not the API bill.
+The signal is worth having. With both arms and Flash-Lite's band combined
+(D016's full formula), 83% of Flash-Lite's errors get flagged, against 38.5% for
+the band on its own. The only thing against it was compute: qwen needs about
+256 T4-hours for the corpus, and free Colab can't reliably supply that. The
+hosted arm is cheap (~$19 of API across the corpus).
 
-**Ship `gemini-3.5-flash-lite` and use its own self-reported confidence band.**
-One pass, ~2.6 days. Keep dual extraction for spot-checking samples, which is
-where it earns its keep.
+Gemini Flash-Lite stays the primary arm and reads every card either way, about
+2.6 days. The question is where the second arm runs:
+
+| Route | Condition | Why this one | Cost |
+| -- | -- | -- | -- |
+| **1. Spartan** (UniMelb HPC) | Subject coordinator sponsors access | Free A100/H100s, and the scans stay inside the university | Free. Probably days, unmeasured |
+| **2. OpenRouter** (hosted Qwen2.5-VL) | Client approves the spend and sending scans to another provider | No GPU to manage at all | ~$7 for the corpus, estimated not measured |
+| **3. Kaggle** | None. This is the default | Free, no card, no quota request. The T4 is the same GPU D016 was calibrated on | Free. ~30 GPU-h/week each, so ~2 weeks across 5 people |
+
+Take the first route that clears. If neither follow-up comes back in time for
+the Cycle 4 full-scale run, go with Kaggle.
+
+**Before the full run, on whichever route:** run the 30 benchmark cards there
+first. That times it and checks the confidence constants still hold.
+`test_constants_still_match_the_benchmark` fails if they move by more than 0.03.
+
+- Spartan uses a different GPU. With the same 4-bit setup and image cap, the
+  constants should hold, but check them anyway.
+- OpenRouter serves a different model (72B, not 4-bit 7B), so the constants
+  **will** need recalibrating on those 30 cards. That costs a few cents.
+- Kaggle on the T4 accelerator should reproduce the calibrated setup exactly.
+
+Each Kaggle account belongs to one person. Kaggle allows one account per
+person, so five people means five accounts and no more. Split the corpus into
+five fixed chunks so no card gets read twice or skipped. It does mean uploading
+the scans to Kaggle as a private dataset, so mention that in the same client
+email.
+
+**If all three fall through:** fall back to Flash-Lite plus its band alone, and
+use dual extraction only to spot-check samples.
 
 ### Why the less accurate model
 
@@ -37,8 +68,12 @@ tells you nothing. Flash-Lite's band actually separates: 91.7% correct on
 `high`, 9.1% on `low`. FR-10 is a Must and it needs a score that means
 something. A confidence number that never varies is not a confidence number.
 
-So the trade is 4.5 points of accuracy for a usable review signal. Revisit it
-if the signal starts coming from somewhere else.
+So the trade is 4.5 points of accuracy for a usable review signal.
+
+This gets closer once dual extraction runs, because agreement adds a signal of
+its own. Paired with qwen, Flash at batch=10 ships 14 unflagged errors against
+Flash-Lite's 37 (D016 Addendum B), but takes 6.5 days a pass instead of 2.6.
+Whoever revises D012 should weigh that.
 
 One caveat on process: choosing between Gemini variants is really a D012
 revision, not this note's call, and IT-84 puts model selection out of scope.
@@ -72,7 +107,7 @@ Taking only the agreed fields gives 97.0% precision over 72.2% of the data, and
 catches 131 of Flash-Lite's 171 errors (76.6%). The other 40 errors ship
 looking confident, which is 2.15% of all fields.
 
-### Three figures that were wrong
+### Four figures that were wrong
 
 Everything on the findings page was measured on the `gemini-3.5-flash` pairing.
 Flash does not ship. D016 §1 recalibrated the confidence constants to flash-lite
@@ -168,9 +203,10 @@ So escalating the worst fields costs 3.5 days on top of the 2.6-day first pass.
 It fixes 30 of the 221 errors on the benchmark, about 14%, and those fields are
 91% wrong so the re-read is nearly all gain.
 
-**It is worth doing but it is optional, not part of the core recommendation.**
-Six days total is close enough to the 6.5 days it would take to run Flash over
-everything that the choice should be made on the band, not on the calendar.
+**With dual extraction going ahead, this is only a fallback** for the case
+where all three compute routes fall through. Even then, six days total is close
+enough to the 6.5 days it would take to run Flash over everything that the
+choice should be made on the band, not on the calendar.
 
 Two caveats. Batch=10 is the largest Flash batch anyone has measured, and it
 was measured for extraction, not for re-reads. And a re-read prompt does not
@@ -185,23 +221,38 @@ local pass is 256 GPU-hours before any of this starts.
 
 ## Alternatives
 
-**Run full dual extraction anyway.** It catches 76.6% of errors against 13.6%
-for the `low` band alone, so this is a real loss, not a wash. Rejected on the
-256 GPU-hours, and only on that. If a decent GPU appears, this is the better
-mechanism.
+**No-go: Flash-Lite and its band only, dual for spot checks.** The first draft
+of this note recommended this, turning dual down on free-Colab compute alone.
+It's now the fallback. It catches far less (38.5% of errors with `low` and
+`medium` flagged, against 83% with both arms), and the compute objection has
+three possible answers.
 
-**Ship Flash at batch=10.** More accurate (95.8%) and 6.5 days. Rejected
-because its band is flat, so it cannot route review. See "Why the less accurate
-model".
+**Azure for Students.** Rejected. Student subscriptions are capped at 3 vCPUs
+and can't create GPU VMs without upgrading to pay-as-you-go.
+
+**Google Cloud $300 trial.** Not chosen. GPUs are blocked during the trial, so
+each person would have to upgrade to paid billing with a card and then request
+GPU quota. Kaggle gets the same result with none of that.
+
+**SageMaker Studio Lab, Modal, Lightning AI.** Not chosen. Studio Lab (8 GPU-h
+a day, 4-hour sessions) would work but needs a lot of babysitting. Modal means
+rewriting the notebook as code. Lightning's free tier is ~22 T4-hours a month,
+too slow.
+
+**Ship Flash at batch=10.** More accurate (95.8%) and 6.5 days. Not adopted
+here because its band is flat. Now that agreement supplies a second signal,
+it's a live option for the D012 revision. See "Why the less accurate model".
 
 **Drop the band and keep Flash-Lite's 2.5 accuracy points.** Rejected. The band
-is the confidence mechanism. Without it there is nothing to satisfy FR-10 with
-short of the dual path we just declined.
+is still part of D016's formula, and the fallback needs it.
 
 ## Consequences
 
-- Dual extraction becomes a sampling tool. D016's constants stay valid for that
-  and for IT-85 and IT-86.
+- Two follow-ups gate the route: the subject coordinator (Spartan access) and
+  the client (OpenRouter spend and data). Kaggle needs neither.
+- The full-scale run in Cycle 4 runs both arms. D016's constants carry over on
+  Kaggle, get re-checked on Spartan, and get recalibrated on OpenRouter.
+  IT-85 and IT-86 build on them either way.
 - IT-86 has its evidence. Across 398 splits, gemini is right 75.1% and qwen
   13.8%, so gemini wins disagreements about 5.4 to 1. On 11.1% of splits
   neither is right, so a split still means a human should look. (75.1% is
@@ -214,11 +265,11 @@ short of the dual path we just declined.
 
 - **Paid Gemini capacity is approved (NFR-10).** The 100/day cap is what shapes
   all of this.
-- **A real GPU turns up.** 256 GPU-hours is a property of the free T4, not of
-  the design.
+- **The 30-card test run on the chosen route is much slower than expected**, or
+  the constants move past tolerance and recalibration doesn't settle them.
+- **All three routes fall through.** Then it's the Flash-Lite-and-band fallback.
 - **Flash gets a band that separates.** Then it wins on accuracy and the trade
   above disappears.
-- **Review volume shows 13.6% error-catching is too low a floor.**
 
 ## How far to trust this
 
@@ -231,6 +282,10 @@ short of the dual path we just declined.
 - ~6,500 cards is the roadmap's estimate. Every extrapolation scales with it.
 - The escalation days are arithmetic on measured band shares, not an observed
   run.
+- None of the three compute routes has been timed. Kaggle's quota (~30 GPU-h a
+  week), Spartan's eligibility and OpenRouter's ~$7 all come from published
+  pages and a token estimate, checked 16/09/2026. Free tiers change, and the 30-card
+  test run is what confirms them.
 
 ## Reproducing
 
