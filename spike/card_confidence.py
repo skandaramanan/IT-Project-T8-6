@@ -57,3 +57,21 @@ def card_confidence(scores: Iterable[float]) -> float:
     checked.sort()
     k = max(1, ceil(len(checked) / 4))
     return round(sum(checked[:k]) / k, 2)
+
+
+def assert_every_card_scored(records: Iterable[dict]) -> None:
+    """AC1. Raises rather than warns -- a card that reaches a reviewer with no
+    score is indistinguishable from one that scored well.
+
+    Over the finished records, not each card as it is built: that is what
+    catches a record appended by some later code path that forgot the score.
+    """
+    for record in records:
+        score = record.get("card_confidence")
+        page_id = record.get("page_id")
+        assert isinstance(score, (int, float)) and not isinstance(score, bool), (
+            f"{page_id}: card confidence must be numeric, got {score!r}"
+        )
+        assert 0.0 <= score <= 1.0, (
+            f"{page_id}: card confidence {score} is outside 0.0-1.0"
+        )

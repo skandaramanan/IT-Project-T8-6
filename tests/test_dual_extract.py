@@ -349,3 +349,47 @@ def test_summarise_reports_the_confidence_distribution(tmp_path):
     assert "confidence" in text.lower()
     assert f"{CONFIDENCE_BY_CLASS[AGREE]:.2f}" in text
     assert f"{CONFIDENCE_BY_CLASS[DISAGREE]:.2f}" in text
+
+
+# --- the card-level score reaches the output (IT-85) ------------------------
+
+
+def test_every_paired_record_carries_a_card_score(tmp_path):
+    """IT-85 AC1, including the card only one arm read."""
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _write(tmp_path, "b", "p1", {"Municipality": "56"})
+    _write(tmp_path, "a", "p2", {"Municipality": "56"})  # b never answered
+
+    records = pair_cards("a", "b", tmp_path, FIELDS)
+
+    assert len(records) == 2
+    for record in records:
+        score = record["card_confidence"]
+        assert isinstance(score, float), f"{record['page_id']}: {score!r}"
+        assert 0.0 <= score <= 1.0, f"{record['page_id']}: {score}"
+
+
+def test_the_card_score_comes_from_its_own_fields(tmp_path):
+    """Presence alone would pass on a constant. A corroborated card scores at
+    the agree constant, a stranded one below it."""
+    from confidence import CONFIDENCE_BY_CLASS
+
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _write(tmp_path, "b", "p1", {"Municipality": "56"})
+    _write(tmp_path, "a", "p2", {"Municipality": "56"})
+
+    records = {r["page_id"]: r for r in pair_cards("a", "b", tmp_path, FIELDS)}
+
+    assert records["p1"]["card_confidence"] == CONFIDENCE_BY_CLASS[AGREE]
+    assert records["p2"]["card_confidence"] < records["p1"]["card_confidence"]
+
+
+def test_a_bad_card_score_fails_the_run(tmp_path, monkeypatch):
+    """AC1 asks the assertion to fail the run, so prove it does -- an
+    assertion nothing calls passes every test there is."""
+    monkeypatch.setattr("dual_extract.card_confidence", lambda scores: 2.0)
+    _write(tmp_path, "a", "p1", {"Municipality": "56"})
+    _write(tmp_path, "b", "p1", {"Municipality": "56"})
+
+    with pytest.raises(AssertionError):
+        pair_cards("a", "b", tmp_path, FIELDS)

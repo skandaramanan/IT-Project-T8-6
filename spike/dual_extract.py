@@ -27,6 +27,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
 
+from card_confidence import assert_every_card_scored, card_confidence
 from ground_truth import (
     DEFAULT_GROUND_TRUTH_XLSX,
     DEFAULT_IMAGES_DIR,
@@ -223,8 +224,13 @@ def pair_cards(
                 ),
                 "fields": paired,
                 "scored": scored,
+                "card_confidence": card_confidence(
+                    field["confidence"] for field in scored.values()
+                ),
             }
         )
+    # IT-85 AC1, the card-level twin of the per-field assertion above.
+    assert_every_card_scored(records)
     return records
 
 

@@ -94,9 +94,13 @@ reviewer behaviour; this is a judgement, marked provisional.
 
 ## Consequences
 
-- Every card record from a paired run can carry `card_confidence` in
-  0.0–1.0, alongside the per-field scores. Wiring into `pair_cards()`
-  (`spike/dual_extract.py`) follows IT-99's merge, not this record.
+- Every card record from a paired run carries `card_confidence` in 0.0–1.0,
+  alongside the per-field scores: `pair_cards()` (`spike/dual_extract.py`)
+  computes it on every record it builds.
+- `assert_every_card_scored()` runs over the finished records before
+  `pair_cards()` returns them, mirroring IT-99's per-field assertion. Over
+  the list rather than each card as it is built, so it still fires on a
+  record appended by some later path that forgets the score.
 - `src/extraction/record.py` still writes `cards[].confidence: None`. D007's
   field object has no `source_agreement` key, so the per-field triple cannot
   land in a real record yet; the card score waits for the same amendment

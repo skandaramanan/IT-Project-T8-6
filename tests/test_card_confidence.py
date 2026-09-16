@@ -1,17 +1,17 @@
 """IT-85: one confidence score per card, from its field scores (FR-20).
 
 One test per acceptance criterion. AC1 (every record from a run carries the
-score) lives with pair_cards in test_dual_extract.py once IT-99 lands; this
-file covers the function itself.
+score) lives with pair_cards in test_dual_extract.py; this file covers the
+function itself.
 """
 
 import random
 
 import pytest
-from card_confidence import card_confidence
+from card_confidence import assert_every_card_scored, card_confidence
 
-# The flat class constants from IT-99's confidence.py, repeated here rather
-# than imported so this file runs on main before that branch merges.
+# D016's flat class constants, copied rather than imported to keep this file
+# off the pipeline's import chain. Inputs here, never asserted.
 AGREE = 0.97
 BOTH_BLANK = 0.97
 ONE_BLANK_LOW = 0.14
@@ -78,3 +78,18 @@ def test_a_bad_score_is_rejected(bad):
 def test_result_stays_in_range():
     scores = [random.Random(1).random() for _ in range(62)]
     assert 0.0 <= card_confidence(scores) <= 1.0
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"page_id": "p1"},  # the score was never written
+        {"page_id": "p1", "card_confidence": None},
+        {"page_id": "p1", "card_confidence": 1.5},
+    ],
+)
+def test_the_assertion_rejects_an_unscored_card(record):
+    """AC1: the schema assertion, so a run cannot quietly ship a card
+    without a usable score."""
+    with pytest.raises(AssertionError):
+        assert_every_card_scored([record])
