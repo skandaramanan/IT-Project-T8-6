@@ -14,14 +14,21 @@ from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_promp
 # the kind of drift nothing fails on.
 _SCHEMA_BLOCK = build_extraction_prompt_schema()
 
-EXTRACTION_PROMPT = (
+# Opens every prompt variant. Shared so the field count is derived once -- four
+# copies of the same f-string is four chances for the drift the note above warns
+# about.
+_PROMPT_HEADER = (
     "This is a numeric coding card from a 1941-43 social survey. Extract the "
     f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
     "object with exactly these keys (no markdown fences, no commentary).\n\n"
+)
+
+EXTRACTION_PROMPT = (
+    _PROMPT_HEADER
     # Codes are written in fixed-width columns, so "04" and "4" are different
     # values -- as a JSON number the leading zero is unrepresentable and gets
     # silently dropped, which scored as a miss on every zero-padded field.
-    "Give every value as a JSON string, copied exactly as written, keeping any "
+    + "Give every value as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null where no code is written.\n\n'
     + _SCHEMA_BLOCK
 )
@@ -32,6 +39,17 @@ EXTRACTION_PROMPT = (
 # coarse enough to be meaningful and is what the review queue routes on.
 CONFIDENCE_BANDS = ("low", "medium", "high")
 
+# Shared by the banded and banded-struck prompts. This is prose and will get
+# reworded; two copies would let a reword desynchronise the two banded arms
+# without anything failing.
+_CONFIDENCE_INSTRUCTIONS = (
+    'Judge confidence on how clearly you can read that cell: "high" if the '
+    'digits are unambiguous, "medium" if you had to choose between plausible '
+    'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
+    "Say low when it is low -- a wrong value marked high is worse than an "
+    "honest one marked low, because a reviewer will never look at it.\n\n"
+)
+
 # An opt-in variant of the prompt above, asking the model to say how sure it is
 # of each value. Deliberately a second prompt rather than an edit to the first:
 # changing EXTRACTION_PROMPT in place would make every previously saved raw
@@ -40,21 +58,46 @@ CONFIDENCE_BANDS = ("low", "medium", "high")
 # can measure whether asking for a band *costs* accuracy, which is a finding in
 # its own right rather than an assumption.
 BANDED_EXTRACTION_PROMPT = (
-    "This is a numeric coding card from a 1941-43 social survey. Extract the "
-    f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
-    "object with exactly these keys (no markdown fences, no commentary).\n\n"
-    'The value for each key is an object: {"value": <the code>, "confidence": '
+    _PROMPT_HEADER
+    + 'The value for each key is an object: {"value": <the code>, "confidence": '
     '<"low"|"medium"|"high">}.\n\n'
     "Give every code as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null as the value where no code is '
-    "written.\n\n"
-    'Judge confidence on how clearly you can read that cell: "high" if the '
-    'digits are unambiguous, "medium" if you had to choose between plausible '
-    'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
-    "Say low when it is low -- a wrong value marked high is worse than an "
-    "honest one marked low, because a reviewer will never look at it.\n\n"
-    + _SCHEMA_BLOCK
+    "written.\n\n" + _CONFIDENCE_INSTRUCTIONS + _SCHEMA_BLOCK
 )
+
+
+# FR-06 struck-option detection: a dedicated prompt, separate from
+# EXTRACTION_PROMPT/BANDED_EXTRACTION_PROMPT. A VLM judgement call, not pixel
+# geometry -- column-slash/boundary-overlap handling is untested against a
+# real example. Composable with the confidence band (below) since they are
+# independent per-field signals -- one call gets both instead of two.
+def _struck_extraction_prompt(*, banded: bool) -> str:
+    shape = (
+        '{"value": <the code>, "confidence": <"low"|"medium"|"high">, "struck": <true|false>}'
+        if banded
+        else '{"value": <the code>, "struck": <true|false>}'
+    )
+    return (
+        _PROMPT_HEADER + f"The value for each key is an object: {shape}.\n\n"
+        # Deliberately EXTRACTION_PROMPT's wording, not the banded one's ("every
+        # code", "null as the value"). The two diverged before this prompt
+        # existed; normalising them would change an emitted string.
+        "Give every value as a JSON string, copied exactly as written, keeping any "
+        'leading zeros ("04", not 4). Use null where no code is written.\n\n'
+        + (_CONFIDENCE_INSTRUCTIONS if banded else "")
+        + 'Set "struck" to true only when that field\'s own printed option has a pen '
+        "line or X drawn through it. A diagonal line drawn across an entire column "
+        "of many fields is not a strike-through of any one option -- report struck: "
+        "false for every field that line merely crosses, even though it passes "
+        "through them. If a strike-through mark extends slightly past the edge of "
+        "one field's box, attribute it to the field it clearly marks, not to the "
+        "neighbouring field it only grazes.\n\n" + _SCHEMA_BLOCK
+    )
+
+
+STRUCK_EXTRACTION_PROMPT = _struck_extraction_prompt(banded=False)
+BANDED_STRUCK_EXTRACTION_PROMPT = _struck_extraction_prompt(banded=True)
 
 
 def _unwrap(value) -> tuple[object, str | None]:
@@ -198,3 +241,14 @@ def parse_confidence_bands(text: str | None) -> dict[str, str]:
         if band is not None:
             bands[str(name)] = band
     return bands
+
+
+def parse_struck_fields(text: str | None) -> dict[str, bool]:
+    """Fields the model flagged struck-through. Only True entries are kept,
+    same convention as parse_confidence_bands."""
+    parsed = _parse_object(text) or {}
+    struck = {}
+    for name, value in parsed.items():
+        if isinstance(value, dict) and value.get("struck") is True:
+            struck[str(name)] = True
+    return struck
