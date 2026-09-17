@@ -9,17 +9,26 @@ skipped -- not passed -- when no API key is set.
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
 from noise_check import FIELD_NAMES, MANIFEST, find_losses, load_noise_cards
 
 FIXTURES = Path(__file__).parent / "fixtures"
+D020 = (
+    Path(__file__).parent.parent
+    / "docs/decisions/D020-noise-vs-meaningful-annotations.md"
+)
 CARDS = load_noise_cards()
 
 
 def test_every_card_pairs_noise_with_recorded_meaningful_values():
     manifest = json.loads(MANIFEST.read_text())
+    # D020's section headings and bold labels, e.g. "Noise — card-level stamp"
+    d020_headings = set(
+        re.findall(r"^(?:#+ |\*\*)(.+?)(?:\*\*|$)", D020.read_text(), re.MULTILINE)
+    )
     assert manifest["cards"], "noise fixture set is empty"
     for card in manifest["cards"]:
         image = card["image"]
@@ -27,8 +36,10 @@ def test_every_card_pairs_noise_with_recorded_meaningful_values():
         assert card["noise"], f"{image} records no noise annotation"
         for entry in card["noise"]:
             assert entry["mark"], f"{image}: noise entry with no mark"
-            assert entry["rule"].startswith("D020"), (
-                f"{image}: noise entry cites no D020 rule: {entry}"
+            # `D020 §<heading> -- <note>`; the heading must be one D020 has
+            heading = entry["rule"].removeprefix("D020 §").split(" -- ")[0]
+            assert heading in d020_headings, (
+                f"{image}: rule cites a heading not in D020: {heading!r}"
             )
         assert card["expected"], f"{image} records no expected values"
         unknown = set(card["expected"]) - FIELD_NAMES

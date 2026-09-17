@@ -1,21 +1,21 @@
 {
   "schema_version": "0.1.0",
-  "description": "IT-95 / US-07 AC3. Every card here carries annotations of unknown purpose beside recognised survey content; what counts as noise is D020 (docs/decisions/D020-noise-vs-meaningful-annotations.md), cited per mark below. `expected` records the meaningful values a reader must still surface -- deliberately the fields nearest each noise mark, plus every field inside the r02 oval, not the whole card. Transcribed by Qitao against the scan, 2026-09-17. Excluded from `expected`: every field IT-93's manifest and D020 class as struck (FR-06), corrected (D020 'Related, not FR-06 -- a correction': r02 Retired and Indep. Persons, r02 Other, r04 Industry of H.) or unclassified (r01 Number of Living Rooms). Their expected value belongs to IT-93, not here.",
+  "description": "IT-95 / US-07 AC3. Every card here carries annotations of unknown purpose beside recognised survey content; what counts as noise is D020 (docs/decisions/D020-noise-vs-meaningful-annotations.md), cited per mark below as `D020 §<heading>` with an optional ` -- <note>`. `expected` records the meaningful values a reader must still surface -- deliberately the fields nearest each noise mark (including 'Children of H. or wife: Total', which the initials stamp sits on), plus every field inside the r02 oval, not the whole card. Transcribed by Qitao against the scan, 2026-09-17. Excluded from `expected`: every field IT-93's manifest and D020 class as struck (FR-06), corrected (D020 'Meaningful, not FR-06 — correction': r02 Retired and Indep. Persons, r02 Other; IT-93 manifest `real_marks_r04.must_not_negate`: r04 Industry of H., '787' revised to '781') or unclassified (r01 Number of Living Rooms). Their expected value belongs to IT-93, not here.",
   "cards": [
     {
       "image": "r01-coding-front.jpg",
       "noise": [
         {
           "mark": "red X over the Municipality leader dots (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil circled '9', tally marks and a red 'Y' below 'Other' (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "red initials 'AW', pencil 'MLM' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
-          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+          "rule": "D020 §The rule -- fits no meaningful shape (initials beside, not in, a field position); not a D020 worked example"
         }
       ],
       "expected": {
@@ -33,7 +33,8 @@
         "Other": "0",
         "Tenure": "1",
         "Children of H. or wife: Living": "1",
-        "Children of H. or wife: Dead": "0"
+        "Children of H. or wife: Dead": "0",
+        "Children of H. or wife: Total": "1"
       }
     },
     {
@@ -41,19 +42,19 @@
       "noise": [
         {
           "mark": "red X over the Municipality leader dots (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "blue pencil oval enclosing 'Number of Household' through 'Number over 10 M.' (reviewer annotation spanning four fields)",
-          "rule": "D020 §Numeric coding card -- reviewer annotation spanning several fields (question 2)"
+          "rule": "D020 §Noise — circles several fields at once"
         },
         {
           "mark": "pencil circled '8', tally marks and a red heart below 'Other' (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "red initials 'AW'/'Hen' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
-          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+          "rule": "D020 §The rule -- fits no meaningful shape (initials beside, not in, a field position); not a D020 worked example"
         }
       ],
       "expected": {
@@ -69,7 +70,8 @@
         "Home Duties": "1",
         "Tenure": "3",
         "Children of H. or wife: Living": "0",
-        "Children of H. or wife: Dead": "0"
+        "Children of H. or wife: Dead": "0",
+        "Children of H. or wife: Total": "0"
       }
     },
     {
@@ -77,15 +79,15 @@
       "noise": [
         {
           "mark": "red star over the Municipality leader dots (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil circled '9', tally marks and a red tick below 'Other' (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
-          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+          "rule": "D020 §The rule -- fits no meaningful shape (initials beside, not in, a field position); not a D020 worked example"
         }
       ],
       "expected": {
@@ -103,7 +105,8 @@
         "Other": "0",
         "Tenure": "2",
         "Children of H. or wife: Living": "3",
-        "Children of H. or wife: Dead": "0"
+        "Children of H. or wife: Dead": "0",
+        "Children of H. or wife: Total": "3"
       }
     },
     {
@@ -111,15 +114,15 @@
       "noise": [
         {
           "mark": "red 'A' over the Municipality leader dots (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil circled '9', tally marks and a red heart below 'Other' (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
-          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+          "rule": "D020 §The rule -- fits no meaningful shape (initials beside, not in, a field position); not a D020 worked example"
         }
       ],
       "expected": {
@@ -137,7 +140,8 @@
         "Other": "0",
         "Tenure": "2",
         "Children of H. or wife: Living": "1",
-        "Children of H. or wife: Dead": "0"
+        "Children of H. or wife: Dead": "0",
+        "Children of H. or wife: Total": "1"
       }
     },
     {
@@ -145,15 +149,15 @@
       "noise": [
         {
           "mark": "red X over the Municipality leader dots (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil circled '7', tally marks and a red '8' below 'Other' (constant stamp, every card)",
-          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+          "rule": "D020 §Noise — card-level stamp"
         },
         {
           "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
-          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+          "rule": "D020 §The rule -- fits no meaningful shape (initials beside, not in, a field position); not a D020 worked example"
         }
       ],
       "expected": {
@@ -171,7 +175,8 @@
         "Other": "1",
         "Tenure": "3",
         "Children of H. or wife: Living": "2",
-        "Children of H. or wife: Dead": "0"
+        "Children of H. or wife: Dead": "0",
+        "Children of H. or wife: Total": "2"
       }
     }
   ]
