@@ -169,7 +169,7 @@ class GeminiExtractor:
     def __init__(self) -> None:
         # name is the results directory; must carry the model id since every
         # Gemini model shares one CLI key, or 3.5-flash overwrites 3.6-flash's output.
-        self.model_id = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+        self.model_id = os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
         self.name = self.model_id
         # Banded is a different prompt/run, so it gets a "-banded" suffix to
         # keep results side by side instead of overwriting.
