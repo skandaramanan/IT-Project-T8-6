@@ -17,18 +17,23 @@ Media resolution is left unset by default; Gemini 3 downscales to a flat
 1120 tokens then, which is a thumbnail for ~2660x1715 handwriting -- set
 GEMINI_MEDIA_RESOLUTION when switching to a 3.x model.
 
+Every current prompt returns a visual status beside each value. The parser
+derives ``omitted`` for C1/C2 schema fields the model does not return; the
+model itself may only report ``ok``, ``no_data``, ``illegible`` or ``damaged``.
+New results use a ``-status`` suffix so they cannot overwrite older flat runs.
+
 FR-10: this engine returns ``confidence=None``. Gemini's response_logprobs
 isn't reliably available, so D012 built self-reported bands instead, behind
 GEMINI_CONFIDENCE_BAND (off by default -- it's a different prompt, so a
-different experiment; banded runs file under ``<model>-banded`` to keep the
-two comparable). The band stays a category, not a number -- turning "high"
-into 0.9 is IT-99's call -- so it travels in ``raw_text`` for
-``json_extraction.parse_confidence_bands`` to read back, and ``confidence``
-stays None even when banded.
+different experiment; banded runs file under ``<model>-banded-status``). The
+band stays a category, not a number -- turning "high" into 0.9 is IT-99's call
+-- so it travels in ``raw_text`` for ``json_extraction.parse_confidence_bands``
+to read back, and ``confidence`` stays None even when banded.
 
-The batched path follows ``self.banded`` via ``banded_batch_prompt``, same
-shape as the single-card banded prompt. Batching + banding together is
-untested; re-measure before trusting those numbers.
+The batched path follows ``self.banded`` via ``banded_batch_prompt`` and uses
+the same value/status or value/confidence/status shape as the single-card path.
+Re-measure batched status runs before treating them as comparable to earlier
+flat-output measurements.
 """
 
 from __future__ import annotations
@@ -109,12 +114,12 @@ def batch_prompt(count: int) -> str:
         f"card's field object, containing exactly these "
         f"{len(schema.splitlines())} keys.\n\n"
         'For each field return an object: {"value": <string or null>, "status": '
-        '"ok" | "no_data" | "illegible" | "damaged" | "omitted"}. Read each '
+        '"ok" | "no_data" | "illegible" | "damaged"}. Read each '
         "card independently and completely. Use ok only for a readable value; "
         "use no_data for a visible blank, illegible for unreadable markings, "
-        "damaged for an obscured or damaged source area, and omitted only when "
-        "an expected field cannot be returned. For every non-ok status use null "
-        "and never guess. Preserve leading zeros.\n\n" + schema
+        "damaged for an obscured or damaged source area. For every non-ok status "
+        "use null and never guess. Attempt every field; the system records any "
+        "absent expected key as omitted. Preserve leading zeros.\n\n" + schema
     )
 
 
@@ -147,7 +152,7 @@ def banded_batch_prompt(count: int) -> str:
         f"{len(schema.splitlines())} keys.\n\n"
         'The value for each key is an object: {"value": <the code>, "confidence": '
         '<"low"|"medium"|"high">, "status": "ok" | "no_data" | '
-        '"illegible" | "damaged" | "omitted"}.\n\n'
+        '"illegible" | "damaged"}.\n\n'
         "Read each card independently and completely. Give every code as a "
         'JSON string, copied exactly as written, keeping any leading zeros ("04", '
         "not 4). Use null as the value where no code is written.\n\n"
@@ -158,8 +163,8 @@ def banded_batch_prompt(count: int) -> str:
         "honest one marked low, because a reviewer will never look at it. "
         "Use ok only for a readable value; use no_data for a visible blank; "
         "illegible for unreadable markings; damaged for an obscured or damaged "
-        "source area; and omitted only when an expected field cannot be returned. "
-        "For every non-ok status use null and never guess.\n\n" + schema
+        "source area. For every non-ok status use null and never guess. Attempt "
+        "every field; the system records any absent expected key as omitted.\n\n" + schema
     )
 
 

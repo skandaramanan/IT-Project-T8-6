@@ -55,6 +55,12 @@ an `ok` status requires a usable cleaned value, and every other status requires
 null. Status and confidence are independent: a low-confidence readable value
 is still `ok`, while an illegible cell is not a value with low confidence.
 
+The model reports only `ok`, `no_data`, `illegible` and `damaged`. `omitted` is
+derived by comparing its returned keys with the assigned C1/C2 field schema;
+every expected key missing from the response becomes `omitted`, value null.
+This makes extractor incompleteness an application-observed fact rather than a
+claim the model can make while returning that same field.
+
 The standard prompt now requests a value and status for every field; the
 confidence-banded prompt requests value, confidence and status. New runs file
 their raw output under `-status` or `-banded-status` result names, so they are
@@ -159,4 +165,4 @@ raw-value question back to D007 rather than improvise a field here.
 
 | Date | Change |
 | --- | --- |
-| 2026-09-17 | Amended for IT-96: added status extraction to standard and banded prompts, null-value rules for degraded fields, identity quarantine, and the C1/C2 boundary. |
+| 2026-09-17 | Amended for IT-96: added status extraction to standard and banded prompts, schema-derived omissions, null-value rules for degraded fields, identity quarantine, and the C1/C2 boundary. |

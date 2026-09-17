@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 
 from extraction.field_schema import (
     FIELD_SCHEMA_BY_NAME,
@@ -24,12 +25,13 @@ EXTRACTION_PROMPT = (
     f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
     "object with exactly these keys (no markdown fences, no commentary).\n\n"
     'For every key return an object: {"value": <string or null>, "status": '
-    '"ok" | "no_data" | "illegible" | "damaged" | "omitted"}.\n\n'
+    '"ok" | "no_data" | "illegible" | "damaged"}.\n\n'
     "Use ok only for a readable value. Use no_data for a visible blank cell; "
     "illegible where markings exist but cannot be read reliably; damaged where "
-    "the source area is physically damaged or obscured; and omitted only where "
-    "you cannot return an expected field. For every non-ok status, use null as "
-    "the value and never guess. Preserve leading zeros in readable codes.\n\n"
+    "the source area is physically damaged or obscured. For every non-ok "
+    "status, use null as the value and never guess. Attempt every field; the "
+    "system records any absent expected key as omitted. Preserve leading zeros "
+    "in readable codes.\n\n"
     + _SCHEMA_BLOCK
 )
 
@@ -52,7 +54,7 @@ BANDED_EXTRACTION_PROMPT = (
     "object with exactly these keys (no markdown fences, no commentary).\n\n"
     'The value for each key is an object: {"value": <the code>, "confidence": '
     '<"low"|"medium"|"high">, "status": "ok" | "no_data" | '
-    '"illegible" | "damaged" | "omitted"}.\n\n'
+    '"illegible" | "damaged"}.\n\n'
     "Give every code as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null as the value where no code is '
     "written.\n\n"
@@ -63,12 +65,13 @@ BANDED_EXTRACTION_PROMPT = (
     "honest one marked low, because a reviewer will never look at it. "
     "Use ok only for a readable value; use no_data for a visible blank; "
     "illegible for unreadable markings; damaged for an obscured or damaged "
-    "source area; and omitted only when an expected field cannot be returned. "
-    "For every non-ok status, use null and never guess.\n\n"
+    "source area. For every non-ok status use null and never guess. Attempt "
+    "every field; the system records any absent expected key as omitted.\n\n"
     + _SCHEMA_BLOCK
 )
 
 FIELD_STATUSES = frozenset(FIELD_STATUS_DEFINITIONS)
+MODEL_FIELD_STATUSES = FIELD_STATUSES - {"omitted"}
 
 
 def _unwrap(value) -> tuple[object, str | None]:
@@ -214,7 +217,9 @@ def parse_confidence_bands(text: str | None) -> dict[str, str]:
     return bands
 
 
-def parse_field_statuses(text: str | None) -> dict[str, FieldStatus] | None:
+def parse_field_statuses(
+    text: str | None, field_names: Collection[str] | None = None
+) -> dict[str, FieldStatus] | None:
     """Read status-aware output without conflating omitted and blank fields.
 
     ``None`` means the response is not the status-aware shape.  A malformed
@@ -224,16 +229,31 @@ def parse_field_statuses(text: str | None) -> dict[str, FieldStatus] | None:
     parsed = _parse_object(text)
     if parsed is None:
         return None
-    known = [(str(name), value) for name, value in parsed.items() if str(name) in FIELD_SCHEMA_BY_NAME]
-    if not any(isinstance(value, dict) for _, value in known):
+    expected = frozenset(FIELD_SCHEMA_BY_NAME if field_names is None else field_names)
+    known = [(str(name), value) for name, value in parsed.items() if str(name) in expected]
+    structured = [(name, value) for name, value in known if isinstance(value, dict)]
+    if not any("status" in value for _, value in structured):
+        # Historical banded output has value + confidence but no status. A
+        # value object without either status or confidence is malformed rather
+        # than a legacy response and must not silently bypass validation.
+        if any("value" in value and "confidence" not in value for _, value in structured):
+            raise ValueError("status-aware response lacks status")
         return None
 
     statuses: dict[str, FieldStatus] = {}
+    reported = set()
     for name, value in known:
-        if not isinstance(value, dict) or "status" not in value:
-            raise ValueError(f"status-aware response lacks status for {name}")
+        if not isinstance(value, dict) or "value" not in value or "status" not in value:
+            raise ValueError(f"status-aware response lacks value or status for {name}")
         status = value["status"]
-        if not isinstance(status, str) or status not in FIELD_STATUSES:
+        raw_value = value["value"]
+        if not isinstance(status, str) or status not in MODEL_FIELD_STATUSES:
             raise ValueError(f"{name}: invalid FieldStatus {status!r}")
+        if status == "ok" and (raw_value is None or not _coerce_field(raw_value).strip()):
+            raise ValueError(f"{name}: ok status requires a readable value")
+        if status != "ok" and raw_value is not None:
+            raise ValueError(f"{name}: {status} status requires a null value")
         statuses[name] = status  # type: ignore[assignment]
+        reported.add(name)
+    statuses.update({name: "omitted" for name in expected - reported})
     return statuses

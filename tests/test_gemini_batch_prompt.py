@@ -61,6 +61,7 @@ def test_banded_batch_asks_the_banded_prompt_and_recovers_the_band(monkeypatch):
     assert prompt_sent == banded_batch_prompt(2)
     assert results[0].fields["Municipality"] == "04"
     assert parse_confidence_bands(results[0].raw_text) == {"Municipality": "high"}
-    assert parse_field_statuses(results[0].raw_text) == {"Municipality": "ok"}
+    assert parse_field_statuses(results[0].raw_text)["Municipality"] == "ok"
+    assert parse_field_statuses(results[0].raw_text)["Garden"] == "omitted"
     assert results[1].fields["Municipality"] == "07"
     assert parse_confidence_bands(results[1].raw_text) == {"Municipality": "low"}

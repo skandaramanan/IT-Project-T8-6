@@ -66,10 +66,10 @@ def test_status_shape_preserves_value_keys_and_statuses():
         ' "Weekly Rent": {"value": null, "status": "illegible"}}'
     )
     assert parse_json_fields(payload) == {"Municipality": "56", "Weekly Rent": ""}
-    assert parse_field_statuses(payload) == {
-        "Municipality": "ok",
-        "Weekly Rent": "illegible",
-    }
+    statuses = parse_field_statuses(payload)
+    assert statuses["Municipality"] == "ok"
+    assert statuses["Weekly Rent"] == "illegible"
+    assert statuses["Garden"] == "omitted"
 
 
 def test_flat_output_has_no_status_map():
@@ -88,6 +88,10 @@ def test_standard_and_banded_prompts_both_request_statuses():
     [
         '{"Municipality": {"value": "56", "status": "unreadable"}}',
         '{"Municipality": {"value": "56"}}',
+        '{"Municipality": {"status": "no_data"}}',
+        '{"Municipality": {"value": null, "status": "ok"}}',
+        '{"Municipality": {"value": "56", "status": "no_data"}}',
+        '{"Municipality": {"value": null, "status": "omitted"}}',
     ],
 )
 def test_malformed_status_output_is_rejected(payload):

@@ -46,8 +46,10 @@ class ExtractionResult:
   engine, and keyed the same as `fields`.
 - `statuses` is optional and keyed by field name. It carries the extractor's
   visual `FieldStatus` observation; `None` preserves compatibility with flat
-  legacy output. It is independent of
-  confidence: a readable but uncertain value is still `ok`.
+  legacy output. For a status-aware C1/C2 response, the parser derives
+  `omitted` entries from the assigned schema rather than accepting them from
+  the model. It is independent of confidence: a readable but uncertain value
+  is still `ok`.
 - `is_available()` lets a runner skip an engine with a missing dependency or
   API key, rather than crash mid-run.
 
@@ -105,4 +107,4 @@ genuinely on a different scheme (needs the above).
 
 | Date | Change |
 | --- | --- |
-| 2026-09-17 | Amended for IT-96: added per-field status observations to the extractor result contract. |
+| 2026-09-17 | Amended for IT-96: added per-field status observations and schema-derived omissions to the extractor result contract. |
