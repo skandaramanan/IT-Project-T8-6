@@ -194,6 +194,26 @@ def build_field(
     return field
 
 
+def build_omitted_field(*, source: str | None = None) -> dict[str, Any]:
+    """A field the extractor did not return at all.
+
+    This is deliberately separate from :func:`build_field`: a blank or voided
+    value returned by the extractor is ``no_data``; an absent key is
+    ``omitted``.  Keeping the distinction here prevents record construction
+    from erasing the extractor-completeness signal required by FR-09.
+    """
+    field: dict[str, Any] = {
+        "value": None,
+        "code": None,
+        "label": None,
+        "status": "omitted",
+        "confidence": None,
+    }
+    if source:
+        field["source"] = source
+    return field
+
+
 # --- 4. the record ----------------------------------------------------------
 
 
@@ -226,7 +246,7 @@ def build_record(
 
     ``fields`` is keyed by card label -- ``ExtractionResult.fields`` as it comes
     off any Extractor. Keys the card does not have are ignored; fields the model
-    did not return are still emitted, as ``no_data``. A card is 62 fields either
+    did not return are still emitted, as ``omitted``. A card is 62 fields either
     way, so a dropped one is visible rather than absent.
     """
     groups: dict[str, dict[str, Any]] = {
@@ -241,7 +261,10 @@ def build_record(
         spec = FIELD_SCHEMA_BY_NAME[label]
         # Identity is what a value is traced back by, so it carries its source.
         source = "coding-front" if group in ("dwelling", "household") else None
-        groups[group][key] = build_field(spec, fields.get(label), source=source)
+        if label in fields:
+            groups[group][key] = build_field(spec, fields[label], source=source)
+        else:
+            groups[group][key] = build_omitted_field(source=source)
 
     record_id = build_record_id(
         groups["dwelling"]["municipality"]["value"] or "",
