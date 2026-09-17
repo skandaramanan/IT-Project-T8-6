@@ -9,6 +9,7 @@
       "label": "Williamstown",
       "status": "ok",
       "confidence": 0.96,
+      "negated": false,
       "source": "coding-front"
     },
     "dwelling_no": {
@@ -17,6 +18,7 @@
       "label": null,
       "status": "ok",
       "confidence": 0.93,
+      "negated": false,
       "source": "coding-front"
     },
     "address": {
@@ -41,35 +43,40 @@
         "code": "1",
         "label": "Detached, one storey",
         "status": "ok",
-        "confidence": 0.95
+        "confidence": 0.95,
+        "negated": false
       },
       "structural_material": {
         "value": "1",
         "code": "1",
         "label": "Wood",
         "status": "ok",
-        "confidence": 0.94
+        "confidence": 0.94,
+        "negated": false
       },
       "age_of_house": {
         "value": "13",
         "code": null,
         "label": null,
         "status": "ok",
-        "confidence": 0.9
+        "confidence": 0.9,
+        "negated": false
       },
       "garden": {
         "value": "3",
         "code": "3",
         "label": "Some cultivated space",
         "status": "ok",
-        "confidence": 0.91
+        "confidence": 0.91,
+        "negated": false
       },
       "state_of_repair": {
         "value": "1",
         "code": "1",
         "label": "Good or fair repair",
         "status": "ok",
-        "confidence": 0.89
+        "confidence": 0.89,
+        "negated": false
       },
       "number_of_sleepouts": {
         "value": "4",
@@ -77,6 +84,7 @@
         "label": "Two or more sleepouts",
         "status": "ok",
         "confidence": 0.82,
+        "negated": false,
         "origin": "corrected",
         "original_value": "0"
       }
@@ -90,6 +98,7 @@
           "label": null,
           "status": "ok",
           "confidence": 0.95,
+          "negated": false,
           "source": "coding-front"
         },
         "head": {
@@ -98,49 +107,55 @@
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.92
+            "confidence": 0.92,
+            "negated": false
           },
           "sex_of_head": {
             "value": "0",
             "code": "0",
             "label": "Male",
             "status": "ok",
-            "confidence": 0.97
+            "confidence": 0.97,
+            "negated": false
           },
           "earnings_of_head": {
             "value": "000",
             "code": "000",
             "label": "Exactly in shillings",
             "status": "ok",
-            "confidence": 0.84
+            "confidence": 0.84,
+            "negated": false
           },
           "main_source_unearned_income": {
             "value": "4",
             "code": "4",
             "label": "Property (rent or interest)",
             "status": "ok",
-            "confidence": 0.9
+            "confidence": 0.9,
+            "negated": false
           },
           "grade_of_occupation": {
             "value": "9",
             "code": "9",
             "label": "Not applicable",
             "status": "ok",
-            "confidence": 0.88
+            "confidence": 0.88,
+            "negated": false
           },
           "occupation_of_head": {
             "value": null,
             "code": null,
             "label": null,
             "status": "illegible",
-            "confidence": null
+            "confidence": null,
+            "negated": false
           },
           "pre_war_occupation": {
-            "value": "9",
-            "code": "9",
-            "label": "Not applicable",
-            "status": "ok",
-            "confidence": 0.76,
+            "value": null,
+            "code": null,
+            "label": null,
+            "status": "no_data",
+            "confidence": null,
             "negated": true
           }
         },
@@ -150,42 +165,48 @@
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.93
+            "confidence": 0.93,
+            "negated": false
           },
           "number_over_10_m": {
             "value": "1",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.9
+            "confidence": 0.9,
+            "negated": false
           },
           "number_over_10_f": {
             "value": "2",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.9
+            "confidence": 0.9,
+            "negated": false
           },
           "adult_f_breadwinners": {
             "value": "1",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.87
+            "confidence": 0.87,
+            "negated": false
           },
           "home_duties": {
             "value": "1",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.87
+            "confidence": 0.87,
+            "negated": false
           },
           "retired_and_independent_persons": {
             "value": "1",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.85
+            "confidence": 0.85,
+            "negated": false
           }
         },
         "coding": {
@@ -194,35 +215,40 @@
             "code": "999",
             "label": "Unknown because over £10",
             "status": "ok",
-            "confidence": 0.91
+            "confidence": 0.91,
+            "negated": false
           },
           "tenure": {
             "value": "1",
             "code": "1",
             "label": "Owner",
             "status": "ok",
-            "confidence": 0.94
+            "confidence": 0.94,
+            "negated": false
           },
           "length_of_residence": {
             "value": "13",
             "code": null,
             "label": null,
             "status": "ok",
-            "confidence": 0.9
+            "confidence": 0.9,
+            "negated": false
           },
           "weekly_rent": {
             "value": "04",
             "code": "04",
             "label": "In shillings, exactly",
             "status": "ok",
-            "confidence": 0.79
+            "confidence": 0.79,
+            "negated": false
           },
           "facilities_shared": {
             "value": null,
             "code": null,
             "label": null,
             "status": "no_data",
-            "confidence": null
+            "confidence": null,
+            "negated": false
           }
         },
         "persons": [

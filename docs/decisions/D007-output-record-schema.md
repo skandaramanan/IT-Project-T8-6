@@ -217,11 +217,8 @@ a confidence score on every extracted field.
 
 Recorded rather than guessed:
 
-- **Crossed-out versus corrected.** FR-06 reads crossed-out as implicit
-  negation, but the red pencil on `r01` and `r03` strikes a value and writes a
-  replacement beside it — that is a correction by the original coder, not a
-  negation. Both may exist on the same corpus and they need different handling.
-  Needs a ruling before FR-06 is implemented.
+- **Crossed-out versus corrected**, absent a client ruling, is resolved
+  operationally in D021.
 - **Slashed-out columns** map to `no_data` per the client, "pending final
   confirmation" (FR-09).
 - **Nobody has inventoried the survey front's fields.** IT-79 and IT-70 are both
