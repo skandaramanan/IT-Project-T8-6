@@ -47,12 +47,8 @@ def test_unbanded_batch_asks_for_statuses(monkeypatch):
 
 def test_banded_batch_asks_the_banded_prompt_and_recovers_the_band(monkeypatch):
     outer = {
-        "1": {
-            "Municipality": {"value": "04", "confidence": "high", "status": "ok"}
-        },
-        "2": {
-            "Municipality": {"value": "07", "confidence": "low", "status": "ok"}
-        },
+        "1": {"Municipality": {"value": "04", "confidence": "high", "status": "ok"}},
+        "2": {"Municipality": {"value": "07", "confidence": "low", "status": "ok"}},
     }
     results, prompt_sent = _run_extract_batch(
         monkeypatch, banded=True, outer_json=outer

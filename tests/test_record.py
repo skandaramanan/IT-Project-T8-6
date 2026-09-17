@@ -180,7 +180,9 @@ def test_record_id_needs_all_three_parts():
         build_record_id("27", "", "1")
 
 
-@pytest.mark.parametrize("identity", ["Municipality", "Number of Dwelling", "Number of Household"])
+@pytest.mark.parametrize(
+    "identity", ["Municipality", "Number of Dwelling", "Number of Household"]
+)
 def test_degraded_identity_is_quarantined(identity):
     outcome = build_record_outcome(
         CARD,

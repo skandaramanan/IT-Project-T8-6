@@ -164,7 +164,8 @@ def banded_batch_prompt(count: int) -> str:
         "Use ok only for a readable value; use no_data for a visible blank; "
         "illegible for unreadable markings; damaged for an obscured or damaged "
         "source area. For every non-ok status use null and never guess. Attempt "
-        "every field; the system records any absent expected key as omitted.\n\n" + schema
+        "every field; the system records any absent expected key as omitted.\n\n"
+        + schema
     )
 
 

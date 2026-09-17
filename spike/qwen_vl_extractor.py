@@ -40,7 +40,6 @@ MAX_PIXELS = 1280 * 28 * 28
 
 
 class QwenVLExtractor:
-
     def __init__(self) -> None:
         self.status_aware = True
         self.name = "qwen2.5-vl-status"

@@ -31,8 +31,7 @@ EXTRACTION_PROMPT = (
     "the source area is physically damaged or obscured. For every non-ok "
     "status, use null as the value and never guess. Attempt every field; the "
     "system records any absent expected key as omitted. Preserve leading zeros "
-    "in readable codes.\n\n"
-    + _SCHEMA_BLOCK
+    "in readable codes.\n\n" + _SCHEMA_BLOCK
 )
 
 # The bands a model may self-report against a value. Categorical rather than a
@@ -230,13 +229,17 @@ def parse_field_statuses(
     if parsed is None:
         return None
     expected = frozenset(FIELD_SCHEMA_BY_NAME if field_names is None else field_names)
-    known = [(str(name), value) for name, value in parsed.items() if str(name) in expected]
+    known = [
+        (str(name), value) for name, value in parsed.items() if str(name) in expected
+    ]
     structured = [(name, value) for name, value in known if isinstance(value, dict)]
     if not any("status" in value for _, value in structured):
         # Historical banded output has value + confidence but no status. A
         # value object without either status or confidence is malformed rather
         # than a legacy response and must not silently bypass validation.
-        if any("value" in value and "confidence" not in value for _, value in structured):
+        if any(
+            "value" in value and "confidence" not in value for _, value in structured
+        ):
             raise ValueError("status-aware response lacks status")
         return None
 
@@ -249,7 +252,9 @@ def parse_field_statuses(
         raw_value = value["value"]
         if not isinstance(status, str) or status not in MODEL_FIELD_STATUSES:
             raise ValueError(f"{name}: invalid FieldStatus {status!r}")
-        if status == "ok" and (raw_value is None or not _coerce_field(raw_value).strip()):
+        if status == "ok" and (
+            raw_value is None or not _coerce_field(raw_value).strip()
+        ):
             raise ValueError(f"{name}: ok status requires a readable value")
         if status != "ok" and raw_value is not None:
             raise ValueError(f"{name}: {status} status requires a null value")
