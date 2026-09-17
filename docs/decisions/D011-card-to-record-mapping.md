@@ -40,9 +40,12 @@ one valid code into another.
 The record stores the cleaned value. The literal string the model returned is
 not persisted anywhere.
 
-### 2. Status is `ok` or `no_data`, and an unexplained code stays `ok`
+### 2. Status distinguishes returned data from omitted extractor output
 
-Empty after cleaning → `no_data`, value null. Anything else → `ok`.
+When the extractor returns a field, empty after cleaning → `no_data`, value
+null. Anything else → `ok`. When it does not return an expected field at all,
+the record still emits that field with `omitted`, value null. This preserves the
+distinction between no information in a field and an incomplete extraction.
 
 A value the code book cannot explain keeps `ok` **and keeps its value**; its
 `label` stays null. On a `categorical` field, where every valid code has a
@@ -109,8 +112,9 @@ is indistinguishable from a field the card never had.
   is not recoverable from the record — only by re-running the extraction.
 - A null `label` carries two meanings depending on the field's kind. Anything
   routing a review queue has to check the kind.
-- Every card produces 62 fields regardless of what came back, so a dropped
-  field shows up as `no_data` rather than as an absence.
+- Every card produces 62 fields regardless of what came back. A field missing
+  from extractor output is represented as `omitted`; a returned empty or
+  voided field is `no_data`.
 - `confidence` is null on every field. No engine benchmarked under IT-46
   produces a per-field score, and writing a number would breach NFR-01.
 - `negated` is never set, pending IT-80.

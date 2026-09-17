@@ -11,9 +11,12 @@ transcription of it. Full field coverage belongs to IT-70 and IT-79.
 
 import json
 from pathlib import Path
+from typing import get_args
 
 import jsonschema
 import pytest
+
+from extraction.field_schema import FieldStatus
 
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_DIR = REPO_ROOT / "docs" / "schema"
@@ -50,6 +53,36 @@ def test_sentinels_are_values_not_missing_data():
 
     assert income["status"] == "ok"
     assert income["label"], "a sentinel with no label is indistinguishable from a count"
+
+
+def test_python_status_vocabulary_matches_schema_enum():
+    statuses = SCHEMA["$defs"]["field"]["properties"]["status"]["enum"]
+
+    assert set(get_args(FieldStatus)) == set(statuses)
+
+
+@pytest.mark.parametrize("status", get_args(FieldStatus))
+def test_schema_accepts_each_valid_field_status(status):
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["house"]["structural_material"]["status"] = status
+
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_unknown_status_is_rejected():
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["house"]["structural_material"]["status"] = "unreadable"
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_field_without_status_is_rejected():
+    record = json.loads(json.dumps(EXAMPLE))
+    del record["dwelling"]["house"]["structural_material"]["status"]
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
 
 
 def sources(node):

@@ -16,6 +16,8 @@ The second is the one worth guarding. A field that quietly stops existing looks
 exactly like a field the card never had.
 """
 
+from typing import get_args
+
 import pytest
 
 from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
@@ -23,10 +25,48 @@ from extraction.field_schema import (
     C3_FIELD_SCHEMA,
     FIELD_SCHEMA,
     FIELD_SCHEMA_BY_NAME,
+    FIELD_STATUS_DEFINITIONS,
+    FieldKind,
+    FieldStatus,
     build_extraction_prompt_schema,
 )
 
 CARDS = [("C1/C2", FIELD_SCHEMA), ("C3", C3_FIELD_SCHEMA)]
+
+
+def test_field_kind_excludes_no_data():
+    assert set(get_args(FieldKind)) == {
+        "categorical",
+        "numeric_sentinel",
+        "numeric_free",
+        "unknown",
+    }
+
+
+def test_c3_unobserved_fields_are_unknown_kind():
+    """Keep this provisional expectation until nonblank C3 examples establish
+    each field's shape or code-book mapping.
+
+    The two O/C. fields may become numeric_free counts, while Facilities Shared
+    may become categorical if its values match the Shared vocabulary.
+    """
+    names = {
+        "Facilities Shared",
+        "House No. of Families O/C. (Liv.B)",
+        "House No. of Families O/C. (Liv.A)",
+    }
+    specs = {spec.name: spec for spec in C3_FIELD_SCHEMA}
+
+    assert {name: specs[name].kind for name in names} == {
+        name: "unknown" for name in names
+    }
+
+
+def test_field_statuses_and_definitions_are_complete():
+    statuses = {"ok", "no_data", "illegible", "damaged", "omitted"}
+
+    assert set(get_args(FieldStatus)) == statuses
+    assert set(FIELD_STATUS_DEFINITIONS) == statuses
 
 
 @pytest.mark.parametrize(("card", "schema"), CARDS)

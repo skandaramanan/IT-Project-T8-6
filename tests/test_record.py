@@ -68,10 +68,20 @@ def test_the_record_carries_all_62_fields():
     assert emitted == len(FIELD_SCHEMA)
 
 
-def test_fields_the_model_omitted_are_still_emitted():
+def test_fields_the_model_omitted_are_still_emitted_as_omitted():
     """CARD holds 10 of 62. The rest are absent from the model's answer, and
-    have to come back as no_data rather than vanish."""
+    have to come back as omitted rather than vanish."""
     counts = record()["dwelling"]["households"][0]["counts"]
+    assert counts["home_duties"]["status"] == "omitted"
+    assert counts["home_duties"]["value"] is None
+
+
+def test_returned_empty_field_is_no_data_not_omitted():
+    """An explicitly returned empty value is a data-availability outcome."""
+    fields = CARD | {"Home Duties": None}
+    counts = build_record(fields, region="williamstown", batch="test")["dwelling"][
+        "households"
+    ][0]["counts"]
     assert counts["home_duties"]["status"] == "no_data"
     assert counts["home_duties"]["value"] is None
 

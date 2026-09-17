@@ -33,6 +33,11 @@ Four kinds:
   with the evidence rather than resolved by guessing; ``notes`` says what is
   actually wrong.
 
+``FieldKind`` describes the expected type or shape of a source field.
+``FieldStatus`` describes the result of extracting an individual field. They
+are independent vocabularies: an ``unknown`` kind may still be extracted
+successfully, and a known kind may have no source value.
+
 Two things the C1/C2 sheet settled that the C3 sample had got wrong, both
 because C3 is one unit and one unit is not the archive:
 
@@ -50,9 +55,17 @@ from typing import Literal
 
 from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
 
-FieldKind = Literal[
-    "categorical", "numeric_sentinel", "numeric_free", "unknown", "no_data"
-]
+FieldKind = Literal["categorical", "numeric_sentinel", "numeric_free", "unknown"]
+
+FieldStatus = Literal["ok", "no_data", "illegible", "damaged", "omitted"]
+
+FIELD_STATUS_DEFINITIONS: dict[FieldStatus, str] = {
+    "ok": "The field was read successfully and contains a usable value.",
+    "no_data": "The source field is present but contains no value to extract.",
+    "illegible": "The source field contains markings that cannot be read reliably.",
+    "damaged": "The source field cannot be read because its source area is damaged or obscured.",
+    "omitted": "The expected field was not returned by the extractor.",
+}
 
 
 @dataclass(frozen=True)
@@ -361,7 +374,7 @@ C3_FIELD_SCHEMA: list[FieldSpec] = [
         "unknown",
         notes="same Grade-of-Occ ambiguity as the dominant family field",
     ),
-    FieldSpec("Facilities Shared", "no_data", notes="0/20 filled in this sample"),
+    FieldSpec("Facilities Shared", "unknown", notes="0/20 filled in this sample"),
     FieldSpec(
         "Total No. of Rooms",
         "numeric_free",
@@ -408,12 +421,12 @@ C3_FIELD_SCHEMA: list[FieldSpec] = [
     ),
     FieldSpec(
         "House No. of Families O/C. (Liv.B)",
-        "no_data",
+        "unknown",
         notes="0/20 filled in this sample",
     ),
     FieldSpec(
         "House No. of Families O/C. (Liv.A)",
-        "no_data",
+        "unknown",
         notes="0/20 filled in this sample",
     ),
 ]
@@ -435,7 +448,7 @@ def describe_field(spec: FieldSpec) -> str:
         )
     if spec.kind == "numeric_free":
         return f"{spec.name}: numeric value (count or amount)"
-    # unknown / no_data: genuinely uncertain -- say so rather than imply a scheme that isn't confirmed
+    # unknown: genuinely uncertain -- say so rather than imply a scheme that isn't confirmed
     return f"{spec.name}: code or numeric value, exact coding scheme not confirmed"
 
 

@@ -103,6 +103,16 @@ table applies. The remaining keys each exist because a requirement demands them:
 | `origin`, `original_value` | NFR-05 — human corrections stay distinguishable from the machine value |
 | `source` | NFR-06 / D006 — card reference on traceability-relevant values |
 
+`FieldStatus` has the following meanings:
+
+| Status | Definition |
+| --- | --- |
+| `ok` | The field was read successfully and contains a usable value. |
+| `no_data` | The source field is present but contains no value to extract. |
+| `illegible` | The source field contains markings that cannot be read reliably. |
+| `damaged` | The source field cannot be read because its source area is damaged or obscured. |
+| `omitted` | The expected field was not returned by the extractor. |
+
 Sentinels are **values, not statuses**. `999` in Earnings of Head means "over
 £10" and `997` means "refused"; both round-trip as ordinary values with a label,
 never as `no_data`. That is FR-08, and it is the one rule most likely to be
