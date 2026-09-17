@@ -1,0 +1,178 @@
+{
+  "schema_version": "0.1.0",
+  "description": "IT-95 / US-07 AC3. Every card here carries annotations of unknown purpose beside recognised survey content; what counts as noise is D020 (docs/decisions/D020-noise-vs-meaningful-annotations.md), cited per mark below. `expected` records the meaningful values a reader must still surface -- deliberately the fields nearest each noise mark, plus every field inside the r02 oval, not the whole card. Transcribed by Qitao against the scan, 2026-09-17. Excluded from `expected`: every field IT-93's manifest and D020 class as struck (FR-06), corrected (D020 'Related, not FR-06 -- a correction': r02 Retired and Indep. Persons, r02 Other, r04 Industry of H.) or unclassified (r01 Number of Living Rooms). Their expected value belongs to IT-93, not here.",
+  "cards": [
+    {
+      "image": "r01-coding-front.jpg",
+      "noise": [
+        {
+          "mark": "red X over the Municipality leader dots (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil circled '9', tally marks and a red 'Y' below 'Other' (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "red initials 'AW', pencil 'MLM' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
+          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+        }
+      ],
+      "expected": {
+        "Municipality": "27",
+        "Number of Dwelling": "6",
+        "Number of Household": "1",
+        "Type of Family": "1",
+        "Total No. Resident Members": "3",
+        "Number under 5": "0",
+        "Number 5-10": "0",
+        "Number over 10 M.": "1",
+        "Number over 10 F.": "2",
+        "Retired and Indep. Persons": "1",
+        "Home Duties": "1",
+        "Other": "0",
+        "Tenure": "1",
+        "Children of H. or wife: Living": "1",
+        "Children of H. or wife: Dead": "0"
+      }
+    },
+    {
+      "image": "r02-coding-front.jpg",
+      "noise": [
+        {
+          "mark": "red X over the Municipality leader dots (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "blue pencil oval enclosing 'Number of Household' through 'Number over 10 M.' (reviewer annotation spanning four fields)",
+          "rule": "D020 §Numeric coding card -- reviewer annotation spanning several fields (question 2)"
+        },
+        {
+          "mark": "pencil circled '8', tally marks and a red heart below 'Other' (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "red initials 'AW'/'Hen' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
+          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+        }
+      ],
+      "expected": {
+        "Municipality": "27",
+        "Number of Dwelling": "7",
+        "Number of Household": "1",
+        "Type of Family": "1",
+        "Total No. Resident Members": "3",
+        "Number under 5": "0",
+        "Number 5-10": "0",
+        "Number over 10 M.": "2",
+        "Number over 10 F.": "1",
+        "Home Duties": "1",
+        "Tenure": "3",
+        "Children of H. or wife: Living": "0",
+        "Children of H. or wife: Dead": "0"
+      }
+    },
+    {
+      "image": "r03-coding-front.jpg",
+      "noise": [
+        {
+          "mark": "red star over the Municipality leader dots (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil circled '9', tally marks and a red tick below 'Other' (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
+          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+        }
+      ],
+      "expected": {
+        "Municipality": "27",
+        "Number of Dwelling": "12",
+        "Number of Household": "1",
+        "Type of Family": "1",
+        "Total No. Resident Members": "5",
+        "Number under 5": "0",
+        "Number 5-10": "3",
+        "Number over 10 M.": "1",
+        "Number over 10 F.": "1",
+        "Retired and Indep. Persons": "0",
+        "Home Duties": "1",
+        "Other": "0",
+        "Tenure": "2",
+        "Children of H. or wife: Living": "3",
+        "Children of H. or wife: Dead": "0"
+      }
+    },
+    {
+      "image": "r04-coding-front.jpg",
+      "noise": [
+        {
+          "mark": "red 'A' over the Municipality leader dots (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil circled '9', tally marks and a red heart below 'Other' (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
+          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+        }
+      ],
+      "expected": {
+        "Municipality": "27",
+        "Number of Dwelling": "14",
+        "Number of Household": "1",
+        "Type of Family": "1",
+        "Total No. Resident Members": "3",
+        "Number under 5": "0",
+        "Number 5-10": "0",
+        "Number over 10 M.": "1",
+        "Number over 10 F.": "2",
+        "Retired and Indep. Persons": "0",
+        "Home Duties": "1",
+        "Other": "0",
+        "Tenure": "2",
+        "Children of H. or wife: Living": "1",
+        "Children of H. or wife: Dead": "0"
+      }
+    },
+    {
+      "image": "r05-coding-front.jpg",
+      "noise": [
+        {
+          "mark": "red X over the Municipality leader dots (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil circled '7', tally marks and a red '8' below 'Other' (constant stamp, every card)",
+          "rule": "D020 §Numeric coding card -- constant card-level stamp (question 3)"
+        },
+        {
+          "mark": "pencil 'MLM', red 'AW' and red 'R' beside 'Children of H. or wife' (constant stamp, every card)",
+          "rule": "D020 rule question 1 (off any field position); not a D020 worked example"
+        }
+      ],
+      "expected": {
+        "Municipality": "27",
+        "Number of Dwelling": "23",
+        "Number of Household": "1",
+        "Type of Family": "1",
+        "Total No. Resident Members": "4",
+        "Number under 5": "0",
+        "Number 5-10": "0",
+        "Number over 10 M.": "2",
+        "Number over 10 F.": "2",
+        "Retired and Indep. Persons": "0",
+        "Home Duties": "1",
+        "Other": "1",
+        "Tenure": "3",
+        "Children of H. or wife: Living": "2",
+        "Children of H. or wife: Dead": "0"
+      }
+    }
+  ]
+}
