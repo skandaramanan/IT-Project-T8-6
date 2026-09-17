@@ -91,3 +91,16 @@ def test_three_unusable_responses_are_scored_not_raised(tmp_path, monkeypatch):
     # spent those requests whether or not the model said anything usable.
     assert [r.fields for r in results] == [{}, {}]
     assert all(r.cost_usd is None or r.cost_usd >= 0 for r in results)
+
+
+def test_standard_prompt_uses_a_status_result_name():
+    extractor = GeminiExtractor()
+
+    assert extractor.name.endswith("-status")
+
+
+def test_banded_prompt_includes_status_in_its_result_name(monkeypatch):
+    monkeypatch.setenv("GEMINI_CONFIDENCE_BAND", "1")
+    extractor = GeminiExtractor()
+
+    assert extractor.name.endswith("-banded-status")

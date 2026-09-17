@@ -13,7 +13,13 @@ import jsonschema
 import pytest
 
 from extraction.field_schema import FIELD_SCHEMA
-from extraction.record import FIELD_MAP, build_record, build_record_id, normalise
+from extraction.record import (
+    FIELD_MAP,
+    build_record,
+    build_record_id,
+    build_record_outcome,
+    normalise,
+)
 
 SCHEMA = json.loads(
     (
@@ -116,6 +122,28 @@ def test_void_marks_become_no_data():
     assert counts["number_under_5"]["status"] == "no_data"
 
 
+@pytest.mark.parametrize("status", ["illegible", "damaged"])
+def test_unreadable_status_discards_a_candidate_value(status):
+    fields = CARD | {"Age of Head": "54"}
+    head = build_record(
+        fields,
+        statuses={"Age of Head": status},
+        region="williamstown",
+        batch="test",
+    )["dwelling"]["households"][0]["head"]
+    assert head["age_of_head"]["status"] == status
+    assert head["age_of_head"]["value"] is None
+
+
+def test_contradictory_status_and_value_is_rejected():
+    with pytest.raises(ValueError, match="no_data"):
+        build_record(
+            CARD,
+            statuses={"Age of Head": "no_data"},
+            region="williamstown",
+        )
+
+
 # --- decoding ---------------------------------------------------------------
 
 
@@ -150,6 +178,33 @@ def test_record_id_needs_all_three_parts():
     """Dwelling number alone repeats across municipalities."""
     with pytest.raises(ValueError):
         build_record_id("27", "", "1")
+
+
+@pytest.mark.parametrize("identity", ["Municipality", "Number of Dwelling", "Number of Household"])
+def test_degraded_identity_is_quarantined(identity):
+    outcome = build_record_outcome(
+        CARD,
+        statuses={identity: "illegible"},
+        region="williamstown",
+        batch="test",
+        image="tests/fixtures/r01-coding-front.jpg",
+        page=1,
+    )
+    assert outcome.record is None
+    assert outcome.quarantine["reason"] == "incomplete_identity"
+    assert outcome.quarantine["identity_fields"][identity]["status"] == "illegible"
+    assert outcome.quarantine["identity_fields"][identity]["value"] is None
+
+
+def test_valid_identity_builds_a_record_outcome():
+    outcome = build_record_outcome(CARD, region="williamstown", batch="test")
+    assert outcome.quarantine is None
+    assert outcome.record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
+
+
+def test_c3_field_names_are_not_accepted_by_c1_c2_record_conversion():
+    with pytest.raises(ValueError, match="unknown fields"):
+        build_record(CARD, statuses={"Facilities Shared": "ok"}, region="williamstown")
 
 
 # --- the envelope -----------------------------------------------------------

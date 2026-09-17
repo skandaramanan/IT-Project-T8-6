@@ -43,6 +43,7 @@ from pathlib import Path
 from json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
+    parse_field_statuses,
     parse_json_fields,
 )
 
@@ -107,9 +108,13 @@ def batch_prompt(count: int) -> str:
         f'keys are "1" to "{count}" and whose value for each key is that '
         f"card's field object, containing exactly these "
         f"{len(schema.splitlines())} keys.\n\n"
-        "Read each card independently and completely. Give every value as a "
-        "JSON string, copied exactly as written, keeping any leading zeros "
-        '("04", not 4). Use null where no code is written.\n\n' + schema
+        'For each field return an object: {"value": <string or null>, "status": '
+        '"ok" | "no_data" | "illegible" | "damaged" | "omitted"}. Read each '
+        "card independently and completely. Use ok only for a readable value; "
+        "use no_data for a visible blank, illegible for unreadable markings, "
+        "damaged for an obscured or damaged source area, and omitted only when "
+        "an expected field cannot be returned. For every non-ok status use null "
+        "and never guess. Preserve leading zeros.\n\n" + schema
     )
 
 
@@ -126,8 +131,9 @@ def _parse_batch_object(raw: str) -> dict:
 
 
 def banded_batch_prompt(count: int) -> str:
-    """``batch_prompt``, but each card's field object holds ``{"value": ...,
-    "confidence": ...}`` pairs -- the batched form of
+    """``batch_prompt``, but each field includes value, confidence and status.
+
+    This is the batched form of
     ``json_extraction.BANDED_EXTRACTION_PROMPT``.
     """
     schema = build_extraction_prompt_schema()
@@ -140,7 +146,8 @@ def banded_batch_prompt(count: int) -> str:
         f"card's field object, containing exactly these "
         f"{len(schema.splitlines())} keys.\n\n"
         'The value for each key is an object: {"value": <the code>, "confidence": '
-        '<"low"|"medium"|"high">}.\n\n'
+        '<"low"|"medium"|"high">, "status": "ok" | "no_data" | '
+        '"illegible" | "damaged" | "omitted"}.\n\n'
         "Read each card independently and completely. Give every code as a "
         'JSON string, copied exactly as written, keeping any leading zeros ("04", '
         "not 4). Use null as the value where no code is written.\n\n"
@@ -148,7 +155,11 @@ def banded_batch_prompt(count: int) -> str:
         'digits are unambiguous, "medium" if you had to choose between plausible '
         'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
         "Say low when it is low -- a wrong value marked high is worse than an "
-        "honest one marked low, because a reviewer will never look at it.\n\n" + schema
+        "honest one marked low, because a reviewer will never look at it. "
+        "Use ok only for a readable value; use no_data for a visible blank; "
+        "illegible for unreadable markings; damaged for an obscured or damaged "
+        "source area; and omitted only when an expected field cannot be returned. "
+        "For every non-ok status use null and never guess.\n\n" + schema
     )
 
 
@@ -178,8 +189,8 @@ class GeminiExtractor:
             "true",
             "yes",
         )
-        if self.banded:
-            self.name += "-banded"
+        self.status_aware = True
+        self.name += "-banded-status" if self.banded else "-status"
 
     def is_available(self) -> bool:
         try:
@@ -250,6 +261,7 @@ class GeminiExtractor:
                     fields=parse_json_fields(text) or {},
                     raw_text=text,
                     cost_usd=share / len(image_paths) if share is not None else None,
+                    statuses=parse_field_statuses(text),
                 )
             )
         return results
@@ -269,6 +281,7 @@ class GeminiExtractor:
             fields=parse_json_fields(raw_output) or {},
             raw_text=raw_output,
             cost_usd=_cost_usd(model, response.usage_metadata),
+            statuses=parse_field_statuses(raw_output),
         )
 
     @staticmethod

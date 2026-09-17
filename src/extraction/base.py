@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from extraction.field_schema import FieldStatus
+
 
 @dataclass
 class ExtractionResult:
@@ -29,6 +31,12 @@ class ExtractionResult:
     # unsatisfiable with that engine, which decides between candidates
     # independently of how accurately they read the digits.
     confidence: dict[str, float] | None = None
+
+    # The visual outcome of reading each field.  This remains separate from
+    # confidence: a low-confidence readable value is still ``ok``, while an
+    # illegible cell has no value at all.  None preserves compatibility with
+    # extractors that use the legacy flat-value prompt.
+    statuses: dict[str, FieldStatus] | None = None
 
 
 class Extractor(Protocol):

@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from gemini_extractor import GeminiExtractor, banded_batch_prompt, batch_prompt
-from json_extraction import parse_confidence_bands
+from json_extraction import parse_confidence_bands, parse_field_statuses
 
 
 class _FakeModels:
@@ -37,17 +37,22 @@ def _run_extract_batch(monkeypatch, banded, outer_json):
     return results, fake_client.models.last_contents[0]
 
 
-def test_unbanded_batch_still_asks_the_flat_prompt(monkeypatch):
+def test_unbanded_batch_asks_for_statuses(monkeypatch):
     _, prompt_sent = _run_extract_batch(
         monkeypatch, banded=False, outer_json={"1": {}, "2": {}}
     )
     assert prompt_sent == batch_prompt(2)
+    assert '"status"' in prompt_sent
 
 
 def test_banded_batch_asks_the_banded_prompt_and_recovers_the_band(monkeypatch):
     outer = {
-        "1": {"Municipality": {"value": "04", "confidence": "high"}},
-        "2": {"Municipality": {"value": "07", "confidence": "low"}},
+        "1": {
+            "Municipality": {"value": "04", "confidence": "high", "status": "ok"}
+        },
+        "2": {
+            "Municipality": {"value": "07", "confidence": "low", "status": "ok"}
+        },
     }
     results, prompt_sent = _run_extract_batch(
         monkeypatch, banded=True, outer_json=outer
@@ -56,5 +61,6 @@ def test_banded_batch_asks_the_banded_prompt_and_recovers_the_band(monkeypatch):
     assert prompt_sent == banded_batch_prompt(2)
     assert results[0].fields["Municipality"] == "04"
     assert parse_confidence_bands(results[0].raw_text) == {"Municipality": "high"}
+    assert parse_field_statuses(results[0].raw_text) == {"Municipality": "ok"}
     assert results[1].fields["Municipality"] == "07"
     assert parse_confidence_bands(results[1].raw_text) == {"Municipality": "low"}

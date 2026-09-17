@@ -13,6 +13,7 @@ from extraction.base import ExtractionResult
 
 def test_confidence_defaults_to_none_not_empty():
     assert ExtractionResult().confidence is None
+    assert ExtractionResult().statuses is None
     assert ExtractionResult().fields == {}  # fields keeps the {}-not-None rule
 
 
@@ -21,3 +22,11 @@ def test_an_engine_that_scores_nothing_is_not_an_engine_that_cannot():
     cannot = ExtractionResult(fields={"Tenure": "3"})
     assert can_but_didnt.confidence == {}
     assert cannot.confidence is None
+
+
+def test_statuses_are_separate_from_confidence():
+    result = ExtractionResult(
+        fields={"Tenure": "3"}, statuses={"Tenure": "ok"}, confidence={}
+    )
+    assert result.statuses == {"Tenure": "ok"}
+    assert result.confidence == {}

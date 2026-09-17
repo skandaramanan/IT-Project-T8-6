@@ -7,7 +7,12 @@ from __future__ import annotations
 import json
 import re
 
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_prompt_schema
+from extraction.field_schema import (
+    FIELD_SCHEMA_BY_NAME,
+    FIELD_STATUS_DEFINITIONS,
+    FieldStatus,
+    build_extraction_prompt_schema,
+)
 
 # Derived, not written down: the schema is now 62 fields for C1/C2 and 60 for
 # C3, and a prompt that names the wrong count while listing the right keys is
@@ -15,14 +20,16 @@ from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_promp
 _SCHEMA_BLOCK = build_extraction_prompt_schema()
 
 EXTRACTION_PROMPT = (
-    "This is a numeric coding card from a 1941-43 social survey. Extract the "
+    "This is a numeric C1/C2 coding card from a 1941-43 social survey. Extract the "
     f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
     "object with exactly these keys (no markdown fences, no commentary).\n\n"
-    # Codes are written in fixed-width columns, so "04" and "4" are different
-    # values -- as a JSON number the leading zero is unrepresentable and gets
-    # silently dropped, which scored as a miss on every zero-padded field.
-    "Give every value as a JSON string, copied exactly as written, keeping any "
-    'leading zeros ("04", not 4). Use null where no code is written.\n\n'
+    'For every key return an object: {"value": <string or null>, "status": '
+    '"ok" | "no_data" | "illegible" | "damaged" | "omitted"}.\n\n'
+    "Use ok only for a readable value. Use no_data for a visible blank cell; "
+    "illegible where markings exist but cannot be read reliably; damaged where "
+    "the source area is physically damaged or obscured; and omitted only where "
+    "you cannot return an expected field. For every non-ok status, use null as "
+    "the value and never guess. Preserve leading zeros in readable codes.\n\n"
     + _SCHEMA_BLOCK
 )
 
@@ -40,11 +47,12 @@ CONFIDENCE_BANDS = ("low", "medium", "high")
 # can measure whether asking for a band *costs* accuracy, which is a finding in
 # its own right rather than an assumption.
 BANDED_EXTRACTION_PROMPT = (
-    "This is a numeric coding card from a 1941-43 social survey. Extract the "
+    "This is a numeric C1/C2 coding card from a 1941-43 social survey. Extract the "
     f"following {len(_SCHEMA_BLOCK.splitlines())} fields and return ONLY a JSON "
     "object with exactly these keys (no markdown fences, no commentary).\n\n"
     'The value for each key is an object: {"value": <the code>, "confidence": '
-    '<"low"|"medium"|"high">}.\n\n'
+    '<"low"|"medium"|"high">, "status": "ok" | "no_data" | '
+    '"illegible" | "damaged" | "omitted"}.\n\n'
     "Give every code as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null as the value where no code is '
     "written.\n\n"
@@ -52,9 +60,15 @@ BANDED_EXTRACTION_PROMPT = (
     'digits are unambiguous, "medium" if you had to choose between plausible '
     'readings, "low" if the cell is faint, damaged, overwritten or a guess. '
     "Say low when it is low -- a wrong value marked high is worse than an "
-    "honest one marked low, because a reviewer will never look at it.\n\n"
+    "honest one marked low, because a reviewer will never look at it. "
+    "Use ok only for a readable value; use no_data for a visible blank; "
+    "illegible for unreadable markings; damaged for an obscured or damaged "
+    "source area; and omitted only when an expected field cannot be returned. "
+    "For every non-ok status, use null and never guess.\n\n"
     + _SCHEMA_BLOCK
 )
+
+FIELD_STATUSES = frozenset(FIELD_STATUS_DEFINITIONS)
 
 
 def _unwrap(value) -> tuple[object, str | None]:
@@ -198,3 +212,28 @@ def parse_confidence_bands(text: str | None) -> dict[str, str]:
         if band is not None:
             bands[str(name)] = band
     return bands
+
+
+def parse_field_statuses(text: str | None) -> dict[str, FieldStatus] | None:
+    """Read status-aware output without conflating omitted and blank fields.
+
+    ``None`` means the response is not the status-aware shape.  A malformed
+    status-aware response raises instead of silently falling back to legacy
+    rules, because that would turn a broken classification into plausible data.
+    """
+    parsed = _parse_object(text)
+    if parsed is None:
+        return None
+    known = [(str(name), value) for name, value in parsed.items() if str(name) in FIELD_SCHEMA_BY_NAME]
+    if not any(isinstance(value, dict) for _, value in known):
+        return None
+
+    statuses: dict[str, FieldStatus] = {}
+    for name, value in known:
+        if not isinstance(value, dict) or "status" not in value:
+            raise ValueError(f"status-aware response lacks status for {name}")
+        status = value["status"]
+        if not isinstance(status, str) or status not in FIELD_STATUSES:
+            raise ValueError(f"{name}: invalid FieldStatus {status!r}")
+        statuses[name] = status  # type: ignore[assignment]
+    return statuses

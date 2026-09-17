@@ -77,6 +77,14 @@
         {
           "if": { "properties": { "status": { "const": "ok" } } },
           "then": { "properties": { "value": { "type": "string" } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": { "enum": ["no_data", "illegible", "damaged", "omitted"] }
+            }
+          },
+          "then": { "properties": { "value": { "const": null } } }
         }
       ]
     },

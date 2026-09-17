@@ -38,10 +38,16 @@ Deliberately not done here:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME, FieldSpec
+from extraction.field_schema import (
+    FIELD_SCHEMA_BY_NAME,
+    FIELD_STATUS_DEFINITIONS,
+    FieldSpec,
+    FieldStatus,
+)
 
 SCHEMA_VERSION = "0.1.0"
 
@@ -161,7 +167,11 @@ def normalise(value: str | None) -> str:
 
 
 def build_field(
-    spec: FieldSpec, raw: str | None, *, source: str | None = None
+    spec: FieldSpec,
+    raw: str | None,
+    *,
+    status: FieldStatus | None = None,
+    source: str | None = None,
 ) -> dict[str, Any]:
     """One card value as a D007 field object.
 
@@ -174,12 +184,24 @@ def build_field(
     a ``numeric_sentinel`` field most values are ordinary amounts and carry no
     label by design: Weekly Rent 04 is four shillings, not an unknown code.
     """
+    if status is not None and status not in FIELD_STATUS_DEFINITIONS:
+        raise ValueError(f"{spec.name}: invalid FieldStatus {status!r}")
+
     value = normalise(raw)
+    resolved_status: FieldStatus = status or ("ok" if value else "no_data")
+    if resolved_status == "ok" and not value:
+        raise ValueError(f"{spec.name}: ok status requires a readable value")
+    if resolved_status in ("no_data", "omitted") and value:
+        raise ValueError(f"{spec.name}: {resolved_status} status cannot carry a value")
+    # A model may include its best guess despite correctly reporting the cell as
+    # illegible or damaged. Never persist that guess as data.
+    if resolved_status in ("illegible", "damaged"):
+        value = ""
     field: dict[str, Any] = {
         "value": value or None,
         "code": None,
         "label": None,
-        "status": "ok" if value else "no_data",
+        "status": resolved_status,
         "confidence": None,  # no benchmarked engine produces one (NFR-01)
     }
     if source:
@@ -214,6 +236,43 @@ def build_omitted_field(*, source: str | None = None) -> dict[str, Any]:
     return field
 
 
+def _build_groups(
+    fields: dict[str, str | None], statuses: dict[str, FieldStatus] | None
+) -> dict[str, dict[str, Any]]:
+    if statuses:
+        unknown = set(statuses) - set(FIELD_MAP)
+        if unknown:
+            raise ValueError(f"statuses for unknown fields: {sorted(unknown)}")
+
+    groups: dict[str, dict[str, Any]] = {
+        "dwelling": {},
+        "household": {},
+        "house": {},
+        "head": {},
+        "counts": {},
+        "coding": {},
+    }
+    for label, (key, group) in FIELD_MAP.items():
+        spec = FIELD_SCHEMA_BY_NAME[label]
+        source = "coding-front" if group in ("dwelling", "household") else None
+        status = statuses.get(label) if statuses else None
+        if label in fields or status is not None:
+            groups[group][key] = build_field(
+                spec, fields.get(label), status=status, source=source
+            )
+        else:
+            groups[group][key] = build_omitted_field(source=source)
+    return groups
+
+
+@dataclass(frozen=True)
+class RecordBuildOutcome:
+    """One card's normal record or review quarantine outcome, never both."""
+
+    record: dict[str, Any] | None
+    quarantine: dict[str, Any] | None
+
+
 # --- 4. the record ----------------------------------------------------------
 
 
@@ -235,8 +294,9 @@ def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> s
 
 
 def build_record(
-    fields: dict[str, str],
+    fields: dict[str, str | None],
     *,
+    statuses: dict[str, FieldStatus] | None = None,
     region: str,
     batch: str | None = None,
     image: str | None = None,
@@ -249,22 +309,7 @@ def build_record(
     did not return are still emitted, as ``omitted``. A card is 62 fields either
     way, so a dropped one is visible rather than absent.
     """
-    groups: dict[str, dict[str, Any]] = {
-        "dwelling": {},
-        "household": {},
-        "house": {},
-        "head": {},
-        "counts": {},
-        "coding": {},
-    }
-    for label, (key, group) in FIELD_MAP.items():
-        spec = FIELD_SCHEMA_BY_NAME[label]
-        # Identity is what a value is traced back by, so it carries its source.
-        source = "coding-front" if group in ("dwelling", "household") else None
-        if label in fields:
-            groups[group][key] = build_field(spec, fields[label], source=source)
-        else:
-            groups[group][key] = build_omitted_field(source=source)
+    groups = _build_groups(fields, statuses)
 
     record_id = build_record_id(
         groups["dwelling"]["municipality"]["value"] or "",
@@ -301,3 +346,55 @@ def build_record(
             "households": [household],
         },
     }
+
+
+def build_record_outcome(
+    fields: dict[str, str | None],
+    *,
+    statuses: dict[str, FieldStatus] | None = None,
+    region: str,
+    batch: str | None = None,
+    image: str | None = None,
+    page: int | None = None,
+) -> RecordBuildOutcome:
+    """Build a C1/C2 record or a reviewable identity quarantine item.
+
+    A degraded identity field is still useful evidence, but it cannot safely
+    form D007's composite key.  Preserve all classified fields for review and
+    let the caller continue with the next card instead of terminating a batch.
+    """
+    groups = _build_groups(fields, statuses)
+    identity = {
+        "Municipality": groups["dwelling"]["municipality"],
+        "Number of Dwelling": groups["dwelling"]["dwelling_no"],
+        "Number of Household": groups["household"]["household_no"],
+    }
+    failed = {
+        name: field
+        for name, field in identity.items()
+        if field["status"] != "ok" or not field["value"]
+    }
+    if failed:
+        return RecordBuildOutcome(
+            record=None,
+            quarantine={
+                "reason": "incomplete_identity",
+                "region": region,
+                "batch": batch,
+                "image": image,
+                "page": page,
+                "identity_fields": failed,
+                "classified_fields": groups,
+            },
+        )
+    return RecordBuildOutcome(
+        record=build_record(
+            fields,
+            statuses=statuses,
+            region=region,
+            batch=batch,
+            image=image,
+            page=page,
+        ),
+        quarantine=None,
+    )

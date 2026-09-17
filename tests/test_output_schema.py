@@ -64,14 +64,38 @@ def test_python_status_vocabulary_matches_schema_enum():
 @pytest.mark.parametrize("status", get_args(FieldStatus))
 def test_schema_accepts_each_valid_field_status(status):
     record = json.loads(json.dumps(EXAMPLE))
-    record["dwelling"]["house"]["structural_material"]["status"] = status
+    field = record["dwelling"]["house"]["structural_material"]
+    field["status"] = status
+    field["value"] = "1" if status == "ok" else None
 
     jsonschema.validate(record, SCHEMA)
+
+
+@pytest.mark.parametrize("status", ["no_data", "illegible", "damaged", "omitted"])
+def test_degraded_status_rejects_a_value(status):
+    record = json.loads(json.dumps(EXAMPLE))
+    field = record["dwelling"]["house"]["structural_material"]
+    field["status"] = status
+    field["value"] = "1"
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
 
 
 def test_unknown_status_is_rejected():
     record = json.loads(json.dumps(EXAMPLE))
     record["dwelling"]["house"]["structural_material"]["status"] = "unreadable"
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_multiple_statuses_are_rejected():
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["house"]["structural_material"]["status"] = [
+        "ok",
+        "illegible",
+    ]
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)

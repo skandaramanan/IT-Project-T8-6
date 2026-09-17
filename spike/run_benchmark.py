@@ -28,7 +28,7 @@ from ground_truth import (
     DEFAULT_IMAGES_DIR,
     load_ground_truth,
 )
-from json_extraction import parse_json_fields
+from json_extraction import parse_field_statuses, parse_json_fields
 from scoring import score_structured
 
 from extraction.base import ExtractionResult, Extractor
@@ -189,7 +189,9 @@ def main() -> None:
             # empty dict is the same signal the live run would have given.
             raw_text = (raw_dir / f"{card.page_id}.txt").read_text()
             return ExtractionResult(
-                fields=parse_json_fields(raw_text) or {}, raw_text=raw_text
+                fields=parse_json_fields(raw_text) or {},
+                raw_text=raw_text,
+                statuses=parse_field_statuses(raw_text),
             )
         return extractor.extract(card.image_path)
 

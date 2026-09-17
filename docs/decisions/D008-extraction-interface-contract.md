@@ -36,6 +36,7 @@ class ExtractionResult:
     fields: dict[str, str] = field(default_factory=dict)
     raw_text: str | None = None
     confidence: dict[str, float] | None = None
+    statuses: dict[str, FieldStatus] | None = None
 ```
 
 - `fields` defaults to `{}`, never `None` — a card the model fails on scores
@@ -43,6 +44,10 @@ class ExtractionResult:
 - `raw_text` is diagnostic only: what the model said, never scored.
 - `confidence` is optional, `None` when not known or not supported by the
   engine, and keyed the same as `fields`.
+- `statuses` is optional and keyed by field name. It carries the extractor's
+  visual `FieldStatus` observation; `None` preserves compatibility with flat
+  legacy output. It is independent of
+  confidence: a readable but uncertain value is still `ok`.
 - `is_available()` lets a runner skip an engine with a missing dependency or
   API key, rather than crash mid-run.
 
@@ -74,6 +79,9 @@ lands.
   to interpret values; neither is part of this interface.
 - Whichever engine can't produce a per-field score leaves `confidence=None`
   for those fields rather than a fabricated `1.0`.
+- Status-aware extractors keep the values map for benchmark compatibility and
+  carry their visual field classifications in `statuses`; record conversion
+  validates the pair before export.
 
 ## Revisit if
 
@@ -92,3 +100,9 @@ optional `code_book: CodeBook` field (defaulting to today's tables so
 nothing else changes). Not built speculatively — we don't yet know if this
 batch is missing a supplementary sheet (no code change needed) or is
 genuinely on a different scheme (needs the above).
+
+## Changelog
+
+| Date | Change |
+| --- | --- |
+| 2026-09-17 | Amended for IT-96: added per-field status observations to the extractor result contract. |

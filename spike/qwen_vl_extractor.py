@@ -24,7 +24,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from json_extraction import EXTRACTION_PROMPT, parse_json_fields
+from json_extraction import (
+    EXTRACTION_PROMPT,
+    parse_field_statuses,
+    parse_json_fields,
+)
 
 from extraction.base import ExtractionResult
 
@@ -36,9 +40,10 @@ MAX_PIXELS = 1280 * 28 * 28
 
 
 class QwenVLExtractor:
-    name = "qwen2.5-vl"
 
     def __init__(self) -> None:
+        self.status_aware = True
+        self.name = "qwen2.5-vl-status"
         self._model = None
         self._processor = None
 
@@ -86,7 +91,10 @@ class QwenVLExtractor:
                 "role": "user",
                 "content": [
                     {"type": "image", "image": str(image_path)},
-                    {"type": "text", "text": EXTRACTION_PROMPT},
+                    {
+                        "type": "text",
+                        "text": EXTRACTION_PROMPT,
+                    },
                 ],
             }
         ]
@@ -109,4 +117,8 @@ class QwenVLExtractor:
         )[0]
 
         fields = parse_json_fields(raw_output) or {}
-        return ExtractionResult(fields=fields, raw_text=raw_output)
+        return ExtractionResult(
+            fields=fields,
+            raw_text=raw_output,
+            statuses=parse_field_statuses(raw_output),
+        )

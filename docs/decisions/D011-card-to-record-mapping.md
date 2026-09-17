@@ -40,12 +40,25 @@ one valid code into another.
 The record stores the cleaned value. The literal string the model returned is
 not persisted anywhere.
 
-### 2. Status distinguishes returned data from omitted extractor output
+### 2. Status distinguishes returned data, degradation and omitted extractor output
 
 When the extractor returns a field, empty after cleaning → `no_data`, value
 null. Anything else → `ok`. When it does not return an expected field at all,
 the record still emits that field with `omitted`, value null. This preserves the
 distinction between no information in a field and an incomplete extraction.
+
+Status-aware extractors may additionally report `illegible` (markings are
+present but cannot be read reliably) or `damaged` (the relevant source area is
+physically damaged or obscured). Both store null, not the model's candidate
+guess. A reported valid status takes precedence over the legacy fallback above;
+an `ok` status requires a usable cleaned value, and every other status requires
+null. Status and confidence are independent: a low-confidence readable value
+is still `ok`, while an illegible cell is not a value with low confidence.
+
+The standard prompt now requests a value and status for every field; the
+confidence-banded prompt requests value, confidence and status. New runs file
+their raw output under `-status` or `-banded-status` result names, so they are
+not silently mixed with historical flat or confidence-banded benchmarks.
 
 A value the code book cannot explain keeps `ok` **and keeps its value**; its
 `label` stays null. On a `categorical` field, where every valid code has a
@@ -121,6 +134,10 @@ is indistinguishable from a field the card never had.
 - C3 records are not built. `C3_FIELD_SCHEMA` types that card, but nothing maps
   it into a record — C3 is 4 pages in one unit (D009), and it needs either its
   own mapping or an explicit non-goal in the requirements.
+- A C1/C2 card whose Municipality, Number of Dwelling or Number of Household
+  is not a usable `ok` value is quarantined with its source metadata and
+  classified fields. It receives no fabricated `record_id`; processing of the
+  following cards continues.
 
 ## Revisit if
 
@@ -137,3 +154,9 @@ already carries it (D008); this step just stops passing null.
 
 **Reviewers ask what the model actually said.** That is the trigger to take the
 raw-value question back to D007 rather than improvise a field here.
+
+## Changelog
+
+| Date | Change |
+| --- | --- |
+| 2026-09-17 | Amended for IT-96: added status extraction to standard and banded prompts, null-value rules for degraded fields, identity quarantine, and the C1/C2 boundary. |

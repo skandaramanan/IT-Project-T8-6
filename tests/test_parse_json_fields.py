@@ -5,7 +5,13 @@ field empty, which scores well on a card that is mostly empty cells -- so the
 parser has to reject it rather than let it through as a partial answer.
 """
 
-from json_extraction import parse_json_fields
+import pytest
+from json_extraction import (
+    BANDED_EXTRACTION_PROMPT,
+    EXTRACTION_PROMPT,
+    parse_field_statuses,
+    parse_json_fields,
+)
 
 
 def test_placeholder_object_is_rejected():
@@ -52,3 +58,38 @@ def test_unbanded_output_reports_no_bands():
 
     assert parse_confidence_bands('{"Municipality": "56"}') == {}
     assert parse_confidence_bands(None) == {}
+
+
+def test_status_shape_preserves_value_keys_and_statuses():
+    payload = (
+        '{"Municipality": {"value": "56", "status": "ok"},'
+        ' "Weekly Rent": {"value": null, "status": "illegible"}}'
+    )
+    assert parse_json_fields(payload) == {"Municipality": "56", "Weekly Rent": ""}
+    assert parse_field_statuses(payload) == {
+        "Municipality": "ok",
+        "Weekly Rent": "illegible",
+    }
+
+
+def test_flat_output_has_no_status_map():
+    assert parse_field_statuses('{"Municipality": "56"}') is None
+
+
+def test_standard_and_banded_prompts_both_request_statuses():
+    assert '"status"' in EXTRACTION_PROMPT
+    assert '"confidence"' not in EXTRACTION_PROMPT
+    assert '"status"' in BANDED_EXTRACTION_PROMPT
+    assert '"confidence"' in BANDED_EXTRACTION_PROMPT
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"Municipality": {"value": "56", "status": "unreadable"}}',
+        '{"Municipality": {"value": "56"}}',
+    ],
+)
+def test_malformed_status_output_is_rejected(payload):
+    with pytest.raises(ValueError):
+        parse_field_statuses(payload)
