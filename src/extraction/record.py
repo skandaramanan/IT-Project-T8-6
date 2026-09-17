@@ -30,8 +30,8 @@ Deliberately not done here:
 - ``confidence`` is always None. No engine benchmarked so far produces a
   per-field score, and inventing one would breach NFR-01. Null is what the
   envelope asks for and what the reviewer needs to see.
-- ``negated`` is never set. FR-06 turns on whether red pencil means negation or
-  the coder correcting themselves, which is still with the client (IT-80).
+- ``negated`` resolution rule is in ``build_field``, decided in
+  ``docs/decisions/D021-resolving-struck-options.md``.
 - ``persons`` and ``notes`` stay empty. Both come off the survey front and
   reverse; the coding card carries neither.
 """
@@ -124,6 +124,10 @@ FIELD_MAP: dict[str, tuple[str, str]] = {
     "Length of Residence": ("length_of_residence", "coding"),
 }
 
+# The groups holding the three fields record_id is built from. They carry a
+# source, and they are never negated.
+IDENTITY_GROUPS = frozenset({"dwelling", "household"})
+
 
 # --- 2. cleaning ------------------------------------------------------------
 # Ported from spike/scoring.py. Every value on this card is a number -- the code
@@ -161,7 +165,11 @@ def normalise(value: str | None) -> str:
 
 
 def build_field(
-    spec: FieldSpec, raw: str | None, *, source: str | None = None
+    spec: FieldSpec,
+    raw: str | None,
+    *,
+    source: str | None = None,
+    struck: bool | None = False,
 ) -> dict[str, Any]:
     """One card value as a D007 field object.
 
@@ -173,8 +181,19 @@ def build_field(
     every valid code has a meaning -- that is the FR-09/FR-11 review signal. On
     a ``numeric_sentinel`` field most values are ordinary amounts and carry no
     label by design: Weekly Rent 04 is four shillings, not an unknown code.
+
+    ``struck`` resolution (D021): struck always negates, regardless of whether
+    the struck digit is still legible.
+
+    ``struck=None`` means no detector ran -- the engine cannot produce the
+    signal at all. The field then carries no ``negated`` key, because ``false``
+    would claim the option was read and found unstruck. Same distinction
+    ``ExtractionResult.struck`` draws between ``None`` and ``{}``, and the same
+    one :func:`build_omitted_field` makes below.
     """
-    value = normalise(raw)
+    # Struck empties the value first, so every check below reads off `value`
+    # alone rather than re-deriving the rule.
+    value = "" if struck else normalise(raw)
     field: dict[str, Any] = {
         "value": value or None,
         "code": None,
@@ -182,6 +201,8 @@ def build_field(
         "status": "ok" if value else "no_data",
         "confidence": None,  # no benchmarked engine produces one (NFR-01)
     }
+    if struck is not None:
+        field["negated"] = struck
     if source:
         field["source"] = source
     if not value:
@@ -201,6 +222,10 @@ def build_omitted_field(*, source: str | None = None) -> dict[str, Any]:
     value returned by the extractor is ``no_data``; an absent key is
     ``omitted``.  Keeping the distinction here prevents record construction
     from erasing the extractor-completeness signal required by FR-09.
+
+    No ``negated`` key, deliberately: detection never ran on a field the
+    extractor did not return, so ``false`` would claim it was read and found
+    unstruck. The key is optional in D007 and its absence says "not known".
     """
     field: dict[str, Any] = {
         "value": None,
@@ -241,6 +266,7 @@ def build_record(
     batch: str | None = None,
     image: str | None = None,
     page: int | None = None,
+    struck: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     """A record from one coding card's extracted fields.
 
@@ -248,6 +274,9 @@ def build_record(
     off any Extractor. Keys the card does not have are ignored; fields the model
     did not return are still emitted, as ``omitted``. A card is 62 fields either
     way, so a dropped one is visible rather than absent.
+
+    ``struck`` is ``ExtractionResult.struck`` -- only the fields detection
+    flagged are present (D021).
     """
     groups: dict[str, dict[str, Any]] = {
         "dwelling": {},
@@ -257,14 +286,30 @@ def build_record(
         "counts": {},
         "coding": {},
     }
+    # `struck is None` and `struck == {}` are different claims and stay that
+    # way: None is an engine that cannot detect strikes at all, {} is one that
+    # looked and found none. Collapsing them would make every field of a
+    # no-detector run assert it was read and found unstruck.
+    detection_ran = struck is not None
     for label, (key, group) in FIELD_MAP.items():
         spec = FIELD_SCHEMA_BY_NAME[label]
+        is_identity = group in IDENTITY_GROUPS
         # Identity is what a value is traced back by, so it carries its source.
-        source = "coding-front" if group in ("dwelling", "household") else None
-        if label in fields:
-            groups[group][key] = build_field(spec, fields[label], source=source)
-        else:
+        source = "coding-front" if is_identity else None
+        if label not in fields:
+            # A field the extractor never returned cannot have been struck.
             groups[group][key] = build_omitted_field(source=source)
+            continue
+        groups[group][key] = build_field(
+            spec,
+            fields[label],
+            source=source,
+            # Identity is never negated: record_id needs a value, and FR-06
+            # negation was never meant to apply to identity fields.
+            struck=(
+                not is_identity and struck.get(label, False) if detection_ran else None
+            ),
+        )
 
     record_id = build_record_id(
         groups["dwelling"]["municipality"]["value"] or "",
