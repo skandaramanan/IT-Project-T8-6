@@ -81,6 +81,20 @@ def confidence_for(
     return BAND_ACCURACY_BY_CLASS.get((agreement, band), CONFIDENCE_BY_CLASS[agreement])
 
 
+def resolve_primary_value(field: dict[str, str | None]) -> str | None:
+    """Return the deterministic value selected from one paired field.
+
+    Gemini (arm ``a``) is the primary extractor. Its normalised reading wins
+    every normal paired outcome, including a per-field blank. Qwen (arm ``b``)
+    is selected only when Gemini did not return a usable result for the entire
+    card (``NO_SECOND_OPINION``). This keeps the selected value aligned with
+    the benchmarked confidence constants in D016 and the IT-86 policy.
+    """
+    if field["agreement"] != NO_SECOND_OPINION:
+        return field["a"]
+    return field["a"] if field["a_raw"] is not None else field["b"]
+
+
 def score_fields(
     paired: dict[str, dict[str, str | None]],
     models: dict[str, str],
@@ -95,14 +109,13 @@ def score_fields(
     for name, field in paired.items():
         agreement = field["agreement"]
         surviving = None
-        value = field["a"]
+        value = resolve_primary_value(field)
         if agreement == NO_SECOND_OPINION:
             if field["a_raw"] is not None:
                 surviving = models.get("a")
                 band = field.get("a_band")
             elif field["b_raw"] is not None:
                 surviving = models.get("b")
-                value = field["b"]
                 band = field.get("b_band")
             else:
                 band = None
