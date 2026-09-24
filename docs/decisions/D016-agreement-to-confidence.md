@@ -218,15 +218,17 @@ alternative rather than adopting it.
 - **Banding `both_blank`.** n=1, banded, wrong — one observation is not a
   cell. `both_blank` always reads as the flat (inherited) constant regardless
   of band; see §3.
-- **Choosing which value wins a disagreement.** IT-86's resolution policy. The
-  score attaches to the primary arm's reading because that is what it was
-  measured about; if IT-86 writes the other arm's value instead, the score has
-  to be recomputed against what it actually wrote.
+- **Choosing which value wins a disagreement.** Resolved by IT-86 in D021.
+  D021 selects the primary arm's reading, including a primary blank, so the
+  score remains attached to the reading it was measured about. Any later
+  policy that selects the other arm's value must recalibrate against the value
+  actually written.
 - **Writing into a D007 record.** `src/extraction/record.py` still emits
   `confidence: None`. D007's field object is `additionalProperties: false`
   with no `source_agreement` key, so carrying this triple into a real record
-  needs a D007 amendment first — IT-86's call to make, not one to take here by
-  widening the schema unilaterally.
+  needs a D007 amendment first. That downstream record work is separate from
+  D021's paired-output resolution policy, so this confidence decision does not
+  widen the schema unilaterally.
 
 ## Alternatives considered
 
@@ -317,9 +319,10 @@ usable `low` cell at all. It is the more accurate arm and the less informative
 one. The trigger that remains is the production decision itself, which is
 D012/IT-100's, not this document's.
 
-**IT-86 settles the resolution policy.** If it writes the non-primary arm's
-value on a disagreement, the score attached to that field has to be
-recomputed against the value actually written, not the primary arm's.
+**D021's resolution policy changes.** It currently writes the primary arm's
+value, which is what these constants measure. If a later policy writes the
+non-primary arm's value on a disagreement, the score attached to that field
+has to be recomputed against the value actually written.
 
 **D007 is amended to carry `source_agreement`.** Then `src/extraction/record.py`
 can stop emitting `confidence: None` for dual-extracted fields, and this
@@ -507,4 +510,3 @@ addendum records that a better-quality configuration now exists and what it
 would cost — the choice belongs to IT-100 and any revision of D012, not here.
 Taking it would mean recalibrating these constants a third time, and retiring
 most of §6 along with them.
-
