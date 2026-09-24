@@ -10,8 +10,6 @@ independent extractors stands in as the trust signal. Reads
 Only missing cards get extracted (via run_benchmark.py, not reimplemented),
 so an interrupted run resumes. ``--no-fetch`` pairs only what's on disk.
 
-Not done here: scoring against ground truth (IT-100), turning a class into a
-confidence number (IT-99), or deciding which value wins a disagreement (IT-86).
 """
 
 from __future__ import annotations

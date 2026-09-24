@@ -4,9 +4,9 @@ Rule: a field's confidence is P(primary arm's reading is correct | agreement
 class), refined by the primary arm's self-reported band when it gave one.
 Same rule for all 62 fields, no per-field tuning (AC3).
 
-Calibrated to gemini-3.5-flash-lite vs qwen2.5-vl (D016). Not done here:
-choosing which value wins a disagreement (IT-86), or writing into a D007
-record (needs a schema amendment first -- IT-86's call).
+Calibrated to gemini-3.5-flash-lite vs qwen2.5-vl (D016). D021 implements
+IT-86's Gemini-primary selection rule before this module attaches a score.
+Writing that scored result into a D007 record remains separate work.
 """
 
 from __future__ import annotations
