@@ -1,91 +1,106 @@
 # D022 — Review-routing rule (FR-11)
 
-**Status:** Pending.
+**Status:** Proposal, on hold pending client confirmation (see Open question)
 **Date:** 2026-09-23
-**Decided by:** Elliot Guo (IT-107 assignee)
+**Proposed by:** Elliot Guo (IT-107 assignee)
 **Linear issue:** IT-107
 
-## Context
+## Open question
 
-FR-11 says fields below a confidence/status threshold should be routed to a
-human review queue, but doesn't say what "too low" means. This note defines
-that rule. It does not compute confidence (D016/IT-99) or resolve
-disagreements between the two extractors (IT-86/D021) — both are decided
-elsewhere.
+The client has not confirmed that FR-11 routes by score at all (IT-107 hold
+comment, see IT-64). Two alternatives are open:
+
+- **No threshold:** every field goes to the review queue, and this rule is
+  not needed.
+- **Disagreement-based:** a card is queued if the extractors disagree on any
+  field.
+
+This note is the rule **if** a per-field score cutoff is chosen. Do not build
+IT-108 against it until the client answers.
 
 ## The rule
 
-A field is routed to review unless **all** of these hold:
+A field goes to review unless **all** of these hold:
 
-- `status == "ok"`
-- `confidence` is not `null`
-- `confidence >= 0.97`
+1. `status == "ok"`
+2. `confidence` is not `null`
+3. `confidence >=` D016's `agree` constant (currently **0.97**)
 
-Anything else — a non-`ok` status, a missing score, or a score below
-0.97 — goes to review.
+Status is checked first. A high score never overrides a non-`ok` status.
 
-## Why 0.97
+## Why
 
-0.97 is D016's measured accuracy for a genuine double-agreement (both
-extractors read the same value, `agree` or `both_blank`). Setting the
-cutoff there means **only a clean double-agreement clears automatically;
-everything else, a person decides.** This is research data, so the bar is
-"maximally sure," not "probably fine."
+**Only a clean double-agreement clears.** `agree` (both extractors read the
+same non-blank value) is D016's highest score. Everything below it, a person
+checks. This is research data, so the bar is "maximally sure."
 
-**The rule works the same whether or not Gemini's optional confidence band
-is turned on, with no extra logic needed:**
+**The cutoff tracks the `agree` constant, not the literal 0.97.** When D016
+is recalibrated, the cutoff moves with it. A hardcoded 0.97 would send every
+field to review the moment `agree` dropped to 0.96. The principle is fixed;
+the number is not.
 
-- **Band off (today's default).** `agree`/`both_blank` always score exactly
-  0.97, so the rule clears real double-agreements and nothing else.
-- **Band on.** Gemini additionally self-rates each field's legibility
-  (`high`/`medium`/`low`). A field where the extractors agreed but Gemini
-  itself flagged the handwriting as only medium-legible now scores 0.91 —
-  below the cutoff — so it drops out of "clears automatically" and goes to
-  review, correctly.
+**A missing score is the worst case, not a neutral one.** Raw-OCR engines
+give no per-field score (D007), and that is not evidence the read is good.
 
-Either way, the cutoff never has to change: 0.97 already sits above every
-banded or unbanded score except a fully-confident agreement, so turning
-banding on only ever makes the rule stricter, never looser.
+**Blank fields always go to review.** Both-blank fields score 0.97 in D016
+but carry `status: no_data`, so they route on status. The score is left
+alone: it is D016's to set, D018 depends on it, and lowering it would change
+no outcome.
 
-An earlier draft used 0.5 ("more likely right than wrong"). Rejected: it
-let every plain disagreement between the two extractors (0.75) clear
-automatically, which is too permissive for a research dataset — a quarter
-of those fields are wrong.
-
-**This is still a placeholder**, tied to D016's benchmark constant rather
-than a corpus-scale measurement. If that constant moves, this cutoff should
-move with it — see Revisit if.
+**A cutoff of 0.5 was rejected.** It would clear `disagree` (0.75),
+`one_blank` (0.74) and single-extractor fields (0.91), about a quarter of
+which are wrong.
 
 ## Examples
 
 | `status` | `confidence` | Review? | Why |
 | -- | -- | -- | -- |
-| `ok` | `0.97` | No | Clean double-agreement. |
-| `ok` | `0.91` | Yes | Agreed, but Gemini flagged its own read as uncertain. |
-| `ok` | `0.75` | Yes | The two extractors disagreed. |
-| `ok` | `null` | Yes | No score at all is treated as the worst case, not a neutral one. |
-| `no_data` / `illegible` / `damaged` / `omitted` | any | Yes | Status alone is enough — a high score can't override a bad read. |
+| `ok` | `0.97` | No | Both extractors agreed. |
+| `ok` | `0.91` | Yes | Only one extractor read the card. |
+| `ok` | `0.75` | Yes | The extractors disagreed. |
+| `ok` | `null` | Yes | No score. |
+| `no_data` | `0.97` | Yes | Both blank. Status decides. |
+| `illegible` / `damaged` / `omitted` | any | Yes | Status decides. |
+
+## Assumes banding is off
+
+This note assumes `GEMINI_CONFIDENCE_BAND` stays off (the default). The band
+was meant for when only one model reads a card. With two models, agreement
+supplies that signal, and the band costs a separate prompt and 2.5 points of
+flash-lite accuracy (D016 §5). Single-model fields score 0.91 and route to
+review regardless, so the band would not change their outcome here.
+
+The trade-off: with the band off, every field the models agree on clears,
+including the few Gemini would have rated hard to read (D016 §6 measured
+`agree`/medium at 91% correct, against 97% overall).
+
+If banding is adopted, revisit this note first. D016 falls back to the flat
+`agree` score (0.97) for fields Gemini rates `low`, because it has too few
+samples for that case, so they would clear. The fix belongs in D016, not
+here: this rule never sees the band.
 
 ## Out of scope
 
-- How confidence is computed (D016/IT-99) or which arm wins a disagreement
-  (D021/IT-86) — this rule just consumes their output.
-- An unexplained code on an otherwise-`ok` categorical field (`code_book.py`,
-  D011) can still score 0.97 and clear, even though it's a real
-  data-quality flag. Not covered here — see Revisit if.
-- Building the actual check that applies this rule — a follow-up ticket.
+- How confidence is computed (D016) or who wins a disagreement (D021).
+- **Unexplained codes.** D011 calls a null `label` on a `categorical` field
+  the FR-11 signal to review. Such fields stay `ok` and clear here. Adding it
+  is one condition, deferred until the Open question is answered.
+- **NFR-03's threshold (IT-63).** If it lands per field, it and this cutoff
+  should be one number.
+- Building the check: IT-108.
 
 ## Consequences
 
-Every field today has `confidence: None` (D016's scoring isn't wired into a
-real record yet), so under this rule **every field currently routes to
-review**. That's the correct behavior, not a bug — it stops once D016's
-scores reach a real record.
+- Every field currently has `confidence: None`, so **every field routes to
+  review today**. That is correct, and it stops once D016's scores reach real
+  records.
+- Every `no_data` field routes to review, which adds volume on sparse cards.
 
 ## Revisit if
 
-- A full benchmark run gives a real cutoff to tune against — retune 0.97
-  to it.
-- D007 gains a real `confidence`/`source_agreement` — then this rule starts
-  actually discriminating instead of flagging everything.
-- The unexplained-code signal needs its own rule (see Out of scope).
+- The client answers the Open question. A card-level answer supersedes this
+  note.
+- D007 gains real `confidence` values (the `source_agreement` amendment).
+- Banding is adopted. See "Assumes banding is off".
+- NFR-03's threshold is set. Reconcile the two numbers.
+- Unexplained codes need routing (D011).
