@@ -114,8 +114,11 @@ def test_each_field_gets_the_triple():
 
 
 def test_the_value_is_the_primary_arms_reading():
-    """The score was measured about arm A's reading, so it travels with it.
-    IT-86 may overwrite the value; the score then has to be recomputed."""
+    """D021 selects arm A, the reading the score was measured about.
+
+    A future policy that selects arm B must recalibrate the score against the
+    value it writes.
+    """
     paired = compare_fields({"Municipality": "56"}, {"Municipality": "57"}, FIELDS)
     scored = score_fields(paired, MODELS)
     assert scored["Municipality"]["value"] == "56"
