@@ -97,7 +97,7 @@ def test_an_unknown_class_is_an_error_not_a_default():
 
 # --- scoring a whole card ---------------------------------------------------
 
-from confidence import assert_every_field_scored, score_fields
+from confidence import assert_every_field_scored, resolve_primary_value, score_fields
 from dual_extract import compare_fields
 
 MODELS = {"a": "gemini-3.5-flash-lite", "b": "qwen2.5-vl"}
@@ -114,8 +114,11 @@ def test_each_field_gets_the_triple():
 
 
 def test_the_value_is_the_primary_arms_reading():
-    """The score was measured about arm A's reading, so it travels with it.
-    IT-86 may overwrite the value; the score then has to be recomputed."""
+    """D021 selects arm A, the reading the score was measured about.
+
+    A future policy that selects arm B must recalibrate the score against the
+    value it writes.
+    """
     paired = compare_fields({"Municipality": "56"}, {"Municipality": "57"}, FIELDS)
     scored = score_fields(paired, MODELS)
     assert scored["Municipality"]["value"] == "56"
@@ -134,6 +137,29 @@ def test_a_blank_primary_reading_is_still_the_primary_reading():
     assert scored["Municipality"]["confidence"] == 0.74
 
 
+@pytest.mark.parametrize(
+    "first, second, expected",
+    [
+        ("56", "56", "56"),  # agree
+        ("56", "57", "56"),  # disagree
+        ("56", None, "56"),  # Gemini value, Qwen blank
+        (None, "56", ""),  # Gemini blank, Qwen value
+        (None, None, ""),  # both blank
+    ],
+)
+def test_all_paired_outcomes_keep_gemini_as_primary(first, second, expected):
+    """IT-86: a field-level blank is a Gemini result, not an arm failure.
+
+    Selecting Qwen whenever it is the only non-blank value would make the
+    authority rule depend on output shape and would detach ONE_BLANK's measured
+    confidence from the selected reading.
+    """
+    field = compare_fields({"Municipality": first}, {"Municipality": second}, FIELDS)[
+        "Municipality"
+    ]
+    assert resolve_primary_value(field) == expected
+
+
 def test_a_missing_arm_is_scored_by_the_surviving_one():
     """AC4 end to end: gemini-lite answered, qwen did not."""
     paired = compare_fields({"Municipality": "56"}, None, FIELDS)
@@ -150,6 +176,13 @@ def test_the_surviving_arm_can_be_the_second_one():
     scored = score_fields(paired, MODELS)
     assert scored["Municipality"]["confidence"] == 0.75
     assert scored["Municipality"]["value"] == "56"
+
+
+def test_qwen_is_selected_only_when_gemini_arm_failed():
+    """IT-86 distinguishes a whole-arm failure from Gemini returning blank."""
+    field = compare_fields(None, {"Municipality": "56"}, FIELDS)["Municipality"]
+    assert field["agreement"] == NO_SECOND_OPINION
+    assert resolve_primary_value(field) == "56"
 
 
 def test_a_card_neither_arm_read_scores_zero():

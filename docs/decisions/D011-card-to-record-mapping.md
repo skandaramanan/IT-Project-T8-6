@@ -117,7 +117,7 @@ is indistinguishable from a field the card never had.
   voided field is `no_data`.
 - `confidence` is null on every field. No engine benchmarked under IT-46
   produces a per-field score, and writing a number would breach NFR-01.
-- `negated` is never set, pending IT-80.
+- `negated` resolution is decided in D021, not here.
 - C3 records are not built. `C3_FIELD_SCHEMA` types that card, but nothing maps
   it into a record — C3 is 4 pages in one unit (D009), and it needs either its
   own mapping or an explicit non-goal in the requirements.
@@ -128,9 +128,7 @@ is indistinguishable from a field the card never had.
 `invalid` to the envelope's status enum and set it here — that is a D007
 amendment and should be recorded as one.
 
-**IT-80 settles crossed-out versus corrected.** `negated` gets set in
-`build_field`, and a struck-then-rewritten value needs somewhere to keep what
-was struck.
+**Superseded by D021** for the crossed-out negation/correction question.
 
 **An engine lands that produces per-field confidence.** `ExtractionResult`
 already carries it (D008); this step just stops passing null.
