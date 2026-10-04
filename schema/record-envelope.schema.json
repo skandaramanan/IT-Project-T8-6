@@ -125,6 +125,10 @@
           "$ref": "#/$defs/field_map",
           "description": "Fields describing the building rather than any one household -- structure, age, facilities."
         },
+        "handwritten": {
+          "$ref": "#/$defs/field_map",
+          "description": "The survey front's dwelling fields as the investigator wrote them. `house` holds the coding card's coded values for the same building."
+        },
         "households": {
           "type": "array",
           "minItems": 1,
