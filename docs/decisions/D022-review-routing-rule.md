@@ -1,22 +1,20 @@
 # D022 — Review-routing rule (FR-11)
 
-**Status:** Proposal, on hold pending client confirmation (see Open question)
+**Status:** Accepted, client confirmed agreement-based routing (2026-10-04 meeting)
 **Date:** 2026-09-23
 **Proposed by:** Elliot Guo (IT-107 assignee)
 **Linear issue:** IT-107
 
-## Open question
+## Client confirmation
 
-The client has not confirmed that FR-11 routes by score at all (IT-107 hold
-comment, see IT-64). Two alternatives are open:
+In the 2026-10-04 meeting the client confirmed that when both extractors
+agree on a field, it does not need to be added to the review queue. Everything
+else is still queued. This settles the earlier open question in favour of
+routing by agreement, so the per-field cutoff below is the rule. The "no
+threshold" (queue every field) and card-level disagreement alternatives are
+not adopted.
 
-- **No threshold:** every field goes to the review queue, and this rule is
-  not needed.
-- **Disagreement-based:** a card is queued if the extractors disagree on any
-  field.
-
-This note is the rule **if** a per-field score cutoff is chosen. Do not build
-IT-108 against it until the client answers.
+IT-108 can build against this rule.
 
 ## The rule
 
@@ -84,7 +82,7 @@ here: this rule never sees the band.
 - How confidence is computed (D016) or who wins a disagreement (D021).
 - **Unexplained codes.** D011 calls a null `label` on a `categorical` field
   the FR-11 signal to review. Such fields stay `ok` and clear here. Adding it
-  is one condition, deferred until the Open question is answered.
+  is one condition, deferred.
 - **NFR-03's threshold (IT-63).** If it lands per field, it and this cutoff
   should be one number.
 - Building the check: IT-108.
@@ -98,8 +96,7 @@ here: this rule never sees the band.
 
 ## Revisit if
 
-- The client answers the Open question. A card-level answer supersedes this
-  note.
+- The client changes their answer on agreement-based routing.
 - D007 gains real `confidence` values (the `source_agreement` amendment).
 - Banding is adopted. See "Assumes banding is off".
 - NFR-03's threshold is set. Reconcile the two numbers.
