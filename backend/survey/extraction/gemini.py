@@ -46,15 +46,21 @@ import mimetypes
 import os
 import re
 import time
+from collections.abc import Container
 from pathlib import Path
 
 from survey.extraction.base import ExtractionResult
-from survey.extraction.card_fields import build_extraction_prompt_schema
+from survey.extraction.card_fields import (
+    FIELD_SCHEMA_BY_NAME,
+    SURVEY_FRONT_SCHEMA_BY_NAME,
+    build_extraction_prompt_schema,
+)
 from survey.extraction.json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     BANDED_STRUCK_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
     STRUCK_EXTRACTION_PROMPT,
+    SURVEY_FRONT_PROMPT,
     parse_json_fields,
     parse_struck_fields,
 )
@@ -181,7 +187,7 @@ def _call_with_retry(call, attempts: int = 3):
 
 
 class GeminiExtractor:
-    def __init__(self) -> None:
+    def __init__(self, *, survey_front: bool = False) -> None:
         # name is the results directory; must carry the model id since every
         # Gemini model shares one CLI key, or 3.5-flash overwrites 3.6-flash's output.
         self.model_id = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
@@ -196,6 +202,14 @@ class GeminiExtractor:
         self.struck_detection = _env_flag("GEMINI_STRUCK_DETECTION")
         if self.struck_detection:
             self.name += "-struck"
+        # FR-03: the survey front's own prompt, in place of banded and struck.
+        self.survey_front = survey_front
+        self.field_names = (
+            SURVEY_FRONT_SCHEMA_BY_NAME if survey_front else FIELD_SCHEMA_BY_NAME
+        )
+        if survey_front:
+            self.name = f"{self.model_id}-survey-front"
+            self.banded = self.struck_detection = False
 
     def is_available(self) -> bool:
         try:
@@ -277,7 +291,9 @@ class GeminiExtractor:
         from google import genai
 
         model = self.model_id
-        if self.struck_detection and self.banded:
+        if self.survey_front:
+            prompt = SURVEY_FRONT_PROMPT
+        elif self.struck_detection and self.banded:
             prompt = BANDED_STRUCK_EXTRACTION_PROMPT
         elif self.struck_detection:
             prompt = STRUCK_EXTRACTION_PROMPT
@@ -289,17 +305,19 @@ class GeminiExtractor:
         config = self._config()
 
         client = genai.Client()  # reads GEMINI_API_KEY
-        response = self._generate(client, model, contents, config)
+        response = self._generate(client, model, contents, config, self.field_names)
         raw_output = response.text or ""
         return ExtractionResult(
-            fields=parse_json_fields(raw_output) or {},
+            fields=parse_json_fields(raw_output, self.field_names) or {},
             raw_text=raw_output,
             cost_usd=_cost_usd(model, response.usage_metadata),
             struck=parse_struck_fields(raw_output) if self.struck_detection else None,
         )
 
     @staticmethod
-    def _generate(client, model, contents, config, attempts: int = 3):
+    def _generate(
+        client, model, contents, config, field_names: Container[str], attempts: int = 3
+    ):
         """Retry on throttling and on a response with no usable JSON in it.
 
         A response that stays unparseable after retries is returned, not
@@ -325,7 +343,7 @@ class GeminiExtractor:
                 time.sleep(wait)
                 continue
             last_response = response
-            if parse_json_fields(response.text) is not None:
+            if parse_json_fields(response.text, field_names) is not None:
                 return response
             if attempt == attempts:
                 return response
