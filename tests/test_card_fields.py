@@ -25,13 +25,18 @@ from survey.extraction.card_fields import (
     FIELD_SCHEMA,
     FIELD_SCHEMA_BY_NAME,
     FIELD_STATUS_DEFINITIONS,
+    SURVEY_FRONT_SCHEMA,
     FieldKind,
     FieldStatus,
     build_extraction_prompt_schema,
 )
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
 
-CARDS = [("C1/C2", FIELD_SCHEMA), ("C3", C3_FIELD_SCHEMA)]
+CARDS = [
+    ("C1/C2", FIELD_SCHEMA),
+    ("C3", C3_FIELD_SCHEMA),
+    ("survey front", SURVEY_FRONT_SCHEMA),
+]
 
 
 def test_field_kind_excludes_no_data():
@@ -39,6 +44,7 @@ def test_field_kind_excludes_no_data():
         "categorical",
         "numeric_sentinel",
         "numeric_free",
+        "text",
         "unknown",
     }
 
