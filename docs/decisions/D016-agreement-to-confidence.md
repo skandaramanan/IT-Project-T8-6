@@ -12,11 +12,11 @@ benchmarked engine produces one. IT-98 manufactures the evidence instead: two
 independent extractors read every card, and their agreement stands in for a
 signal no single engine gives. What IT-98 does not do is turn that agreement
 into a number — it emits one of five agreement classes per field
-(`spike/dual_extract.py`) and stops there by design, leaving the arithmetic to
+(`backend/survey/confidence/agreement.py`) and stops there by design, leaving the arithmetic to
 this issue.
 
 D007 already committed the shape this has to fill: `confidence` is
-`["number", "null"]`, 0–1, on every field object. `src/extraction/base.py`
+`["number", "null"]`, 0–1, on every field object. `backend/survey/extraction/base.py`
 independently confirms it — `ExtractionResult.confidence` is
 `dict[str, float] | None`. Both predate this decision and both say the same
 thing: a float, not a category.
@@ -116,13 +116,13 @@ This is a judgement call, not a measurement, and it has a known gap: two
 models both missing a faint code looks identical to two models correctly
 reading an empty cell, and 0.97 cannot tell them apart. One wrong observation
 does not close that gap — flagged as a `ponytail:` comment in
-`spike/confidence.py`, alongside `test_both_blank_is_still_too_thin_to_
+`backend/survey/confidence/field.py`, alongside `test_both_blank_is_still_too_thin_to_
 measure`, which fails the moment a benchmark run produces enough of them to
 actually calibrate against.
 
 ### 4. What the score is attached to
 
-`score_fields()` in `spike/confidence.py` emits `{value, confidence,
+`score_fields()` in `backend/survey/confidence/field.py` emits `{value, confidence,
 source_agreement}` per field. `value` is the primary arm's (gemini's)
 normalised reading, and stays the primary arm's **even when that reading is
 blank** — the `one_blank` constant is P(primary correct) measured over cases
@@ -223,7 +223,7 @@ alternative rather than adopting it.
   score remains attached to the reading it was measured about. Any later
   policy that selects the other arm's value must recalibrate against the value
   actually written.
-- **Writing into a D007 record.** `src/extraction/record.py` still emits
+- **Writing into a D007 record.** `backend/survey/extraction/record.py` still emits
   `confidence: None`. D007's field object is `additionalProperties: false`
   with no `source_agreement` key, so carrying this triple into a real record
   needs a D007 amendment first. That downstream record work is separate from
@@ -277,7 +277,7 @@ judgement call made cell by cell.
 - Three of the five constants (`both_blank`, `no_second_opinion`'s per-arm
   table, and seven of `BAND_ACCURACY_BY_CLASS`'s nine possible cells) rest on
   thin or zero support and are reasoned or thresholded rather than flatly
-  measured. They are marked as such in `spike/confidence.py` and here.
+  measured. They are marked as such in `backend/survey/confidence/field.py` and here.
 - `no_second_opinion`'s score depends on which arm survived, and now — like
   every other class — on the surviving/primary arm's band when it gave one.
   The same class can carry different confidence values on different fields;
@@ -292,7 +292,7 @@ judgement call made cell by cell.
   document's to make — it belongs to whoever decides whether the band ships
   at corpus scale — but the number it would be made against now exists, for
   both the standalone and the class-conditioned case.
-- `src/` is unaffected. `src/extraction/record.py` still writes
+- `backend/survey/extraction/` is unaffected. `backend/survey/extraction/record.py` still writes
   `confidence: None`; nothing here changes production behaviour.
 
 ## Revisit if
@@ -324,7 +324,7 @@ value, which is what these constants measure. If a later policy writes the
 non-primary arm's value on a disagreement, the score attached to that field
 has to be recomputed against the value actually written.
 
-**D007 is amended to carry `source_agreement`.** Then `src/extraction/record.py`
+**D007 is amended to carry `source_agreement`.** Then `backend/survey/extraction/record.py`
 can stop emitting `confidence: None` for dual-extracted fields, and this
 formula's output has somewhere real to land.
 

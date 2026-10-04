@@ -13,14 +13,14 @@ interface. Neither says how you get from one to the other.
 An `ExtractionResult` is `fields: dict[str, str]` — card labels against
 whatever the model said, uncleaned. A D007 record is nested dwelling →
 household with every leaf a field object carrying value, code, label, status
-and confidence. `src/extraction/record.py` is that step, and building it forces
+and confidence. `backend/survey/extraction/record.py` is that step, and building it forces
 three choices that follow from neither record.
 
 ## Decision
 
 ### 1. Values are cleaned on the way in, and the cleaned value is what is stored
 
-The rules are the ones already in `spike/scoring.py`, moved onto the extraction
+The rules are the ones already in `benchmark/scoring.py`, moved onto the extraction
 path:
 
 - Strip whitespace and `.:;,` — fields are joined to their values by a row of
