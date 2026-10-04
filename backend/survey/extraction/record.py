@@ -40,8 +40,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME, FieldSpec
+from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
+from survey.extraction.field_schema import FIELD_SCHEMA_BY_NAME, FieldSpec
 
 SCHEMA_VERSION = "0.1.0"
 

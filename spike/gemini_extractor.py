@@ -56,9 +56,8 @@ from json_extraction import (
     parse_json_fields,
     parse_struck_fields,
 )
-
-from extraction.base import ExtractionResult
-from extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.base import ExtractionResult
+from survey.extraction.field_schema import build_extraction_prompt_schema
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 

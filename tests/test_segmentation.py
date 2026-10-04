@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from segmentation.segmenter import classify_page, segment_scan
+from survey.segmentation.segmenter import classify_page, segment_scan
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RECORDS = [f"r{n:02d}" for n in range(1, 6)]

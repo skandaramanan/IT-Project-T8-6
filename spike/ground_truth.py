@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import openpyxl
+
 from make_c1_ground_truth_sheet import META_COLUMNS
 
 DEFAULT_GROUND_TRUTH_XLSX = Path(

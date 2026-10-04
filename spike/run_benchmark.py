@@ -30,8 +30,7 @@ from ground_truth import (
 )
 from json_extraction import parse_json_fields
 from scoring import score_structured
-
-from extraction.base import ExtractionResult, Extractor
+from survey.extraction.base import ExtractionResult, Extractor
 
 # Where every run files its output. Defined here because this is what writes it;
 # spike/dual_extract.py imports this name rather than repeating the path, so the

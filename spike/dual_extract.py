@@ -34,8 +34,7 @@ from ground_truth import (
 from json_extraction import parse_confidence_bands, parse_json_fields
 from run_benchmark import DEFAULT_RESULTS_ROOT, EXTRACTORS, load_extractor
 from scoring import normalise
-
-from extraction.field_schema import FIELD_SCHEMA
+from survey.extraction.field_schema import FIELD_SCHEMA
 
 # Every card emits every schema field so a dropped field shows up as a
 # comparison against nothing rather than vanishing (D011).

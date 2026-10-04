@@ -12,8 +12,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from extraction.field_schema import FIELD_SCHEMA
-from extraction.record import FIELD_MAP, build_record, build_record_id, normalise
+from survey.extraction.field_schema import FIELD_SCHEMA
+from survey.extraction.record import FIELD_MAP, build_record, build_record_id, normalise
 
 SCHEMA = json.loads(
     (

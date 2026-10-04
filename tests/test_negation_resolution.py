@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME
-from extraction.record import FIELD_MAP, build_field, build_record
+from survey.extraction.field_schema import FIELD_SCHEMA_BY_NAME
+from survey.extraction.record import FIELD_MAP, build_field, build_record
 
 MANIFEST = json.loads(
     (Path(__file__).parent / "fixtures" / "crossed_out" / "manifest.json").read_text()

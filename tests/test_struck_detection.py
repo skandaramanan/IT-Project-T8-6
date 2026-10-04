@@ -10,8 +10,7 @@ from json_extraction import (
     parse_json_fields,
     parse_struck_fields,
 )
-
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME
+from survey.extraction.field_schema import FIELD_SCHEMA_BY_NAME
 
 MANIFEST = json.loads(
     (Path(__file__).parent / "fixtures" / "crossed_out" / "manifest.json").read_text()

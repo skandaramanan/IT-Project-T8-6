@@ -15,6 +15,7 @@ ONE_BLANK (73.7% vs flash's 85.1%).
 from collections import Counter
 
 import pytest
+
 from confidence import (
     BAND_ACCURACY_BY_CLASS,
     CONFIDENCE_BY_CLASS,

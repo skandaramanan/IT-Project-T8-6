@@ -20,8 +20,8 @@ from typing import get_args
 
 import pytest
 
-from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
-from extraction.field_schema import (
+from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
+from survey.extraction.field_schema import (
     C3_FIELD_SCHEMA,
     FIELD_SCHEMA,
     FIELD_SCHEMA_BY_NAME,

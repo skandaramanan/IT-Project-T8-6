@@ -8,6 +8,7 @@ function itself.
 import random
 
 import pytest
+
 from card_confidence import assert_every_card_scored, card_confidence
 
 # D016's flat class constants, copied rather than imported to keep this file

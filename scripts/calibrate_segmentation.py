@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from segmentation.segmenter import _page_features
+from survey.segmentation.segmenter import _page_features
 
 FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures"
 RECORDS = [f"r{n:02d}" for n in range(1, 6)]

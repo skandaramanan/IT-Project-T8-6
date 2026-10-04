@@ -7,7 +7,10 @@ from __future__ import annotations
 import json
 import re
 
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME, build_extraction_prompt_schema
+from survey.extraction.field_schema import (
+    FIELD_SCHEMA_BY_NAME,
+    build_extraction_prompt_schema,
+)
 
 # Derived, not written down: the schema is now 62 fields for C1/C2 and 60 for
 # C3, and a prompt that names the wrong count while listing the right keys is

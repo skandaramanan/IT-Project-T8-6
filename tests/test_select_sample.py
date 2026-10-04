@@ -11,6 +11,7 @@ No data/ and no PDF: the guard runs before anything is opened.
 from pathlib import Path
 
 import pytest
+
 from select_c1_c2_sample import extract_image
 
 

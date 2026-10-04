@@ -16,7 +16,7 @@ from typing import get_args
 import jsonschema
 import pytest
 
-from extraction.field_schema import FieldStatus
+from survey.extraction.field_schema import FieldStatus
 
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_DIR = REPO_ROOT / "docs" / "schema"

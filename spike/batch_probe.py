@@ -42,8 +42,7 @@ from dual_extract import _has_reading
 from ground_truth import load_ground_truth
 from json_extraction import parse_json_fields
 from scoring import score_structured
-
-from extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.field_schema import build_extraction_prompt_schema
 
 # Built from the same schema builder the single-card prompt uses, so the two
 # arms can never drift into asking for different fields.
@@ -86,8 +85,9 @@ def main() -> None:
     parser.add_argument("--pages", nargs="+", default=None)
     args = parser.parse_args()
 
-    from gemini_extractor import GeminiExtractor, _retry_wait
     from google import genai
+
+    from gemini_extractor import GeminiExtractor, _retry_wait
 
     cards = load_ground_truth()
     if args.pages:
