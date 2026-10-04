@@ -2,7 +2,7 @@
 
 The sheet is the C1/C2 one: 30 cards, 62 fields, drawn one per unit from 30
 different units. C1 and C2 are 98% of the coding cards, so this is what
-measures FR-01. Built by ``spike/select_c1_c2_sample.py``, transcribed twice
+measures FR-01. Built by ``benchmark/select_c1_c2_sample.py``, transcribed twice
 (once by model, once by hand) and reconciled; the images sit beside it.
 
 The older C3 sheet is deliberately not supported here. C3 shares 0 of its 62

@@ -30,15 +30,15 @@ module-root = "backend"
 testpaths = ["tests"]
 # survey is installed; only the calibration harness, which is never packaged,
 # needs to be on the path for its tests.
-pythonpath = ["spike"]
+pythonpath = ["benchmark"]
 
 [tool.pyright]
 # Same path, so editors resolve the imports pytest already resolves.
-extraPaths = ["spike"]
+extraPaths = ["benchmark"]
 
 [tool.ruff]
 # So isort files survey and the harness modules as first-party.
-src = ["backend", "spike"]
+src = ["backend", "benchmark"]
 
 [dependency-groups]
 dev = [

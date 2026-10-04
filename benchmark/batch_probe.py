@@ -10,7 +10,7 @@ setup where attention spreads thin and per-card accuracy drops.
 
 So this runs both arms over the SAME cards and scores them the same way:
 
-    uv run python spike/batch_probe.py --model gemini-3.7-flash --batch-size 5
+    uv run python benchmark/batch_probe.py --model gemini-3.7-flash --batch-size 5
 
 Cost is at most batch_size + 1 requests per model (N individual, 1 batched),
 which is why it exists as a probe rather than a benchmark -- on a 20 RPD cap

@@ -9,7 +9,7 @@ Needs a real GPU -- not meant to run on this laptop. torch/transformers/
 bitsandbytes/accelerate/qwen_vl_utils aren't resolved into uv.lock: locking a
 CUDA stack across three platforms for the one machine that runs it costs more
 than it buys, so they are installed on that machine instead. See
-spike/colab_qwen_arm.ipynb, which does exactly that on a free Colab T4. As of
+benchmark/colab_qwen_arm.ipynb, which does exactly that on a free Colab T4. As of
 the model's HF card, Qwen2_5_VLForConditionalGeneration may need transformers
 installed from source rather than the latest PyPI release -- check before
 assuming a plain `pip install transformers` is enough.

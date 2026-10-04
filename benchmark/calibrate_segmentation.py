@@ -1,8 +1,8 @@
 """Prints the page features segmentation.py classifies on, one row per
-fixture image, so the thresholds in src/segmentation/segmenter.py can be
+fixture image, so the thresholds in backend/survey/segmentation/segmenter.py can be
 checked or re-tuned against tests/fixtures/ by eye.
 
-Run from the repo root: python scripts/calibrate_segmentation.py
+Run from the repo root: python benchmark/calibrate_segmentation.py
 """
 
 from __future__ import annotations

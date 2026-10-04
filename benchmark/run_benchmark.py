@@ -1,11 +1,11 @@
 """Runs one candidate extractor over the benchmark sheet and reports accuracy.
 
 The C1/C2 sheet -- 30 cards from 30 units, the forms that are 98% of the coding
-cards. Its images are produced once by ``spike/select_c1_c2_sample.py``; this
+cards. Its images are produced once by ``benchmark/select_c1_c2_sample.py``; this
 script never regenerates them.
 
 Usage:
-    uv run python spike/run_benchmark.py --model qwen2.5-vl
+    uv run python benchmark/run_benchmark.py --model qwen2.5-vl
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_json_fields
 
 # Where every run files its output. Defined here because this is what writes it;
-# spike/dual_extract.py imports this name rather than repeating the path, so the
+# benchmark/dual_extract.py imports this name rather than repeating the path, so the
 # reader and the writer cannot drift onto different directories.
 DEFAULT_RESULTS_ROOT = Path("data/benchmark/results")
 
@@ -101,7 +101,7 @@ def main() -> None:
         "extract_batch. On a requests-per-day cap this multiplies the day's "
         "throughput -- but a model that stops reading partway through a batch "
         "returns well-formed fabricated values, not an error, so measure it "
-        "with spike/batch_probe.py before trusting a size on a new model",
+        "with benchmark/batch_probe.py before trusting a size on a new model",
     )
     parser.add_argument(
         "--rescore",
@@ -131,7 +131,7 @@ def main() -> None:
     if missing and not args.rescore:  # rescore never looks at the images
         raise SystemExit(
             f"{len(missing)}/{len(cards)} benchmark images aren't cached yet in "
-            f"{args.images} -- run spike/select_c1_c2_sample.py to rebuild them"
+            f"{args.images} -- run benchmark/select_c1_c2_sample.py to rebuild them"
         )
 
     results_dir = args.results_root / extractor.name

@@ -5,7 +5,7 @@ independent extractors stands in as the trust signal. Reads
 ``data/benchmark/results/<model>/raw/<page_id>.txt`` written by
 ``run_benchmark.py``, so the two arms never need to run on the same machine.
 
-    uv run python spike/dual_extract.py --models gemini qwen2.5-vl
+    uv run python benchmark/dual_extract.py --models gemini qwen2.5-vl
 
 Only missing cards get extracted (via run_benchmark.py, not reimplemented),
 so an interrupted run resumes. ``--no-fetch`` pairs only what's on disk.

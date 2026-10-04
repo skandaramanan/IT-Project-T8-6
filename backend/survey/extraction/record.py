@@ -13,7 +13,7 @@ Three things happen here, in order:
 
 1. **Clean.** The model's string is not the card's value: leader dots come back
    as part of the number and handwritten 0/1 come back as letters. Same rules
-   as ``spike/scoring.py``, which measured them at 305 of 731 apparent
+   as ``benchmark/scoring.py``, which measured them at 305 of 731 apparent
    mismatches on the 2026-09-01 Azure run. They belong on the way in, not only
    at scoring time -- otherwise the benchmark is clean and the dataset is not.
 

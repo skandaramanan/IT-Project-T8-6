@@ -18,7 +18,7 @@ else differs only in how the card is printed, not what it records:
 C2 spells out ``...Unearned Income`` where C1 truncates to ``...Unearned I.``.
 
 Usage:
-    uv run python spike/make_c1_ground_truth_sheet.py
+    uv run python benchmark/make_c1_ground_truth_sheet.py
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ DEFAULT_OUT = Path("data/coding-card-c1-c2-ground-truth-blank.xlsx")
 
 # Where the card came from. Unlike the C3 benchmark -- 20 cards from one PDF --
 # a C1 set is drawn from many units, so the page number alone can't find the
-# image. spike/ground_truth.py currently treats every non-"page id" column as a
+# image. benchmark/ground_truth.py currently treats every non-"page id" column as a
 # field, so it needs these four excluded before it can load this sheet.
 META_COLUMNS = ["page id", "unit", "pdf page", "card type"]
 

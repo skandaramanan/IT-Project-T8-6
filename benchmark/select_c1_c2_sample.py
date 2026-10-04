@@ -22,9 +22,9 @@ data/ is gitignored, so this script is what's committed, not its output --
 same archive in, same cards out, on any machine.
 
 Usage:
-    uv run python spike/select_c1_c2_sample.py
-    uv run python spike/select_c1_c2_sample.py --c1 20 --c2 10
-    uv run python spike/select_c1_c2_sample.py \\
+    uv run python benchmark/select_c1_c2_sample.py
+    uv run python benchmark/select_c1_c2_sample.py --c1 20 --c2 10
+    uv run python benchmark/select_c1_c2_sample.py \\
         --format jpeg --out data/benchmark/c1c2-jpeg   # for Azure upload
 """
 
