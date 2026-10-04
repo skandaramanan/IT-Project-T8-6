@@ -8,8 +8,8 @@ at all, so nothing measured on the existing benchmark transfers to them.
 
 FIELDS below is the C1 card in reading order: left column top-to-bottom, then
 middle, then right. Cross-checked two ways -- read off the C1 reference scan
-(``results/reference_cards/coding-front_36d15987_216415_p0148.png``) and
-against the 212-card aggregate label counts in ``results/canonical.md``. The
+(``data/structure/reference_cards/coding-front_36d15987_216415_p0148.png``) and
+against the 212-card aggregate label counts in ``data/structure/canonical.md``. The
 two agree on all 62.
 
 ``No. of Family Boarders`` is the one field C2 has and C1 doesn't; it sits

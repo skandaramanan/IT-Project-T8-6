@@ -1,7 +1,7 @@
 """Selects the C1/C2 benchmark cards and extracts them as images.
 
 The IT-73 structure run already classified 843 pages into
-``results/pages.jsonl``, so the sample is picked from that rather than by
+``data/structure/pages.jsonl``, so the sample is picked from that rather than by
 re-running a model over the archive.
 
 C1 vs C2 is decided by two independent markers, not one -- the structure
@@ -39,7 +39,7 @@ from pathlib import Path
 
 from survey.segmentation.pdf_pages import extract_image
 
-DEFAULT_PAGES_JSONL = Path("results/pages.jsonl")
+DEFAULT_PAGES_JSONL = Path("data/structure/pages.jsonl")
 DEFAULT_OUT_DIR = Path("data/benchmark/c1c2")
 
 # A page the model read badly has a short label list; the canonical coding
