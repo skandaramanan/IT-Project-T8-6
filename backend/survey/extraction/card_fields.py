@@ -19,7 +19,7 @@ table. Set-containment on its own proves nothing — a field observing {0,1,2}
 sits inside a dozen tables — and name-matching on its own is how you get a
 schema that tells a model to emit codes the cards never carry.
 
-Four kinds:
+Five kinds:
 
 - ``categorical`` — confirmed: the named table exists and every observed value
   is a valid code in it.
@@ -28,6 +28,7 @@ Four kinds:
   Must-keep-distinct, so they have to be named in the extraction prompt or a
   model reads 997 as an income of nine hundred and ninety-seven.
 - ``numeric_free`` — a plain count or amount with no code book table.
+- ``text`` — handwriting on the survey front, copied as written.
 - ``unknown`` — a genuine open question. Either no code book coverage exists,
   or a named table exists and the observed values fall outside it. Recorded
   with the evidence rather than resolved by guessing; ``notes`` says what is
@@ -55,7 +56,9 @@ from typing import Literal
 
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
 
-FieldKind = Literal["categorical", "numeric_sentinel", "numeric_free", "unknown"]
+FieldKind = Literal[
+    "categorical", "numeric_sentinel", "numeric_free", "text", "unknown"
+]
 
 FieldStatus = Literal["ok", "no_data", "illegible", "damaged", "omitted"]
 
@@ -434,6 +437,98 @@ C3_FIELD_SCHEMA: list[FieldSpec] = [
 FIELD_SCHEMA_BY_NAME: dict[str, FieldSpec] = {spec.name: spec for spec in FIELD_SCHEMA}
 
 
+# --- the survey front (FR-03) -----------------------------------------------
+# Every labelled field, in card reading order. The person grid's rows are asked
+# for per column.
+
+SURVEY_FRONT_DWELLING_FIELDS = [
+    "Dwelling Number (top-left corner)",
+    "Date of Interview",
+    "Signature of Investigator",
+    "Address",
+    "Municipality",
+    "No. of Families in Dwelling",
+    "Number",
+    "Type of Dwelling",
+    "Structural Material",
+    "No. of Storeys",
+    "Probable Age",
+    "Yard or uncultivated space",
+    "Cultivated garden",
+    "Weekly value of fruit and vegetables grown",
+    "Weekly value of fruit and vegetables sold",
+    "Other commercial activities on premises",
+    "Tenure",
+    "Weekly Rent (or Instalments)",
+    "Furnished or Unfurnished",
+    "Length of Residence",
+    "No. of Separate Bedrooms",
+    "No. of Living Rooms",
+    "Living Rooms used as Bedrooms",
+    "Rooms not in daily use",
+    "Number of Sleepouts: B",
+    "Number of Sleepouts: V",
+    "Number of Sleepouts: O",
+    "Bath: Location",
+    "Bath: Shared",
+    "Bath: H.W.S.",
+    "W.C.: Internal or External",
+    "W.C.: Shared",
+    "Wash-house",
+    "Kitchen: Is it shared",
+    "Kitchen: Ever used as a Bedroom",
+    "Kitchen: Can meals be taken there",
+    "Kitchen: Sink and Water Tap",
+    "Kitchen: H.W.S.",
+    "Kitchen: Cooking facilities",
+    "Kitchen: Food Storage",
+    "Cooking and water supply in other rooms",
+]
+SURVEY_FRONT_COLUMNS = 7
+SURVEY_FRONT_PERSON_ROWS = [
+    "Relationship",
+    "Age",
+    "Earning Status",
+    "Other Children: Died",
+    "Other Children: Living Elsewhere",
+    "Unearned Income: Weekly Amount",
+    "Unearned Income: Source",
+    "Industry",
+    "Craft",
+    "Regularity of Work",
+    "Employer",
+    "Employer's Address",
+    "Wkly. Cost Transport",
+    "Residential Pref.",
+    "Earnings last week",
+    "Full-time Earnings excluding overtime",
+    "Wkly. Cont. to Board",
+    "Wkly. Payments to rel. living elsewhere",
+    "Pre-War: Occupation",
+    "Pre-War: Normal Wkly. Earn's",
+    "Pre-War: Place of work if outside Melbourne",
+    "Occupational Pref.",
+]
+
+
+def survey_front_label(row: str, column: int) -> str:
+    return f"{row} (column {column})"
+
+
+SURVEY_FRONT_SCHEMA: list[FieldSpec] = [
+    FieldSpec(name, "numeric_free" if name.startswith("Dwelling Number") else "text")
+    for name in SURVEY_FRONT_DWELLING_FIELDS
+] + [
+    FieldSpec(survey_front_label(row, column), "text")
+    for column in range(1, SURVEY_FRONT_COLUMNS + 1)
+    for row in SURVEY_FRONT_PERSON_ROWS
+]
+
+SURVEY_FRONT_SCHEMA_BY_NAME: dict[str, FieldSpec] = {
+    spec.name: spec for spec in SURVEY_FRONT_SCHEMA
+}
+
+
 def describe_field(spec: FieldSpec) -> str:
     """One line per field, for embedding in a VLM extraction prompt."""
     if spec.kind == "categorical" and spec.code_book_category:
@@ -446,6 +541,8 @@ def describe_field(spec: FieldSpec) -> str:
         return (
             f"{spec.name}: numeric amount, OR one of these special codes: [{options}]"
         )
+    if spec.kind == "text":
+        return f"{spec.name}: handwritten text, copied exactly as written"
     if spec.kind == "numeric_free":
         return f"{spec.name}: numeric value (count or amount)"
     # unknown: genuinely uncertain -- say so rather than imply a scheme that isn't confirmed
