@@ -1,4 +1,4 @@
-# D021 — Resolving struck options: negation vs. correction
+# D023 — Resolving struck options: negation vs. correction
 
 **Status:** Accepted
 **Date:** 2026-09-17

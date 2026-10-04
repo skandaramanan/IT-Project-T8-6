@@ -31,7 +31,7 @@ Deliberately not done here:
   per-field score, and inventing one would breach NFR-01. Null is what the
   envelope asks for and what the reviewer needs to see.
 - ``negated`` resolution rule is in ``build_field``, decided in
-  ``docs/decisions/D021-resolving-struck-options.md``.
+  ``docs/decisions/D023-resolving-struck-options.md``.
 - ``persons`` and ``notes`` stay empty. Both come off the survey front and
   reverse; the coding card carries neither.
 """
@@ -182,7 +182,7 @@ def build_field(
     a ``numeric_sentinel`` field most values are ordinary amounts and carry no
     label by design: Weekly Rent 04 is four shillings, not an unknown code.
 
-    ``struck`` resolution (D021): struck always negates, regardless of whether
+    ``struck`` resolution (D023): struck always negates, regardless of whether
     the struck digit is still legible.
 
     ``struck=None`` means no detector ran -- the engine cannot produce the
@@ -276,7 +276,7 @@ def build_record(
     way, so a dropped one is visible rather than absent.
 
     ``struck`` is ``ExtractionResult.struck`` -- only the fields detection
-    flagged are present (D021).
+    flagged are present (D023).
     """
     groups: dict[str, dict[str, Any]] = {
         "dwelling": {},

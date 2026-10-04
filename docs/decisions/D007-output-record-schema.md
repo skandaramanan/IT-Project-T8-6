@@ -218,7 +218,7 @@ a confidence score on every extracted field.
 Recorded rather than guessed:
 
 - **Crossed-out versus corrected**, absent a client ruling, is resolved
-  operationally in D021.
+  operationally in D023.
 - **Slashed-out columns** map to `no_data` per the client, "pending final
   confirmation" (FR-09).
 - **Nobody has inventoried the survey front's fields.** IT-79 and IT-70 are both

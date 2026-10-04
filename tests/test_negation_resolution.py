@@ -1,4 +1,4 @@
-"""Struck-option resolution (D021): struck negates, unstruck is untouched."""
+"""Struck-option resolution (D023): struck negates, unstruck is untouched."""
 
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ MANIFEST = json.loads(
 
 IDENTITY = {"Municipality": "27", "Number of Dwelling": "6", "Number of Household": "1"}
 
-# What D021 resolves any struck field to, whatever was written underneath.
+# What D023 resolves any struck field to, whatever was written underneath.
 NEGATED = {
     "value": None,
     "code": None,
@@ -55,7 +55,7 @@ def test_marks_resolve_to_the_value_the_manifest_records(fixture):
 
     The manifest carries expect_negated and expected_value per mark. Reading
     them means a future mark that is not expected to negate is checked against
-    what it actually claims rather than against D021's current blanket rule.
+    what it actually claims rather than against D023's current blanket rule.
     """
     for image, marks in _marks_by_image(fixture).items():
         card = {m["field"]: m["original_value"] or "x" for m in marks} | IDENTITY
@@ -130,6 +130,6 @@ def test_build_field_not_struck_is_unaffected():
 
 
 def test_build_field_struck_ignores_the_raw_value():
-    """Even a legible raw value is discarded once struck is true (D021)."""
+    """Even a legible raw value is discarded once struck is true (D023)."""
     spec = FIELD_SCHEMA_BY_NAME["Sex of Head"]
     assert build_field(spec, "0", struck=True) == NEGATED
