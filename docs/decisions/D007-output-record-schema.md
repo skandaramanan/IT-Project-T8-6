@@ -146,6 +146,9 @@ expressed as field objects at one of the three levels.
 field *names* and enforces that every one of them is a field object — which
 makes FR-10 checkable today without pretending the field list is settled.
 
+The dwelling has two field maps for the building: `house`, the coding card's
+coded values, and `handwritten`, the survey front's dwelling fields as written.
+
 ## Alternatives considered
 
 **XML.** Stronger schema validation via XSD, and the better answer if a legacy
