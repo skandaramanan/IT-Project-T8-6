@@ -1,6 +1,6 @@
 """Qwen2.5-VL: open-weight VLM, prompted directly against the field schema.
 
-The prompt embeds extraction.field_schema's field block and asks for a
+The prompt embeds survey.extraction.card_fields's field block and asks for a
 JSON object keyed by those exact field names. A response that isn't valid
 JSON scores as an empty ``fields`` dict; ``raw_text`` still carries what the
 model actually said, for debugging.

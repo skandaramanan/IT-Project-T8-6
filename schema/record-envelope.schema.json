@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/skandaramanan/IT-Project-T8-6/blob/main/docs/schema/record-envelope.schema.json",
+  "$id": "https://github.com/skandaramanan/IT-Project-T8-6/blob/main/schema/record-envelope.schema.json",
   "title": "Survey dwelling record",
   "description": "One dwelling per record, written one per line as JSON Lines. This validates the envelope only -- field names are deliberately open, because the field set is gated on IT-38. What it does enforce is that every leaf is a field object, never a bare value. See docs/decisions/D007-output-record-schema.md.",
   "type": "object",

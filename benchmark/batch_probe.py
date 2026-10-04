@@ -36,7 +36,7 @@ from pathlib import Path
 from dual_extract import _has_reading
 from ground_truth import load_ground_truth
 from scoring import score_structured
-from survey.extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.card_fields import build_extraction_prompt_schema
 from survey.extraction.json_extraction import parse_json_fields
 
 # Built from the same schema builder the single-card prompt uses, so the two

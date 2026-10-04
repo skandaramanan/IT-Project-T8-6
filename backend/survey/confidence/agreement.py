@@ -6,7 +6,7 @@ The five agreement classes and the field-by-field comparison that assigns them.
 
 from __future__ import annotations
 
-from survey.extraction.field_schema import FIELD_SCHEMA
+from survey.extraction.card_fields import FIELD_SCHEMA
 from survey.extraction.record import normalise
 
 # Every card emits every schema field so a dropped field shows up as a

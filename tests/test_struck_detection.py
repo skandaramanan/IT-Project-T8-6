@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from survey.extraction.field_schema import FIELD_SCHEMA_BY_NAME
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
 from survey.extraction.json_extraction import (
     BANDED_STRUCK_EXTRACTION_PROMPT,
     STRUCK_EXTRACTION_PROMPT,

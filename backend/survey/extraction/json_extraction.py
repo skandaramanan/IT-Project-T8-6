@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import re
 
-from survey.extraction.field_schema import (
+from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
     build_extraction_prompt_schema,
 )

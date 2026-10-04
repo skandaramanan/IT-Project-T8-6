@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from survey.extraction.field_schema import FIELD_SCHEMA_BY_NAME
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
 from survey.extraction.record import FIELD_MAP, build_field, build_record
 
 MANIFEST = json.loads(

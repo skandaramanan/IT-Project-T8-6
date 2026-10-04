@@ -20,8 +20,7 @@ from typing import get_args
 
 import pytest
 
-from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
-from survey.extraction.field_schema import (
+from survey.extraction.card_fields import (
     C3_FIELD_SCHEMA,
     FIELD_SCHEMA,
     FIELD_SCHEMA_BY_NAME,
@@ -30,6 +29,7 @@ from survey.extraction.field_schema import (
     FieldStatus,
     build_extraction_prompt_schema,
 )
+from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
 
 CARDS = [("C1/C2", FIELD_SCHEMA), ("C3", C3_FIELD_SCHEMA)]
 

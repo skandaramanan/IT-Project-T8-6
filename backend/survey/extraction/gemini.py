@@ -49,7 +49,7 @@ import time
 from pathlib import Path
 
 from survey.extraction.base import ExtractionResult
-from survey.extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.card_fields import build_extraction_prompt_schema
 from survey.extraction.json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     BANDED_STRUCK_EXTRACTION_PROMPT,
