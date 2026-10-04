@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Container
 
 from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
+    SURVEY_FRONT_SCHEMA,
     build_extraction_prompt_schema,
 )
 
@@ -34,6 +36,16 @@ EXTRACTION_PROMPT = (
     + "Give every value as a JSON string, copied exactly as written, keeping any "
     'leading zeros ("04", not 4). Use null where no code is written.\n\n'
     + _SCHEMA_BLOCK
+)
+
+_SURVEY_FRONT_BLOCK = build_extraction_prompt_schema(SURVEY_FRONT_SCHEMA)
+SURVEY_FRONT_PROMPT = (
+    "This is the handwritten front of a household card from a 1941-43 social "
+    f"survey. Extract the following {len(_SURVEY_FRONT_BLOCK.splitlines())} "
+    "fields and return ONLY a JSON object with exactly these keys (no markdown "
+    "fences, no commentary). Give every value as a JSON string, copied exactly "
+    "as written. Columns are the person grid's, numbered left to right. Use "
+    "null where nothing is written.\n\n" + _SURVEY_FRONT_BLOCK
 )
 
 # The bands a model may self-report against a value. Categorical rather than a
@@ -213,7 +225,9 @@ def _parse_object(text: str | None) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def parse_json_fields(text: str | None) -> dict[str, str] | None:
+def parse_json_fields(
+    text: str | None, field_names: Container[str] = FIELD_SCHEMA_BY_NAME
+) -> dict[str, str] | None:
     """The card's values, from either prompt's output."""
     parsed = _parse_object(text)
     if parsed is None:
@@ -224,7 +238,7 @@ def parse_json_fields(text: str | None) -> dict[str, str] | None:
     # {"A": null, ..., "E": null}. That parses cleanly and every schema field
     # then reads as empty, which scores ~70% on a card that is mostly empty
     # cells. Reject it so the caller retries instead of banking a fake pass.
-    if not any(name in FIELD_SCHEMA_BY_NAME for name in fields):
+    if not any(name in field_names for name in fields):
         return None
     return fields
 
