@@ -48,7 +48,7 @@ every card regardless of that card's values (a stamp, not an annotation).
 ![Reviewer oval, r02](assets/d020/reviewer-oval-r02.jpg)
 
 **Meaningful — FR-06 strike** (per IT-93's hand-classified manifest;
-`negated: true`, `status: "no_data"`, per D011/D021):
+`negated: true`, `status: "no_data"`, per D011/D023):
 
 ![Total Number of Rooms, Number of Bedrooms struck, r01](assets/d020/fr06-rooms-bedrooms-r01.jpg)
 ![Number of Sleepouts struck, r01](assets/d020/fr06-sleepouts-r01.jpg)
