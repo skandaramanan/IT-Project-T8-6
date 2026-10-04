@@ -72,8 +72,9 @@ BANDED_EXTRACTION_PROMPT = (
 
 # FR-06 struck-option detection: a dedicated prompt, separate from
 # EXTRACTION_PROMPT/BANDED_EXTRACTION_PROMPT. A VLM judgement call, not pixel
-# geometry -- column-slash/boundary-overlap handling is untested against a
-# real example. Composable with the confidence band (below) since they are
+# geometry. The column-slash and boundary-overlap sentences are a cheap guard;
+# neither mark has been found on a coding card, so the model's compliance is
+# unmeasured. Composable with the confidence band (below) since they are
 # independent per-field signals -- one call gets both instead of two.
 def _struck_extraction_prompt(*, banded: bool) -> str:
     shape = (
