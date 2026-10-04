@@ -11,7 +11,13 @@ Writing that scored result into a D007 record remains separate work.
 
 from __future__ import annotations
 
-from dual_extract import AGREE, BOTH_BLANK, DISAGREE, NO_SECOND_OPINION, ONE_BLANK
+from survey.confidence.agreement import (
+    AGREE,
+    BOTH_BLANK,
+    DISAGREE,
+    NO_SECOND_OPINION,
+    ONE_BLANK,
+)
 
 # P(primary arm correct | class). flash-lite vs qwen, 30 cards, 1,860
 # comparisons, 2026-09-09. Fallback when no band is attached (see

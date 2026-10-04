@@ -9,7 +9,7 @@ costs five times what the response alone suggests, so dropping
 
 from types import SimpleNamespace
 
-from gemini_extractor import _cost_usd
+from survey.extraction.gemini import _cost_usd
 
 
 def _usage(prompt, candidates, thoughts):
@@ -34,7 +34,7 @@ def test_unpriced_model_reports_nothing_rather_than_guessing():
 def test_retry_waits_are_terminal_for_our_own_mistakes():
     """A 404 on a retired model shouldn't cost three attempts and 90s of sleep
     before it reports the one thing you need to read."""
-    from gemini_extractor import _retry_wait
+    from survey.extraction.gemini import _retry_wait
 
     assert _retry_wait(RuntimeError("404 NOT_FOUND ... no longer available"), 1) is None
     assert _retry_wait(RuntimeError("400 INVALID_ARGUMENT"), 1) is None

@@ -13,24 +13,18 @@ from __future__ import annotations
 import argparse
 import csv
 import statistics
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-
-# pyproject's `pythonpath` only applies under pytest, so src/ and spike/ have to
-# be put on the path here or every import below fails when run as a script.
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
 
 from ground_truth import (
     DEFAULT_GROUND_TRUTH_XLSX,
     DEFAULT_IMAGES_DIR,
     load_ground_truth,
 )
-from json_extraction import parse_json_fields
 from scoring import score_structured
 from survey.extraction.base import ExtractionResult, Extractor
+from survey.extraction.json_extraction import parse_json_fields
 
 # Where every run files its output. Defined here because this is what writes it;
 # spike/dual_extract.py imports this name rather than repeating the path, so the
@@ -51,8 +45,8 @@ EXTRACTORS: dict[str, str] = {
     # accuracy, and azure-doc-intel needs a custom-trained model nobody set up.
     # Lazy importlib means a stale entry here would survive import and fail at
     # --model with a bare ModuleNotFoundError, so the dict lists what is present.
-    "gemini": "gemini_extractor:GeminiExtractor",  # primary, D012
-    "qwen2.5-vl": "qwen_vl_extractor:QwenVLExtractor",  # local second opinion
+    "gemini": "survey.extraction.gemini:GeminiExtractor",  # primary, D012
+    "qwen2.5-vl": "survey.extraction.qwen:QwenVLExtractor",  # local second opinion
 }
 
 

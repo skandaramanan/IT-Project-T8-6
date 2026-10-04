@@ -26,8 +26,8 @@ The sheet's used-range reports more rows than actually have data (an xlsx
 artifact, not real rows) -- filtered out by skipping any row with an empty id.
 Cells are text-formatted in the source, so leading zeros on codes like "060"
 survive as strings, not ints -- don't let a future edit read this with a
-numeric type and silently drop them. ``scoring.normalise`` does not strip them
-either; see that module.
+numeric type and silently drop them. ``survey.extraction.record.normalise`` does not
+strip them either; see that module.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class BenchmarkCard:
     fields: dict[
         str, str
     ]  # field name -> hand-transcribed value, raw ("-" and "" both mean no
-    # code in that cell, inconsistently -- see scoring.VOID_MARKS)
+    # code in that cell, inconsistently -- see record.VOID_MARKS)
 
 
 def _rows(xlsx_path: Path) -> list[tuple]:

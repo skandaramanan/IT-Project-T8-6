@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from card_confidence import assert_every_card_scored, card_confidence
+from survey.confidence.card import assert_every_card_scored, card_confidence
 
 # D016's flat class constants, copied rather than imported to keep this file
 # off the pipeline's import chain. Inputs here, never asserted.

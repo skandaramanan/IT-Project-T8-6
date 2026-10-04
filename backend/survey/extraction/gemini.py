@@ -48,7 +48,9 @@ import re
 import time
 from pathlib import Path
 
-from json_extraction import (
+from survey.extraction.base import ExtractionResult
+from survey.extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     BANDED_STRUCK_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
@@ -56,8 +58,6 @@ from json_extraction import (
     parse_json_fields,
     parse_struck_fields,
 )
-from survey.extraction.base import ExtractionResult
-from survey.extraction.field_schema import build_extraction_prompt_schema
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 

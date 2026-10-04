@@ -7,10 +7,7 @@ Run from the repo root: python scripts/calibrate_segmentation.py
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from survey.segmentation.segmenter import _page_features
 

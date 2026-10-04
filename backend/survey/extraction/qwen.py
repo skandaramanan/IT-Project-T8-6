@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from json_extraction import EXTRACTION_PROMPT, parse_json_fields
 from survey.extraction.base import ExtractionResult
+from survey.extraction.json_extraction import EXTRACTION_PROMPT, parse_json_fields
 
 MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
 

@@ -13,7 +13,7 @@ dependencies = [
 # The local VLM candidates (torch, transformers, qwen_vl_utils) are deliberately
 # absent: they are GPU-only, were never locked during IT-37, and every extractor
 # imports them lazily behind is_available(). Install them by hand on the machine
-# that runs them -- see spike/qwen_vl_extractor.py. Keeping them out is what
+# that runs them -- see backend/survey/extraction/qwen.py. Keeping them out is what
 # holds `uv sync --locked` in CI to seconds.
 
 [build-system]

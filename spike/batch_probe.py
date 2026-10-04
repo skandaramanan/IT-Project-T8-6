@@ -28,21 +28,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+import mimetypes
+import os
 import time
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
-
-import mimetypes
-import os
-
 from dual_extract import _has_reading
 from ground_truth import load_ground_truth
-from json_extraction import parse_json_fields
 from scoring import score_structured
 from survey.extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.json_extraction import parse_json_fields
 
 # Built from the same schema builder the single-card prompt uses, so the two
 # arms can never drift into asking for different fields.
@@ -87,7 +82,7 @@ def main() -> None:
 
     from google import genai
 
-    from gemini_extractor import GeminiExtractor, _retry_wait
+    from survey.extraction.gemini import GeminiExtractor, _retry_wait
 
     cards = load_ground_truth()
     if args.pages:
