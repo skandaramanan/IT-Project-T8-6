@@ -13,7 +13,7 @@ Three things happen here, in order:
 
 1. **Clean.** The model's string is not the card's value: leader dots come back
    as part of the number and handwritten 0/1 come back as letters. Same rules
-   as ``spike/scoring.py``, which measured them at 305 of 731 apparent
+   as ``benchmark/scoring.py``, which measured them at 305 of 731 apparent
    mismatches on the 2026-09-01 Azure run. They belong on the way in, not only
    at scoring time -- otherwise the benchmark is clean and the dataset is not.
 
@@ -40,8 +40,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME, FieldSpec
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
+from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
 SCHEMA_VERSION = "0.1.0"
 
@@ -130,32 +130,62 @@ IDENTITY_GROUPS = frozenset({"dwelling", "household"})
 
 
 # --- 2. cleaning ------------------------------------------------------------
-# Ported from spike/scoring.py. Every value on this card is a number -- the code
-# book defines no code containing a letter or a period -- which is what makes
-# both substitutions safe: neither can turn one valid code into another.
-
+# Three ways of writing "this cell holds no numeric code", which all have to
+# compare equal:
+#   ""  the transcriber left it blank      (page 203's empty Family 4 block)
+#   "-" the transcriber marked it          (page 169's empty Family 3 block)
+#   "B" the 1940s coder voided the cell on the card itself, one B per code
+#       column -- so "B", "BB", "BBB". The transcriber wrote those as "-", but
+#       an extractor reading the card faithfully reports the B it can see.
+# Scoring these against each other measures transcription punctuation, not
+# extraction. 247 of 1200 ground-truth fields are "-" or "--"; no ground-truth
+# value is ever a "B", so treating a returned B as no-value can't hand out
+# credit for a real code -- a B where the card holds a digit still mismatches
+# that digit.
 VOID_MARKS = frozenset("-Bb")
 
-# Fields are joined to their values by a row of dots, and OCR reads some of them
-# as part of the number: "1." for 1, "1.5." for 15.
+# Every value on this card is a number: the code book defines no code containing
+# a letter or a period. That is what makes the two substitutions below safe --
+# neither can turn one valid code into a different valid code, so neither can
+# hand out credit for a wrong answer. Both were measured on the first Azure run
+# (2026-09-01, 20 held-out cards), where together they accounted for 305 of 731
+# apparent mismatches -- 25 accuracy points of pure scoring artefact.
+
+# The printed fields are joined to their values by a row of dots, and OCR reads
+# some of them as part of the number: "1." for 1, "1.5." for 15. Colons come off
+# the "Children of H. or wife:" heading the same way.
 _PUNCTUATION = str.maketrans("", "", ".:;, \t\n")
 
-# Handwritten 0 and 1 come back as letters: O, Q, !, L, I.
+# Handwritten 0 and 1 are read as letters: O 29x, Q 16x, ! 14x, L 6x, I 3x.
+# Deliberately not included: "/" and "D", which are plausible lookalikes but
+# were never observed -- an unobserved mapping is a guess, and a guess here
+# only ever inflates the score.
 _DIGIT_LOOKALIKES = str.maketrans(
     {"O": "0", "o": "0", "Q": "0", "I": "1", "l": "1", "L": "1", "!": "1", "|": "1"}
 )
 
 
 def normalise(value: str | None) -> str:
-    """Strip print and OCR artefacts. Leading zeros are kept.
+    """Strip print/OCR artefacts. Leading zeros are left alone.
 
-    "04" and "4" are two different codes in a fixed-width scheme, so stripping
-    zeros would silently rewrite the card. "1." and "O" are not codes at all.
+    Zeros are deliberately kept: the ground-truth sheet is text-formatted so
+    "04" and "4" are two different transcriptions, and the code book's
+    fixed-width codes make them two different codes. Stripping them would hand
+    an extractor credit for reading "4" off a cell that says "04" --
+    test_leading_zero_is_not_the_same_code guards it. That is the difference
+    between the two rules here and that one: "04" and "4" are both valid codes
+    with different meanings, whereas "1." and "O" are not codes at all.
+
+    Public because benchmark scoring and the IT-98 agreement check
+    (``survey.confidence.agreement``) both use this one function. Two
+    definitions of "the same value" would let a pair of readings count as
+    agreeing while scoring as a mismatch.
     """
     if value is None:
         return ""
     stripped = value.strip().translate(_PUNCTUATION)
-    # Checked before folding, so a coder's "B" stays a void mark, not a digit.
+    # all-void-marks (or empty) means no code, however it was written. Checked
+    # before folding so a coder's "B" stays a void mark rather than a digit.
     if set(stripped) <= VOID_MARKS:
         return ""
     return stripped.translate(_DIGIT_LOOKALIKES)

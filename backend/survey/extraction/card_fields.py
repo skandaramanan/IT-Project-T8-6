@@ -53,7 +53,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
+from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES
 
 FieldKind = Literal["categorical", "numeric_sentinel", "numeric_free", "unknown"]
 

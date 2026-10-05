@@ -1,6 +1,6 @@
 """Qwen2.5-VL: open-weight VLM, prompted directly against the field schema.
 
-The prompt embeds extraction.field_schema's field block and asks for a
+The prompt embeds survey.extraction.card_fields's field block and asks for a
 JSON object keyed by those exact field names. A response that isn't valid
 JSON scores as an empty ``fields`` dict; ``raw_text`` still carries what the
 model actually said, for debugging.
@@ -9,7 +9,7 @@ Needs a real GPU -- not meant to run on this laptop. torch/transformers/
 bitsandbytes/accelerate/qwen_vl_utils aren't resolved into uv.lock: locking a
 CUDA stack across three platforms for the one machine that runs it costs more
 than it buys, so they are installed on that machine instead. See
-spike/colab_qwen_arm.ipynb, which does exactly that on a free Colab T4. As of
+benchmark/colab_qwen_arm.ipynb, which does exactly that on a free Colab T4. As of
 the model's HF card, Qwen2_5_VLForConditionalGeneration may need transformers
 installed from source rather than the latest PyPI release -- check before
 assuming a plain `pip install transformers` is enough.
@@ -24,9 +24,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from json_extraction import EXTRACTION_PROMPT, parse_json_fields
-
-from extraction.base import ExtractionResult
+from survey.extraction.base import ExtractionResult
+from survey.extraction.json_extraction import EXTRACTION_PROMPT, parse_json_fields
 
 MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
 

@@ -3,15 +3,14 @@
 import json
 from pathlib import Path
 
-from json_extraction import (
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
+from survey.extraction.json_extraction import (
     BANDED_STRUCK_EXTRACTION_PROMPT,
     STRUCK_EXTRACTION_PROMPT,
     parse_confidence_bands,
     parse_json_fields,
     parse_struck_fields,
 )
-
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME
 
 MANIFEST = json.loads(
     (Path(__file__).parent / "fixtures" / "crossed_out" / "manifest.json").read_text()

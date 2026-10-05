@@ -259,7 +259,7 @@ is still part of D016's formula, and the fallback needs it.
   D016's `disagree` constant, re-derived independently.)
 - D012 needs amending to name a variant. Not this note's call.
 - `run_benchmark.py` reports cost and latency now.
-- Nothing in `src/` changes.
+- Nothing in `backend/survey/extraction/` changes.
 
 ## Revisit if
 
@@ -291,11 +291,11 @@ is still part of D016's formula, and the fallback needs it.
 
 ```
 # cached, no API calls
-uv run python spike/dual_extract.py --models gemini-3.5-flash-lite qwen2.5-vl --no-fetch
-uv run python spike/run_benchmark.py --model gemini --rescore
+uv run python benchmark/dual_extract.py --models gemini-3.5-flash-lite qwen2.5-vl --no-fetch
+uv run python benchmark/run_benchmark.py --model gemini --rescore
 
 # live, 30 requests. --results-root keeps the calibrated output untouched
-uv run python spike/run_benchmark.py --model gemini --workers 5 --results-root <scratch>
+uv run python benchmark/run_benchmark.py --model gemini --workers 5 --results-root <scratch>
 ```
 
 Working for every confidence constant and the band tables: [D016](D016-agreement-to-confidence.md).

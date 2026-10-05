@@ -13,7 +13,15 @@ import json
 from pathlib import Path
 
 import pytest
+
 from dual_extract import (
+    fetch_command,
+    load_arm,
+    missing_pages,
+    pair_cards,
+    summarise,
+)
+from survey.confidence.agreement import (
     AGREE,
     BOTH_BLANK,
     DISAGREE,
@@ -22,11 +30,6 @@ from dual_extract import (
     SCHEMA_FIELD_NAMES,
     classify,
     compare_fields,
-    fetch_command,
-    load_arm,
-    missing_pages,
-    pair_cards,
-    summarise,
 )
 
 FIELDS = ["Municipality", "Weekly Rent", "Garden"]
@@ -328,7 +331,7 @@ def test_paired_records_carry_a_confidence_score(tmp_path):
 def test_a_stranded_card_is_scored_low_not_skipped(tmp_path):
     """A card only one arm reached still gets a number -- AC1 admits no
     exemption, and skipping it would hide the half-failed run."""
-    from confidence import CONFIDENCE_BY_CLASS
+    from survey.confidence.field import CONFIDENCE_BY_CLASS
 
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
     records = {r["page_id"]: r for r in pair_cards("a", "b", tmp_path, FIELDS)}
@@ -340,7 +343,7 @@ def test_a_stranded_card_is_scored_low_not_skipped(tmp_path):
 
 def test_summarise_reports_the_confidence_distribution(tmp_path):
     """AC5 of IT-100 needs a distribution, not a headline number."""
-    from confidence import CONFIDENCE_BY_CLASS
+    from survey.confidence.field import CONFIDENCE_BY_CLASS
 
     _write(tmp_path, "a", "p1", {"Municipality": "56", "Weekly Rent": "04"})
     _write(tmp_path, "b", "p1", {"Municipality": "56", "Weekly Rent": "4"})
@@ -372,7 +375,7 @@ def test_every_paired_record_carries_a_card_score(tmp_path):
 def test_the_card_score_comes_from_its_own_fields(tmp_path):
     """Presence alone would pass on a constant. A corroborated card scores at
     the agree constant, a stranded one below it."""
-    from confidence import CONFIDENCE_BY_CLASS
+    from survey.confidence.field import CONFIDENCE_BY_CLASS
 
     _write(tmp_path, "a", "p1", {"Municipality": "56"})
     _write(tmp_path, "b", "p1", {"Municipality": "56"})

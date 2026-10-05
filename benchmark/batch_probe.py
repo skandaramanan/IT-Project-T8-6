@@ -10,7 +10,7 @@ setup where attention spreads thin and per-card accuracy drops.
 
 So this runs both arms over the SAME cards and scores them the same way:
 
-    uv run python spike/batch_probe.py --model gemini-3.7-flash --batch-size 5
+    uv run python benchmark/batch_probe.py --model gemini-3.7-flash --batch-size 5
 
 Cost is at most batch_size + 1 requests per model (N individual, 1 batched),
 which is why it exists as a probe rather than a benchmark -- on a 20 RPD cap
@@ -28,22 +28,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+import mimetypes
+import os
 import time
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_ROOT / "src"), str(_ROOT / "spike")]
-
-import mimetypes
-import os
-
 from dual_extract import _has_reading
 from ground_truth import load_ground_truth
-from json_extraction import parse_json_fields
 from scoring import score_structured
-
-from extraction.field_schema import build_extraction_prompt_schema
+from survey.extraction.card_fields import build_extraction_prompt_schema
+from survey.extraction.json_extraction import parse_json_fields
 
 # Built from the same schema builder the single-card prompt uses, so the two
 # arms can never drift into asking for different fields.
@@ -86,8 +80,9 @@ def main() -> None:
     parser.add_argument("--pages", nargs="+", default=None)
     args = parser.parse_args()
 
-    from gemini_extractor import GeminiExtractor, _retry_wait
     from google import genai
+
+    from survey.extraction.gemini import GeminiExtractor, _retry_wait
 
     cards = load_ground_truth()
     if args.pages:

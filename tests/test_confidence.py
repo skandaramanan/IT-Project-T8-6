@@ -15,14 +15,21 @@ ONE_BLANK (73.7% vs flash's 85.1%).
 from collections import Counter
 
 import pytest
-from confidence import (
+
+from survey.confidence.agreement import (
+    AGREE,
+    BOTH_BLANK,
+    DISAGREE,
+    NO_SECOND_OPINION,
+    ONE_BLANK,
+)
+from survey.confidence.field import (
     BAND_ACCURACY_BY_CLASS,
     CONFIDENCE_BY_CLASS,
     NO_SECOND_OPINION_BAND_ACCURACY,
     STANDALONE_ACCURACY,
     confidence_for,
 )
-from dual_extract import AGREE, BOTH_BLANK, DISAGREE, NO_SECOND_OPINION, ONE_BLANK
 
 
 def test_every_class_has_a_score():
@@ -97,8 +104,12 @@ def test_an_unknown_class_is_an_error_not_a_default():
 
 # --- scoring a whole card ---------------------------------------------------
 
-from confidence import assert_every_field_scored, resolve_primary_value, score_fields
-from dual_extract import compare_fields
+from survey.confidence.agreement import compare_fields
+from survey.confidence.field import (
+    assert_every_field_scored,
+    resolve_primary_value,
+    score_fields,
+)
 
 MODELS = {"a": "gemini-3.5-flash-lite", "b": "qwen2.5-vl"}
 FIELDS = ["Municipality", "Weekly Rent", "Garden"]
@@ -413,7 +424,7 @@ def test_constants_still_match_the_benchmark():
     """
     from dual_extract import pair_cards
     from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
-    from scoring import normalise
+    from survey.extraction.record import normalise
 
     cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
     truth = {c.page_id: c.fields for c in cards}
@@ -490,8 +501,11 @@ def test_band_constants_still_match_the_live_run():
     """
     from dual_extract import pair_cards
     from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
-    from json_extraction import parse_confidence_bands, parse_json_fields
-    from scoring import normalise
+    from survey.extraction.json_extraction import (
+        parse_confidence_bands,
+        parse_json_fields,
+    )
+    from survey.extraction.record import normalise
 
     banded_raw = RESULTS / "gemini-3.5-flash-lite-banded" / "raw"
     cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)

@@ -13,23 +13,32 @@ dependencies = [
 # The local VLM candidates (torch, transformers, qwen_vl_utils) are deliberately
 # absent: they are GPU-only, were never locked during IT-37, and every extractor
 # imports them lazily behind is_available(). Install them by hand on the machine
-# that runs them -- see spike/qwen_vl_extractor.py. Keeping them out is what
+# that runs them -- see backend/survey/extraction/qwen.py. Keeping them out is what
 # holds `uv sync --locked` in CI to seconds.
 
-[tool.uv]
-# Application, not a library - nothing here gets packaged or published.
-package = false
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Installed, not published (D024): installing is what lets `survey.*` import
+# from anywhere without path edits.
+module-name = "survey"
+module-root = "backend"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Neither src/ nor spike/ is an installed package, so tests importing
-# extraction.* or the harness modules need both on the path. Without this the
-# whole of src/extraction/ is untestable.
-pythonpath = ["src", "spike"]
+# survey is installed; only the calibration harness, which is never packaged,
+# needs to be on the path for its tests.
+pythonpath = ["benchmark"]
 
 [tool.pyright]
-# Same two paths, so editors resolve the imports pytest already resolves.
-extraPaths = ["src", "spike"]
+# Same path, so editors resolve the imports pytest already resolves.
+extraPaths = ["benchmark"]
+
+[tool.ruff]
+# So isort files survey and the harness modules as first-party.
+src = ["backend", "benchmark"]
 
 [dependency-groups]
 dev = [

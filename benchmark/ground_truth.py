@@ -2,7 +2,7 @@
 
 The sheet is the C1/C2 one: 30 cards, 62 fields, drawn one per unit from 30
 different units. C1 and C2 are 98% of the coding cards, so this is what
-measures FR-01. Built by ``spike/select_c1_c2_sample.py``, transcribed twice
+measures FR-01. Built by ``benchmark/select_c1_c2_sample.py``, transcribed twice
 (once by model, once by hand) and reconciled; the images sit beside it.
 
 The older C3 sheet is deliberately not supported here. C3 shares 0 of its 62
@@ -26,8 +26,8 @@ The sheet's used-range reports more rows than actually have data (an xlsx
 artifact, not real rows) -- filtered out by skipping any row with an empty id.
 Cells are text-formatted in the source, so leading zeros on codes like "060"
 survive as strings, not ints -- don't let a future edit read this with a
-numeric type and silently drop them. ``scoring.normalise`` does not strip them
-either; see that module.
+numeric type and silently drop them. ``survey.extraction.record.normalise`` does not
+strip them either; see that module.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import openpyxl
+
 from make_c1_ground_truth_sheet import META_COLUMNS
 
 DEFAULT_GROUND_TRUTH_XLSX = Path(
@@ -52,7 +53,7 @@ class BenchmarkCard:
     fields: dict[
         str, str
     ]  # field name -> hand-transcribed value, raw ("-" and "" both mean no
-    # code in that cell, inconsistently -- see scoring.VOID_MARKS)
+    # code in that cell, inconsistently -- see record.VOID_MARKS)
 
 
 def _rows(xlsx_path: Path) -> list[tuple]:

@@ -8,6 +8,7 @@ Skipped when the benchmark set isn't synced -- data/ is gitignored.
 """
 
 import pytest
+
 from ground_truth import (
     DEFAULT_GROUND_TRUTH_XLSX,
     DEFAULT_IMAGES_DIR,

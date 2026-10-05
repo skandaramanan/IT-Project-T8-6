@@ -10,10 +10,16 @@ findings the client can use.
 
 ## Layout
 
-- `src/` — application code
+- `backend/survey/` — the pipeline, installed as the `survey` package
+- `benchmark/` — calibration harness; imports `survey`, never the reverse
+- `schema/` — the output record schema the pipeline, tests and review tool share
+- `results/` — the extracted dataset, one `<region>.jsonl` per region (committed)
 - `tests/` — tests
-- `docs/` — documentation
-- `data/` — datasets (gitignored; keep raw data out of version control)
+- `docs/` — decision records and assets
+- `data/` — scans, raw model responses, benchmark set (gitignored)
+
+Why it's laid out this way:
+[docs/decisions/D024-repository-layout.md](docs/decisions/D024-repository-layout.md).
 
 ## Setup
 
@@ -61,7 +67,10 @@ Provenance: sent by Lachlan Glanville (UniMelb Archives) on 6 August 2026 as
 2026, so the Drive copy is now the only one — treat it accordingly.
 
 Sync the scans to `data/`, which is gitignored. Nothing under `data/` is ever
-committed, including anything you derive from it.
+committed, including anything you derive from it — raw model responses,
+benchmark runs, spike output. The one exception is the scored dataset in
+`results/`, which is committed so the client can get corrections through GitHub
+([D025](docs/decisions/D025-committed-results.md)).
 
 Three sets of cards exist and they are easy to confuse:
 
@@ -95,12 +104,13 @@ Why the scans live in Drive, and why secret scanning works this way:
 
 ## Running
 
-No runnable entry point yet — code lands under `src/`. Run anything through
-`uv run` so it uses the pinned environment:
+No pipeline command yet (IT-120 adds `uv run survey extract`). Run anything
+through `uv run` so it uses the pinned environment:
 
 ```bash
-uv run pytest         # tests
-uv run ruff check .   # lint
+uv run pytest                                  # tests
+uv run ruff check .                            # lint
+uv run python benchmark/run_benchmark.py --help  # calibration harness
 ```
 
 ## Contributing

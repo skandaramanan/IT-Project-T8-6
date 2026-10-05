@@ -8,8 +8,8 @@ at all, so nothing measured on the existing benchmark transfers to them.
 
 FIELDS below is the C1 card in reading order: left column top-to-bottom, then
 middle, then right. Cross-checked two ways -- read off the C1 reference scan
-(``results/reference_cards/coding-front_36d15987_216415_p0148.png``) and
-against the 212-card aggregate label counts in ``results/canonical.md``. The
+(``data/structure/reference_cards/coding-front_36d15987_216415_p0148.png``) and
+against the 212-card aggregate label counts in ``data/structure/canonical.md``. The
 two agree on all 62.
 
 ``No. of Family Boarders`` is the one field C2 has and C1 doesn't; it sits
@@ -18,7 +18,7 @@ else differs only in how the card is printed, not what it records:
 C2 spells out ``...Unearned Income`` where C1 truncates to ``...Unearned I.``.
 
 Usage:
-    uv run python spike/make_c1_ground_truth_sheet.py
+    uv run python benchmark/make_c1_ground_truth_sheet.py
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ DEFAULT_OUT = Path("data/coding-card-c1-c2-ground-truth-blank.xlsx")
 
 # Where the card came from. Unlike the C3 benchmark -- 20 cards from one PDF --
 # a C1 set is drawn from many units, so the page number alone can't find the
-# image. spike/ground_truth.py currently treats every non-"page id" column as a
+# image. benchmark/ground_truth.py currently treats every non-"page id" column as a
 # field, so it needs these four excluded before it can load this sheet.
 META_COLUMNS = ["page id", "unit", "pdf page", "card type"]
 

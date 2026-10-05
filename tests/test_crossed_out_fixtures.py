@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from support import assert_intact_jpeg
 
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CROSSED_OUT = FIXTURES / "crossed_out"

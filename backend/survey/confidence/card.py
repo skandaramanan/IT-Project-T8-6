@@ -22,7 +22,7 @@ Deliberately not done here:
 - **A threshold.** NFR-03's accept/reject line is not set (IT-63); nothing
   here depends on it, and "fraction of fields above threshold" was rejected
   for exactly that reason.
-- **Writing into a D007 record.** ``src/extraction/record.py`` still emits
+- **Writing into a D007 record.** ``backend/survey/extraction/record.py`` still emits
   ``cards[].confidence: None``; that changes when D007 is amended, not here.
 - **Run-level rollups.** One card, one number.
 """

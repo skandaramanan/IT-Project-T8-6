@@ -1,7 +1,7 @@
 """Selects the C1/C2 benchmark cards and extracts them as images.
 
 The IT-73 structure run already classified 843 pages into
-``results/pages.jsonl``, so the sample is picked from that rather than by
+``data/structure/pages.jsonl``, so the sample is picked from that rather than by
 re-running a model over the archive.
 
 C1 vs C2 is decided by two independent markers, not one -- the structure
@@ -22,9 +22,9 @@ data/ is gitignored, so this script is what's committed, not its output --
 same archive in, same cards out, on any machine.
 
 Usage:
-    uv run python spike/select_c1_c2_sample.py
-    uv run python spike/select_c1_c2_sample.py --c1 20 --c2 10
-    uv run python spike/select_c1_c2_sample.py \\
+    uv run python benchmark/select_c1_c2_sample.py
+    uv run python benchmark/select_c1_c2_sample.py --c1 20 --c2 10
+    uv run python benchmark/select_c1_c2_sample.py \\
         --format jpeg --out data/benchmark/c1c2-jpeg   # for Azure upload
 """
 
@@ -32,15 +32,14 @@ from __future__ import annotations
 
 import argparse
 import csv
-import io
 import json
 import re
 from collections import defaultdict
 from pathlib import Path
 
-from pypdf import PdfReader
+from survey.segmentation.pdf_pages import extract_image
 
-DEFAULT_PAGES_JSONL = Path("results/pages.jsonl")
+DEFAULT_PAGES_JSONL = Path("data/structure/pages.jsonl")
 DEFAULT_OUT_DIR = Path("data/benchmark/c1c2")
 
 # A page the model read badly has a short label list; the canonical coding
@@ -116,45 +115,6 @@ def pick(rows: list[dict], count: int) -> list[dict]:
             break
         depth += 1
     return picked
-
-
-# PNG is lossless and right for the benchmark, but a card lands at ~5 MB and
-# Document Intelligence caps a *custom template* training set at 50 MB for
-# everything in the folder -- ten cards alone reach 49 MB. JPEG at this quality
-# is ~0.8 MB with no visible loss on pencil digits, and the scans are stored as
-# JPEG inside the source PDFs anyway. Custom neural's cap is 1 GB, so this only
-# matters for the template fallback.
-JPEG_QUALITY = 92
-
-
-def extract_image(
-    pdf_path: Path, page_number: int, out_path: Path, image_format: str = "png"
-) -> None:
-    """Write the page's largest embedded image.
-
-    Uses pypdf's decoded ``page.images`` rather than copying the raw XObject
-    stream: 7 units store pages as JPEG 2000 and 4 wrap the scan in a Form
-    XObject, and a raw top-level stream copy handles neither.
-    """
-    # Pages are 1-based here. A 0 or a negative from a bad upstream row would
-    # index from the end instead of failing, and quietly put the wrong scan in
-    # the ground-truth set.
-    if page_number < 1:
-        raise ValueError(f"page number {page_number} is not 1-based ({pdf_path})")
-
-    from PIL import Image
-
-    page = PdfReader(pdf_path).pages[page_number - 1]
-    images = list(page.images)
-    if not images:
-        raise ValueError(f"no image on page {page_number} of {pdf_path}")
-    largest = max(images, key=lambda image: len(image.data))
-    image = Image.open(io.BytesIO(largest.data))
-    if image_format == "jpeg":
-        # JPEG has no alpha channel and some scans decode as RGBA/P
-        image.convert("RGB").save(out_path, "JPEG", quality=JPEG_QUALITY)
-    else:
-        image.save(out_path)
 
 
 def main() -> None:

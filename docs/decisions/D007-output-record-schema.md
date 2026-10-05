@@ -142,7 +142,7 @@ across IT-79 (the coding card's 60 fields, typed against the code book), IT-70
 alignment). What is fixed here is that whatever those tickets produce is
 expressed as field objects at one of the three levels.
 
-`docs/schema/record-envelope.schema.json` encodes the envelope. It accepts any
+`schema/record-envelope.schema.json` encodes the envelope. It accepts any
 field *names* and enforces that every one of them is a field object — which
 makes FR-10 checkable today without pretending the field list is settled.
 
@@ -209,7 +209,9 @@ a confidence score on every extracted field.
 - Two artifacts now carry the word "schema": `src/extraction/field_schema.py`
   (IT-79 — the coding card's input fields, for prompting a VLM) and
   `docs/schema/` (this — the output envelope). They are not the same thing and
-  the names should be disambiguated when IT-79 lands.
+  the names should be disambiguated when IT-79 lands. *Done in IT-126 (D024):*
+  the input fields are now `backend/survey/extraction/card_fields.py` and the
+  envelope is `schema/`.
 - `jsonschema` is added to the dev group only, consistent with D001 keeping
   runtime dependencies out until code needs them.
 
