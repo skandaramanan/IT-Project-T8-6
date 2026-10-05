@@ -91,8 +91,15 @@ def _run_pdf(
             path = Path(tmp) / f"p{number:04d}.png"
             try:
                 extract_image(pdf, number, path)
-            except ValueError:
-                log.warning("%s p%d: no scan image, skipped", pdf.name, number)
+            # Not just ValueError: a page whose image can't be decoded (3 pages
+            # are JBIG2, which needs a system jbig2dec) must not cost its PDF.
+            except Exception:
+                log.warning(
+                    "%s p%d: no readable scan image, skipped",
+                    pdf.name,
+                    number,
+                    exc_info=True,
+                )
                 summary.skipped_pages += 1
                 continue
             pages.append(path)

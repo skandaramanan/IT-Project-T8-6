@@ -13,6 +13,7 @@ import jsonschema
 import numpy as np
 from PIL import Image
 
+from survey import pipeline
 from survey.extraction.base import ExtractionResult
 from survey.pipeline import run
 
@@ -149,6 +150,23 @@ def test_a_damaged_pdf_is_skipped_and_the_rest_still_written(tmp_path):
 
     assert summary.failed_pdfs == 1
     assert len(_read(tmp_path)) == 1
+
+
+def test_an_undecodable_page_is_skipped_not_its_whole_pdf(tmp_path, monkeypatch):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    real = pipeline.extract_image
+
+    def extract_image(pdf, number, out_path):
+        if number == 2:
+            raise RuntimeError("jbig2dec binary is not available")
+        real(pdf, number, out_path)
+
+    monkeypatch.setattr(pipeline, "extract_image", extract_image)
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert summary.failed_pdfs == 0
+    assert summary.skipped_pages == 1
+    assert summary.records == 2
 
 
 class NoHouseholdExtractor(FakeExtractor):
