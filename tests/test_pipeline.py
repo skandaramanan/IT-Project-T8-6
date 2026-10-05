@@ -141,6 +141,16 @@ def test_a_failed_card_is_counted_and_the_rest_still_written(tmp_path):
     assert len(_read(tmp_path)) == 1
 
 
+def test_a_damaged_pdf_is_skipped_and_the_rest_still_written(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    (scan_dir / "damaged.pdf").write_bytes(b"not a pdf")
+
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert summary.failed_pdfs == 1
+    assert len(_read(tmp_path)) == 1
+
+
 class NoHouseholdExtractor(FakeExtractor):
     def extract(self, image_path: Path) -> ExtractionResult:
         result = super().extract(image_path)

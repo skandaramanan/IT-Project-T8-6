@@ -4,8 +4,8 @@
 
 Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
 (default ``./results``). Raw Gemini responses go to ``data/runs/<region>/``.
-Settings come from ``.env`` in the working directory. Exits 1 if any card
-failed extraction, so a scheduled run can tell.
+Settings come from ``.env`` in the working directory. Exits 1 if any card or
+PDF failed, so a scheduled run can tell.
 """
 
 from __future__ import annotations
@@ -67,13 +67,15 @@ def main(argv: list[str] | None = None) -> int:
         raw_dir=Path("data/runs") / args.region,
     )
     log.info(
-        "%d records, %d pages skipped, %d cards unreadable, %d cards failed",
+        "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
+        "%d PDFs failed",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
         summary.failed_cards,
+        summary.failed_pdfs,
     )
-    return 1 if summary.failed_cards else 0
+    return 1 if summary.failed_cards or summary.failed_pdfs else 0
 
 
 if __name__ == "__main__":

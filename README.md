@@ -127,10 +127,12 @@ and each coding card is read by Gemini and scored. The output is:
   of that region. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
 - `data/runs/<region>/` — Gemini's raw response for each card, gitignored.
 - A summary line: records written, pages skipped, cards unreadable, cards
-  failed. The command exits 1 if any card failed, so a scheduled run can tell.
+  failed, PDFs failed. The command exits 1 if any card or PDF failed, so a
+  scheduled run can tell.
 
 A page that isn't a card the segmenter recognises is logged with its PDF page
-number and skipped; the rest of the batch carries on.
+number and skipped, and so is a PDF that can't be opened; the rest of the
+batch carries on.
 
 **Assumption:** new batches use the same printed forms as the cards already
 measured (coding cards C1/C2). A batch on a different form would still run, but

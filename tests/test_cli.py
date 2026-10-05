@@ -27,8 +27,13 @@ def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatc
     assert os.environ["SURVEY_OUTPUT_DIR"] == "./mine"
 
 
-@pytest.mark.parametrize(("failed", "code"), [(0, 0), (1, 1)])
-def test_extract_exits_1_only_when_a_card_failed(tmp_path, monkeypatch, failed, code):
+@pytest.mark.parametrize(
+    ("failed", "code"),
+    [({}, 0), ({"failed_cards": 1}, 1), ({"failed_pdfs": 1}, 1)],
+)
+def test_extract_exits_1_only_when_something_failed(
+    tmp_path, monkeypatch, failed, code
+):
     monkeypatch.chdir(tmp_path)  # no real .env, and data/runs lands in tmp
     monkeypatch.setenv("GEMINI_API_KEY", "test")
     monkeypatch.delenv("SURVEY_OUTPUT_DIR", raising=False)
@@ -36,7 +41,7 @@ def test_extract_exits_1_only_when_a_card_failed(tmp_path, monkeypatch, failed, 
 
     def fake_run(scan_dir, **kwargs):
         calls.update(kwargs, scan_dir=scan_dir)
-        return RunSummary(records=3, failed_cards=failed)
+        return RunSummary(records=3, **failed)
 
     monkeypatch.setattr(cli, "run", fake_run)
     (tmp_path / "unit.pdf").touch()

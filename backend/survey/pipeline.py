@@ -46,6 +46,7 @@ class RunSummary:
     skipped_pages: int = 0  # not a card the segmenter recognises
     unreadable_cards: int = 0  # no municipality, dwelling or household number
     failed_cards: int = 0  # extractor raised or returned nothing usable
+    failed_pdfs: int = 0  # could not be opened or split into pages
 
 
 def run(
@@ -61,7 +62,11 @@ def run(
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         log.info("%s: reading", pdf.name)
-        records += _run_pdf(pdf, region, extractor, raw_dir, summary)
+        try:
+            records += _run_pdf(pdf, region, extractor, raw_dir, summary)
+        except Exception:  # without this, one damaged PDF loses the whole batch
+            log.exception("%s: unreadable PDF, skipped", pdf.name)
+            summary.failed_pdfs += 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{region}.jsonl"
