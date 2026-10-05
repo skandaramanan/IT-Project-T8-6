@@ -1,14 +1,11 @@
 """Command line entry point for the extraction pipeline (FR-17, IT-120).
 
-    uv run python src/cli.py extract <scan_dir> --region <name>
+    uv run survey extract <scan_dir> --region <name>
 
 Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
 (default ``./results``). Raw Gemini responses go to ``data/runs/<region>/``.
 Settings come from ``.env`` in the working directory. Exits 1 if any card
 failed extraction, so a scheduled run can tell.
-
-Temporary: IT-126 turns the repo into an installable package, and this becomes
-``uv run survey extract ...`` with the sys.path line below gone.
 """
 
 from __future__ import annotations
@@ -19,11 +16,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "spike"))
-
-from gemini_extractor import GeminiExtractor
-
-from pipeline import run
+from survey.extraction.gemini import GeminiExtractor
+from survey.pipeline import run
 
 log = logging.getLogger("survey")
 
@@ -45,7 +39,7 @@ def load_env(path: Path = Path(".env")) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="survey", description=__doc__)
+    parser = argparse.ArgumentParser(prog="survey")
     commands = parser.add_subparsers(dest="command", required=True)
     extract = commands.add_parser("extract", help="extract a folder of scan PDFs")
     extract.add_argument("scan_dir", type=Path, help="folder of scan PDFs")

@@ -9,12 +9,12 @@ the extractor fails on are each logged and skipped; the run carries on.
 
 Stopgaps until the work they stand in for lands:
 
-- One record per coding card. Association (IT-117) groups households into
-  dwellings and attaches fronts and reverses; until then those are not read.
+- One record per coding card. Association (IT-105) groups households into
+  dwellings, and survey-front extraction is IT-117; until then the other
+  three cards of a record are not read.
 - Gemini alone, so every field scores as NO_SECOND_OPINION (D016), refined by
   its self-reported band when it gave one. The Qwen arm and merge are
   IT-124/IT-125. A field the extractor never returned scores 0.0.
-- Imports from spike/ until IT-126 moves those modules into the package.
 """
 
 from __future__ import annotations
@@ -26,16 +26,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from card_confidence import card_confidence
-from confidence import confidence_for
-from dual_extract import NO_SECOND_OPINION
-from json_extraction import parse_confidence_bands
 from pypdf import PdfReader
-from select_c1_c2_sample import extract_image
 
-from extraction.base import ExtractionResult, Extractor
-from extraction.record import FIELD_MAP, build_record
-from segmentation.segmenter import CardType, classify_page, segment_pages
+from survey.confidence.agreement import NO_SECOND_OPINION
+from survey.confidence.card import card_confidence
+from survey.confidence.field import confidence_for
+from survey.extraction.base import ExtractionResult, Extractor
+from survey.extraction.json_extraction import parse_confidence_bands
+from survey.extraction.record import FIELD_MAP, build_record
+from survey.segmentation.pdf_pages import extract_image
+from survey.segmentation.segmenter import CardType, classify_page, segment_pages
 
 log = logging.getLogger(__name__)
 

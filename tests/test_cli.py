@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-import cli
-from pipeline import RunSummary
+from survey import cli
+from survey.pipeline import RunSummary
 
 
 def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatch):

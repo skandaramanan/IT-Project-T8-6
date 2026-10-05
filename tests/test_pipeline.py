@@ -13,14 +13,12 @@ import jsonschema
 import numpy as np
 from PIL import Image
 
-from extraction.base import ExtractionResult
-from pipeline import run
+from survey.extraction.base import ExtractionResult
+from survey.pipeline import run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
-    (
-        Path(__file__).parent.parent / "docs/schema/record-envelope.schema.json"
-    ).read_text()
+    (Path(__file__).parent.parent / "schema/record-envelope.schema.json").read_text()
 )
 ROLES = ["survey-front", "survey-back", "coding-front", "coding-back"]
 
