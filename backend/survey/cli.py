@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
-from survey.pipeline import run
+from survey.pipeline import MergeRefused, run
 
 log = logging.getLogger("survey")
 
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
             raw_dir=Path("data/runs") / args.region,
         )
-    except ValueError as error:
+    except MergeRefused as error:
         log.error("%s; nothing written", error)
         return 1
     log.info(

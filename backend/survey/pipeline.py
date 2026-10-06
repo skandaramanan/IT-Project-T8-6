@@ -49,6 +49,10 @@ log = logging.getLogger(__name__)
 MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
 
 
+class MergeRefused(ValueError):
+    """The previous results can't be merged safely, so nothing was written."""
+
+
 @dataclass
 class RunSummary:
     records: int = 0
@@ -174,7 +178,7 @@ def _read_card(
             result = ExtractionResult(**json.loads(cache.read_text(encoding="utf-8")))
         except (ValueError, TypeError):  # truncated, or saved before a format change
             log.warning("%s: unreadable cached reading, reading again", where)
-    if result is None or not result.fields:
+    if result is None:
         try:
             result = extractor.extract(image)
         except Exception:  # one bad card must not end a run of hundreds
@@ -242,9 +246,12 @@ def _read_records(path: Path) -> list[dict[str, Any]]:
         if not line.strip():
             continue
         try:
-            records.append(json.loads(line))
-        except ValueError as error:
-            raise ValueError(f"{path} line {number}: not valid JSON") from error
+            record = json.loads(line)
+            if not _coding_cards(record):
+                raise ValueError("no coding card")
+        except (ValueError, KeyError, TypeError) as error:
+            raise MergeRefused(f"{path} line {number}: not a valid record") from error
+        records.append(record)
     return records
 
 
@@ -285,14 +292,14 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
         return
     image, page = min(_coding_cards(old))
     if _household_cards(new) != _household_cards(old):
-        raise ValueError(f"{image} p{page}: reviewed record was regrouped")
+        raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     for path, field in corrections:
         *parents, last = path
         try:
             reduce(getitem, parents, new)[last] = field
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
-            raise ValueError(
+            raise MergeRefused(
                 f"{image} p{page}: corrected field {where} has no place in the "
                 "rebuilt record"
             ) from error

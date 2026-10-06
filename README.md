@@ -137,10 +137,12 @@ batch carries on.
 **Rerunning is safe.** Run the same command again after an interruption, the
 daily cap, or new scans landing in the folder. Cards already read on this
 machine are replayed from `data/runs/`, so only unfinished ones cost a request;
-on another machine every card is read again. Records are matched to their
-previous version by scan and page (D026): no duplicates, a record the run
-didn't rebuild is kept, and a field a reviewer corrected is never overwritten.
-Once review has started, rerun on the branch holding the reviewed file.
+on another machine every card is read again. A card Gemini couldn't read is
+saved too and not sent again; delete its file under `data/runs/` to retry it.
+Records are matched to their previous version by scan and page (D026): no
+duplicates, a record the run didn't rebuild is kept, and a field a reviewer
+corrected is never overwritten. Once review has started, rerun on the branch
+holding the reviewed file.
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache. Changing `GEMINI_MEDIA_RESOLUTION` or a prompt does not,
 so delete `data/runs/<region>/<extractor>/` to force a re-read. After 3 cards

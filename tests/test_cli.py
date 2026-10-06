@@ -5,7 +5,7 @@ import os
 import pytest
 
 from survey import cli
-from survey.pipeline import RunSummary
+from survey.pipeline import MergeRefused, RunSummary
 
 
 def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatch):
@@ -58,13 +58,27 @@ def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(
     monkeypatch.setenv("GEMINI_API_KEY", "test")
 
     def refusing_run(scan_dir, **kwargs):
-        raise ValueError("x.jsonl line 3: not valid JSON")
+        raise MergeRefused("x.jsonl line 3: not a valid record")
 
     monkeypatch.setattr(cli, "run", refusing_run)
     (tmp_path / "unit.pdf").touch()
 
     assert cli.main(["extract", str(tmp_path), "--region", "north"]) == 1
-    assert "x.jsonl line 3: not valid JSON; nothing written" in caplog.text
+    assert "x.jsonl line 3: not a valid record; nothing written" in caplog.text
+
+
+def test_extract_lets_an_unexpected_error_through(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+
+    def buggy_run(scan_dir, **kwargs):
+        raise ValueError("bug")
+
+    monkeypatch.setattr(cli, "run", buggy_run)
+    (tmp_path / "unit.pdf").touch()
+
+    with pytest.raises(ValueError, match="bug"):
+        cli.main(["extract", str(tmp_path), "--region", "north"])
 
 
 def test_extract_refuses_without_an_api_key(tmp_path, monkeypatch):

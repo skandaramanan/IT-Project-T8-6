@@ -16,7 +16,7 @@ from PIL import Image
 
 from survey import pipeline
 from survey.extraction.base import ExtractionResult
-from survey.pipeline import _merge, run
+from survey.pipeline import MergeRefused, _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
@@ -255,7 +255,7 @@ def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
     assert summary.records == 2
 
 
-def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
+def test_an_unusable_reading_is_kept_and_not_bought_again(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     raw_dir = tmp_path / "raw"
     run(
@@ -271,13 +271,13 @@ def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
     )
     assert cached["raw_text"] == "not json"
 
-    retry = FakeExtractor()
+    again = FakeExtractor()
     summary = run(
-        scan_dir, region="north", extractor=retry, out_dir=tmp_path, raw_dir=raw_dir
+        scan_dir, region="north", extractor=again, out_dir=tmp_path, raw_dir=raw_dir
     )
 
-    assert retry.calls == 1
-    assert summary.failed_cards == 0 and summary.records == 2
+    assert again.calls == 0
+    assert summary.failed_cards == 1 and summary.records == 1
 
 
 def test_a_run_stops_after_three_failed_cards_and_keeps_earlier_records(
@@ -385,11 +385,33 @@ def test_a_damaged_results_file_stops_the_run_before_any_extraction(tmp_path):
     (tmp_path / "north.jsonl").write_text("not json\n")
     extractor = FakeExtractor()
 
-    with pytest.raises(ValueError, match="north.jsonl line 1"):
+    with pytest.raises(MergeRefused, match="north.jsonl line 1"):
         run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
 
     assert extractor.calls == 0
     assert (tmp_path / "north.jsonl").read_text() == "not json\n"
+
+
+@pytest.mark.parametrize("line", ["null", "[]", '{"dwelling": {}}', "no-coding-card"])
+def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
+    tmp_path, line
+):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    if line == "no-coding-card":
+        run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+        record = _read(tmp_path)[0]
+        for card in record["dwelling"]["households"][0]["cards"]:
+            if card["role"] == "coding-front":
+                card["role"] = "survey-front"
+        line = json.dumps(record)
+    (tmp_path / "north.jsonl").write_text(line + "\n")
+    extractor = FakeExtractor()
+
+    with pytest.raises(MergeRefused, match="north.jsonl line 1"):
+        run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
+
+    assert extractor.calls == 0
+    assert (tmp_path / "north.jsonl").read_text() == line + "\n"
 
 
 def test_a_damaged_saved_reading_is_read_again_not_fatal_to_its_pdf(tmp_path):
@@ -487,15 +509,15 @@ def test_merge_replaces_overlapping_records_and_keeps_the_rest():
 
 
 def test_merge_refuses_to_move_a_correction_onto_a_regrouped_record():
-    with pytest.raises(ValueError, match="regrouped"):
+    with pytest.raises(MergeRefused, match="regrouped"):
         _merge([_stub(3, garden=CORRECTED)], [_stub(3, 7)])
 
 
 def test_merge_refuses_a_correction_with_no_place_in_the_rebuilt_record():
-    with pytest.raises(ValueError, match="dwelling/gone/x"):
+    with pytest.raises(MergeRefused, match="dwelling/gone/x"):
         _merge([_stub(3, gone={"x": CORRECTED})], [_stub(3)])
 
 
 def test_merge_refuses_a_correction_when_households_are_reordered():
-    with pytest.raises(ValueError, match="regrouped"):
+    with pytest.raises(MergeRefused, match="regrouped"):
         _merge([_stub(3, 7, garden=CORRECTED)], [_stub(7, 3)])
