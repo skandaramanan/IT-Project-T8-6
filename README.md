@@ -104,14 +104,43 @@ Why the scans live in Drive, and why secret scanning works this way:
 
 ## Running
 
-No pipeline command yet (IT-120 adds `uv run survey extract`). Run anything
-through `uv run` so it uses the pinned environment:
+Run anything through `uv run` so it uses the pinned environment:
 
 ```bash
 uv run pytest                                  # tests
 uv run ruff check .                            # lint
 uv run python benchmark/run_benchmark.py --help  # calibration harness
 ```
+
+### Extracting a new batch of scans
+
+Put the batch's PDFs in one folder, set `GEMINI_API_KEY` in `.env`, and run:
+
+```bash
+uv run survey extract data/scans/northcote --region northcote
+```
+
+Every PDF in the folder is split into pages, the pages are sorted into cards,
+and each coding card is read by Gemini and scored. The output is:
+
+- `results/<region>.jsonl` — one D007 record per line, overwritten on each run
+  of that region. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+- `data/runs/<region>/` — Gemini's raw response for each card, gitignored.
+- A summary line: records written, pages skipped, cards unreadable, cards
+  failed, PDFs failed. The command exits 1 if any card or PDF failed, so a
+  scheduled run can tell.
+
+A page that isn't a card the segmenter recognises is logged with its PDF page
+number and skipped, and so is a PDF that can't be opened; the rest of the
+batch carries on.
+
+**Assumption:** new batches use the same printed forms as the cards already
+measured (coding cards C1/C2). A batch on a different form would still run, but
+the field schema and the confidence numbers were calibrated on these forms
+only, so its output can't be trusted without a new benchmark.
+
+For now only the coding card is extracted, one record per card. Grouping cards
+into dwellings (IT-105) and reading survey fronts (IT-117) land separately.
 
 ## Contributing
 
