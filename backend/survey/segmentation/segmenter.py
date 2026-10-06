@@ -143,6 +143,23 @@ def _resolve_page_roles(pages: list[Path]) -> list[CardType | None]:
     return roles
 
 
+def segment_pages(pages: list[Path], source_scan: Path) -> list[SegmentedCard]:
+    """Every card in a multi-record scan, in scan order; ``pages`` must be in
+    scan order. Blank and unrecognised pages are left out."""
+    return [
+        SegmentedCard(
+            card_type=card_type,
+            image_path=page,
+            source_scan=source_scan,
+            page_index=index,
+        )
+        for index, (page, card_type) in enumerate(
+            zip(pages, _resolve_page_roles(pages))
+        )
+        if card_type is not None
+    ]
+
+
 def segment_scan(
     pages: list[Path], source_scan: Path
 ) -> dict[CardType, SegmentedCard | None]:
@@ -152,13 +169,6 @@ def segment_scan(
         CardType.REVERSE: None,
         CardType.NUMERIC_CODING: None,
     }
-    for index, (page, card_type) in enumerate(zip(pages, _resolve_page_roles(pages))):
-        if card_type is None:
-            continue
-        result[card_type] = SegmentedCard(
-            card_type=card_type,
-            image_path=page,
-            source_scan=source_scan,
-            page_index=index,
-        )
+    for card in segment_pages(pages, source_scan):
+        result[card.card_type] = card
     return result

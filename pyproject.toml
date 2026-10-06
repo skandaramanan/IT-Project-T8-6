@@ -16,6 +16,9 @@ dependencies = [
 # that runs them -- see backend/survey/extraction/qwen.py. Keeping them out is what
 # holds `uv sync --locked` in CI to seconds.
 
+[project.scripts]
+survey = "survey.cli:main"
+
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
