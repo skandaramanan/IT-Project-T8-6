@@ -1,0 +1,48 @@
+# D026 — Reruns merge by coding card, not record_id (amends D007)
+
+**Status:** Accepted
+**Date:** 2026-10-06
+**Decided by:** Skanda Ramanan (IT-121 assignee)
+**Linear issue:** IT-121
+
+## Context
+
+IT-121 asks reruns to merge output "by `record_id` (D007)". But `record_id`
+is read by the model: re-extracting a card can change it, and two cards can
+read the same one. Reruns without a reading cache are normal, not rare,
+because `results/` is committed (D025) and `data/runs/` is not, and the
+full-corpus run is split across five machines (IT-123).
+
+## Decision
+
+A record is matched to its previous version by the set of coding cards it was
+read from, `(PDF name, PDF page)`. A rebuilt record replaces every previous
+record it shares a card with. A previous record sharing no card with the run
+is kept. A field with `origin: "corrected"` is copied onto the rebuilt record
+at the same path, and only when the rebuilt record has the same households,
+in the same order, with the same cards; otherwise the run stops and writes
+nothing.
+
+## Alternatives
+
+- **`record_id`:** a misread on rerun duplicates the household, or orphans its
+  corrections.
+- **The first household's card only:** once records are dwellings (IT-105), a
+  card moving into another dwelling leaves a stale duplicate.
+
+## Consequences
+
+- No duplicates by construction, and a capped or failed run never truncates
+  the file.
+- A record whose scan is removed from the folder stays until deleted by hand.
+- Without the reading cache (a rerun on another machine) every card is read
+  again, so uncorrected values may change; corrected fields, and the
+  record_id they imply, are kept.
+- PDF names must be unique within a region: two scans with the same name
+  would share a merge key and a cache entry.
+- Card `image` and `page` must stay the PDF name and PDF page number when
+  association is wired in.
+
+## Revisit if
+
+Records gain a stable identifier that isn't model-read.

@@ -3,7 +3,8 @@
     uv run survey extract <scan_dir> --region <name>
 
 Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
-(default ``./results``). Raw Gemini responses go to ``data/runs/<region>/``.
+(default ``./results``). Each card's reading is cached in
+``data/runs/<region>/<extractor>/`` and replayed on a rerun.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed, so a scheduled run can tell.
 """
@@ -17,7 +18,7 @@ import sys
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
-from survey.pipeline import run
+from survey.pipeline import MergeRefused, run
 
 log = logging.getLogger("survey")
 
@@ -50,8 +51,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
-    # Checked before anything is written: an empty or mistyped folder would
-    # otherwise replace the region's earlier output with an empty file.
+    # Fail loudly on an empty or mistyped folder rather than run on nothing.
     if not any(args.scan_dir.glob("*.pdf")):
         parser.error(f"no scan PDFs in {args.scan_dir}")
 
@@ -59,13 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     if not extractor.is_available():
         parser.error("GEMINI_API_KEY is not set; add it to .env")
 
-    summary = run(
-        args.scan_dir,
-        region=args.region,
-        extractor=extractor,
-        out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
-        raw_dir=Path("data/runs") / args.region,
-    )
+    try:
+        summary = run(
+            args.scan_dir,
+            region=args.region,
+            extractor=extractor,
+            out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
+            raw_dir=Path("data/runs") / args.region,
+        )
+    except MergeRefused as error:
+        log.error("%s; nothing written", error)
+        return 1
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
         "%d PDFs failed",

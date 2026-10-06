@@ -2,10 +2,14 @@
 
 Each PDF is split into page images, sorted into cards by the segmenter, and
 every numeric coding card is extracted, built into a D007 record and scored.
-A region's records go to ``<out_dir>/<region>.jsonl``, overwritten each run.
+A region's records go to ``<out_dir>/<region>.jsonl``. Reruns are safe
+(NFR-07, NFR-04, D026): cached readings are replayed, records are merged with
+the previous file by the coding cards they were read from, and a reviewer's
+``corrected`` field is never overwritten.
 
 A page the segmenter cannot place, a card with no readable identity and a card
-the extractor fails on are each logged and skipped; the run carries on.
+the extractor fails on are each logged and skipped; the run carries on unless
+3 cards in a row get no answer (the daily cap or an outage).
 
 Stopgaps until the work they stand in for lands:
 
@@ -22,7 +26,10 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass
+from functools import reduce
+from operator import getitem
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +40,17 @@ from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_confidence_bands
-from survey.extraction.record import FIELD_MAP, build_record
+from survey.extraction.record import FIELD_MAP, build_record, build_record_id
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import CardType, classify_page, segment_pages
 
 log = logging.getLogger(__name__)
+
+MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
+
+
+class MergeRefused(ValueError):
+    """The previous results can't be merged safely, so nothing was written."""
 
 
 @dataclass
@@ -47,6 +60,7 @@ class RunSummary:
     unreadable_cards: int = 0  # no municipality, dwelling or household number
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
+    failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
 
 
 def run(
@@ -59,8 +73,12 @@ def run(
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
     summary = RunSummary()
+    out_path = out_dir / f"{region}.jsonl"
+    _read_records(out_path)  # fail fast: a damaged file must cost no quota
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
+        if summary.failure_streak >= MAX_FAILURE_STREAK:
+            break
         log.info("%s: reading", pdf.name)
         try:
             records += _run_pdf(pdf, region, extractor, raw_dir, summary)
@@ -68,11 +86,22 @@ def run(
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
 
+    if summary.failure_streak >= MAX_FAILURE_STREAK:
+        log.error(
+            "%d cards failed in a row; stopping, rerun to resume",
+            MAX_FAILURE_STREAK,
+        )
+    # re-read: corrections may have been saved meanwhile
+    merged = _merge(_read_records(out_path), records)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{region}.jsonl"
-    out_path.write_text("".join(json.dumps(record) + "\n" for record in records))
-    summary.records = len(records)
-    log.info("wrote %d records to %s", len(records), out_path)
+    _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
+    summary.records = len(merged)
+    log.info(
+        "wrote %d records to %s, %d kept from the previous run",
+        len(merged),
+        out_path,
+        len(merged) - len(records),
+    )
     return summary
 
 
@@ -117,6 +146,8 @@ def _run_pdf(
                 summary.skipped_pages += 1
 
         for card in cards:
+            if summary.failure_streak >= MAX_FAILURE_STREAK:
+                break
             if card.card_type != CardType.NUMERIC_CODING:
                 continue
             number = page_numbers[card.page_index]
@@ -138,19 +169,31 @@ def _read_card(
     summary: RunSummary,
 ) -> dict[str, Any] | None:
     where = f"{pdf.name} p{number}"
-    try:
-        result = extractor.extract(image)
-    except Exception:  # one bad card must not end a run of hundreds
-        log.exception("%s: extraction failed, skipped", where)
-        summary.failed_cards += 1
-        return None
-    if raw_dir is not None:
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        (raw_dir / f"{pdf.stem}_p{number:04d}.txt").write_text(result.raw_text or "")
+    cache = (
+        raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
+    )
+    result = None
+    if cache and cache.exists():
+        try:
+            result = ExtractionResult(**json.loads(cache.read_text(encoding="utf-8")))
+        except (ValueError, TypeError):  # truncated, or saved before a format change
+            log.warning("%s: unreadable cached reading, reading again", where)
+    if result is None:
+        try:
+            result = extractor.extract(image)
+        except Exception:  # one bad card must not end a run of hundreds
+            log.exception("%s: extraction failed, skipped", where)
+            summary.failed_cards += 1
+            summary.failure_streak += 1
+            return None
+        if cache and result.raw_text:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _write_atomic(cache, json.dumps(asdict(result)))
     if not result.fields:
         log.error("%s: no usable reading, skipped", where)
         summary.failed_cards += 1
         return None
+    summary.failure_streak = 0
     try:
         record = build_record(
             result.fields,
@@ -193,3 +236,102 @@ def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None
         field["confidence"] = score
         scores.append(score)
     household["cards"][0]["confidence"] = card_confidence(scores)
+
+
+def _read_records(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records = []
+    for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+            if not _coding_cards(record):
+                raise ValueError("no coding card")
+        except (ValueError, KeyError, TypeError) as error:
+            raise MergeRefused(f"{path} line {number}: not a valid record") from error
+        records.append(record)
+    return records
+
+
+def _household_cards(record: dict[str, Any]) -> list[list[tuple[str, int]]]:
+    return [
+        [
+            (card["image"], card["page"])
+            for card in household["cards"]
+            if card["role"] == "coding-front"
+        ]
+        for household in record["dwelling"]["households"]
+    ]
+
+
+def _coding_cards(record: dict[str, Any]) -> frozenset[tuple[str, int]]:
+    """The merge key (D026): scan and page, which a re-extraction can't change."""
+    return frozenset(card for cards in _household_cards(record) for card in cards)
+
+
+def _merge(
+    previous: list[dict[str, Any]], records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rebuilt records replace the previous ones they share a card with."""
+    by_card = {card: record for record in records for card in _coding_cards(record)}
+    merged = list(records)
+    for old in previous:
+        rebuilt = _coding_cards(old) & by_card.keys()
+        if rebuilt:
+            _keep_corrections(old, by_card[min(rebuilt)])
+        else:
+            merged.append(old)
+    return sorted(merged, key=lambda record: min(_coding_cards(record)))
+
+
+def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
+    corrections = list(_corrected_fields(old))
+    if not corrections:
+        return
+    image, page = min(_coding_cards(old))
+    if _household_cards(new) != _household_cards(old):
+        raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
+    for path, field in corrections:
+        *parents, last = path
+        try:
+            reduce(getitem, parents, new)[last] = field
+        except (KeyError, IndexError) as error:
+            where = "/".join(map(str, path))
+            raise MergeRefused(
+                f"{image} p{page}: corrected field {where} has no place in the "
+                "rebuilt record"
+            ) from error
+    dwelling = new["dwelling"]
+    for kept, household in zip(old["dwelling"]["households"], dwelling["households"]):
+        try:
+            household["record_id"] = build_record_id(
+                dwelling["municipality"]["value"] or "",
+                dwelling["dwelling_no"]["value"] or "",
+                household["household_no"]["value"] or "",
+            )
+        except ValueError:  # a blanked identity can't form an id
+            household["record_id"] = kept["record_id"]
+
+
+def _corrected_fields(
+    node: Any, path: tuple = ()
+) -> Iterator[tuple[tuple, dict[str, Any]]]:
+    if isinstance(node, dict):
+        if node.get("origin") == "corrected":
+            yield path, node
+            return
+        children = node.items()
+    elif isinstance(node, list):
+        children = enumerate(node)
+    else:
+        return
+    for key, child in children:
+        yield from _corrected_fields(child, (*path, key))
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
+    tmp.replace(path)

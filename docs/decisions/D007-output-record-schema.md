@@ -1,6 +1,6 @@
 # D007 — Output record schema
 
-**Status:** Accepted, provisional — the envelope is settled, the field set is not
+**Status:** Accepted, provisional — the envelope is settled, the field set is not; amended by [D026](D026-rerun-merge-key.md) (reruns merge by coding card)
 **Date:** 2026-08-22
 **Decided by:** Skanda Ramanan (IT-39 assignee)
 **Linear issue:** IT-39
@@ -131,8 +131,8 @@ reference, not on the fields.
 One dwelling per line, one file per region batch. Each line repeats `region` and
 `batch` so a record stays self-describing when files are concatenated. This is
 what makes FR-02's region partitioning, NFR-04's idempotent re-runs and NFR-07's
-mid-batch resumability cheap: a run appends lines, and a resume reads back which
-`record_id`s are already present.
+mid-batch resumability cheap; how a rerun merges with the previous file is
+D026.
 
 ### The field set is out of scope here
 
