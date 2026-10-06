@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-# Copy of D016's `agree` score; src/ can't import spike/. A test checks they match.
-AGREE_CONFIDENCE = 0.97
+from survey.confidence.agreement import AGREE
+from survey.confidence.field import CONFIDENCE_BY_CLASS
+
+# D016's `agree` score, so the cutoff moves when D016 is recalibrated (D022).
+AGREE_CONFIDENCE = CONFIDENCE_BY_CLASS[AGREE]
 
 
 def needs_review(field: Mapping[str, Any]) -> bool:

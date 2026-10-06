@@ -1,16 +1,13 @@
 """IT-108: the review-routing check (FR-11, D022).
 
-One group of tests per acceptance criterion, plus a guard that the cutoff still
-tracks D016's ``agree`` constant.
+One group of tests per acceptance criterion.
 """
 
 import pytest
-from confidence import CONFIDENCE_BY_CLASS
-from dual_extract import AGREE
 
-from extraction.field_schema import FIELD_SCHEMA_BY_NAME
-from extraction.record import build_field
-from review.routing import AGREE_CONFIDENCE, needs_review
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
+from survey.extraction.record import build_field
+from survey.review.routing import needs_review
 
 
 def field(status: str, confidence: float | None) -> dict:
@@ -46,11 +43,6 @@ def test_missing_keys_are_flagged():
     assert needs_review({}) is True
     assert needs_review({"status": "ok"}) is True
     assert needs_review({"confidence": 0.97}) is True
-
-
-def test_cutoff_tracks_d016_agree_constant():
-    """D022: the cutoff is D016's ``agree``, not a free-standing 0.97."""
-    assert AGREE_CONFIDENCE == CONFIDENCE_BY_CLASS[AGREE]
 
 
 def test_freshly_built_fields_are_flagged_today():
