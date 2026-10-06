@@ -2,7 +2,9 @@
 
 Each PDF is split into page images, sorted into cards by the segmenter, and
 every numeric coding card is extracted, built into a D007 record and scored.
-A region's records go to ``<out_dir>/<region>.jsonl``, overwritten each run.
+A region's records are merged into ``<out_dir>/<region>.jsonl`` one PDF at a
+time (``survey.export``), so an interrupted run keeps the PDFs it finished and
+a rerun skips them unless ``resume`` is off.
 
 A page the segmenter cannot place, a card with no readable identity and a card
 the extractor fails on are each logged and skipped; the run carries on.
@@ -19,7 +21,6 @@ Stopgaps until the work they stand in for lands:
 
 from __future__ import annotations
 
-import json
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from typing import Any
 
 from pypdf import PdfReader
 
+from survey import export
 from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
@@ -47,6 +49,8 @@ class RunSummary:
     unreadable_cards: int = 0  # no municipality, dwelling or household number
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
+    invalid_records: int = 0  # failed the envelope, not written
+    exported_pdfs: int = 0  # already in the output from an earlier run
 
 
 def run(
@@ -56,23 +60,31 @@ def run(
     extractor: Extractor,
     out_dir: Path,
     raw_dir: Path | None = None,
+    resume: bool = True,
 ) -> RunSummary:
-    """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
+    """Process every PDF in ``scan_dir`` and merge into ``<region>.jsonl``."""
     summary = RunSummary()
-    records: list[dict[str, Any]] = []
+    out_path = out_dir / f"{region}.jsonl"
+    done = export.exported_scans(out_path) if resume else set()
     for pdf in sorted(scan_dir.glob("*.pdf")):
+        if pdf.name in done:
+            log.info("%s: already exported, skipped", pdf.name)
+            summary.exported_pdfs += 1
+            continue
         log.info("%s: reading", pdf.name)
         try:
-            records += _run_pdf(pdf, region, extractor, raw_dir, summary)
+            records = _run_pdf(pdf, region, extractor, raw_dir, summary)
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
+            continue
+        failures = export.write_jsonl(out_path, records)
+        for failure in failures:
+            log.error("%s: invalid record, not written: %s", pdf.name, failure)
+        summary.invalid_records += len(failures)
+        summary.records += len(records) - len(failures)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{region}.jsonl"
-    out_path.write_text("".join(json.dumps(record) + "\n" for record in records))
-    summary.records = len(records)
-    log.info("wrote %d records to %s", len(records), out_path)
+    log.info("wrote %d records to %s", summary.records, out_path)
     return summary
 
 

@@ -81,6 +81,10 @@ def _read(out_dir: Path) -> list[dict]:
     return [json.loads(line) for line in (out_dir / "north.jsonl").open()]
 
 
+def _households(out_dir: Path) -> list[dict]:
+    return [h for r in _read(out_dir) for h in r["dwelling"]["households"]]
+
+
 def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     out_dir, raw_dir = tmp_path / "out", tmp_path / "raw"
@@ -93,19 +97,19 @@ def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
         raw_dir=raw_dir,
     )
 
+    # Both cards read as dwelling 27-0006, so one line holding two households.
     records = _read(out_dir)
-    assert summary.records == len(records) == 2
+    households = _households(out_dir)
+    assert len(records) == 1
+    assert summary.records == len(households) == 2
     assert summary.skipped_pages == summary.failed_cards == 0
-    for record in records:
-        jsonschema.validate(record, SCHEMA)
-        card = record["dwelling"]["households"][0]["cards"][0]
+    jsonschema.validate(records[0], SCHEMA)
+    for household in households:
+        card = household["cards"][0]
         assert card["image"] == "unit.pdf"
         assert isinstance(card["confidence"], float)
-    household = records[0]["dwelling"]["households"][0]
-    assert household["record_id"] == "27-0006-01"
-    assert [
-        c["page"] for r in records for c in r["dwelling"]["households"][0]["cards"]
-    ] == [3, 7]
+    assert [h["record_id"] for h in households] == ["27-0006-01", "27-0006-02"]
+    assert [h["cards"][0]["page"] for h in households] == [3, 7]
     # D016: banded high is 0.92, unbanded flash-lite 0.91, a field never returned 0.0
     assert records[0]["dwelling"]["house"]["garden"]["confidence"] == 0.92
     assert records[0]["dwelling"]["municipality"]["confidence"] == 0.91
@@ -189,9 +193,40 @@ def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
         )
 
     assert summary.unreadable_cards == 1
-    assert [r["dwelling"]["households"][0]["record_id"] for r in _read(tmp_path)] == [
-        "27-0006-02"
-    ]
+    assert [h["record_id"] for h in _households(tmp_path)] == ["27-0006-02"]
     assert "unit.pdf p3: cannot build record_id without Number of Household" in (
         caplog.text
     )
+
+
+def test_a_rerun_skips_exported_pdfs_and_changes_nothing(tmp_path):
+    """NFR-04 / NFR-07: no duplicates, and finished PDFs are not read again."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    first = (tmp_path / "north.jsonl").read_text()
+
+    extractor = FakeExtractor()
+    summary = run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
+
+    assert (summary.exported_pdfs, extractor.calls) == (1, 0)
+    assert (tmp_path / "north.jsonl").read_text() == first
+
+
+def test_a_fresh_rerun_reads_again_without_duplicating(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    extractor = FakeExtractor()
+    run(
+        scan_dir,
+        region="north",
+        extractor=extractor,
+        out_dir=tmp_path,
+        resume=False,
+    )
+
+    assert extractor.calls == 2
+    assert [h["record_id"] for h in _households(tmp_path)] == [
+        "27-0006-01",
+        "27-0006-02",
+    ]

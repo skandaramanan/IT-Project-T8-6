@@ -2,8 +2,9 @@
 
     uv run survey extract <scan_dir> --region <name>
 
-Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
-(default ``./results``). Raw Gemini responses go to ``data/runs/<region>/``.
+Reads every PDF in ``scan_dir`` and merges its records into
+``<SURVEY_OUTPUT_DIR>/<region>.jsonl`` (default ``./results``). PDFs already in
+that file are skipped; ``--fresh`` reads them again. Raw Gemini responses go to ``data/runs/<region>/``.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed, so a scheduled run can tell.
 """
@@ -46,12 +47,16 @@ def main(argv: list[str] | None = None) -> int:
     extract.add_argument(
         "--region", required=True, help="region name; also the output file name"
     )
+    extract.add_argument(
+        "--fresh",
+        action="store_true",
+        help="re-read PDFs already exported; reviewer corrections are still kept",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
-    # Checked before anything is written: an empty or mistyped folder would
-    # otherwise replace the region's earlier output with an empty file.
+    # A mistyped folder is far likelier than an intentionally empty one.
     if not any(args.scan_dir.glob("*.pdf")):
         parser.error(f"no scan PDFs in {args.scan_dir}")
 
@@ -65,17 +70,21 @@ def main(argv: list[str] | None = None) -> int:
         extractor=extractor,
         out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
         raw_dir=Path("data/runs") / args.region,
+        resume=not args.fresh,
     )
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
-        "%d PDFs failed",
+        "%d PDFs failed, %d records invalid, %d PDFs already exported",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
         summary.failed_cards,
         summary.failed_pdfs,
+        summary.invalid_records,
+        summary.exported_pdfs,
     )
-    return 1 if summary.failed_cards or summary.failed_pdfs else 0
+    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
