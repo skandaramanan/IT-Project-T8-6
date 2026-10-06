@@ -11,6 +11,7 @@ from pathlib import Path
 
 import jsonschema
 import numpy as np
+import pytest
 from PIL import Image
 
 from survey import pipeline
@@ -48,6 +49,21 @@ class FakeExtractor:
         }
         raw = {**fields, "Garden": {"value": "1", "confidence": "high"}}
         return ExtractionResult(fields=fields, raw_text=json.dumps(raw))
+
+
+class KilledExtractor(FakeExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        if self.calls == 1:
+            raise KeyboardInterrupt
+        return super().extract(image_path)
+
+
+class UnreadableOnceExtractor(FakeExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        if self.calls == 1:
+            return ExtractionResult(raw_text="not json")
+        return result
 
 
 def _batch(tmp_path: Path, pages: list[Path]) -> Path:
@@ -110,9 +126,10 @@ def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
     assert records[0]["dwelling"]["house"]["garden"]["confidence"] == 0.92
     assert records[0]["dwelling"]["municipality"]["confidence"] == 0.91
     assert records[0]["dwelling"]["house"]["bathroom"]["confidence"] == 0.0
-    assert sorted(p.name for p in raw_dir.iterdir()) == [
-        "unit_p0003.txt",
-        "unit_p0007.txt",
+    cache = raw_dir / "gemini-3.5-flash-lite"
+    assert sorted(p.name for p in cache.iterdir()) == [
+        "unit_p0003.json",
+        "unit_p0007.json",
     ]
 
 
@@ -195,3 +212,44 @@ def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
     assert "unit.pdf p3: cannot build record_id without Number of Household" in (
         caplog.text
     )
+
+
+def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    with pytest.raises(KeyboardInterrupt):
+        run(
+            scan_dir,
+            region="north",
+            extractor=KilledExtractor(),
+            out_dir=tmp_path,
+            raw_dir=raw_dir,
+        )
+
+    resumed = FakeExtractor()
+    summary = run(
+        scan_dir, region="north", extractor=resumed, out_dir=tmp_path, raw_dir=raw_dir
+    )
+
+    assert resumed.calls == 1
+    assert summary.records == 2
+
+
+def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=UnreadableOnceExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+
+    retry = FakeExtractor()
+    summary = run(
+        scan_dir, region="north", extractor=retry, out_dir=tmp_path, raw_dir=raw_dir
+    )
+
+    assert retry.calls == 1
+    assert summary.failed_cards == 0 and summary.records == 2

@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -138,15 +138,22 @@ def _read_card(
     summary: RunSummary,
 ) -> dict[str, Any] | None:
     where = f"{pdf.name} p{number}"
-    try:
-        result = extractor.extract(image)
-    except Exception:  # one bad card must not end a run of hundreds
-        log.exception("%s: extraction failed, skipped", where)
-        summary.failed_cards += 1
-        return None
-    if raw_dir is not None:
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        (raw_dir / f"{pdf.stem}_p{number:04d}.txt").write_text(result.raw_text or "")
+    cache = (
+        raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
+    )
+    result = None
+    if cache and cache.exists():
+        result = ExtractionResult(**json.loads(cache.read_text()))
+    if result is None or not result.fields:
+        try:
+            result = extractor.extract(image)
+        except Exception:  # one bad card must not end a run of hundreds
+            log.exception("%s: extraction failed, skipped", where)
+            summary.failed_cards += 1
+            return None
+        if cache and result.raw_text:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _write_atomic(cache, json.dumps(asdict(result)))
     if not result.fields:
         log.error("%s: no usable reading, skipped", where)
         summary.failed_cards += 1
@@ -193,3 +200,9 @@ def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None
         field["confidence"] = score
         scores.append(score)
     household["cards"][0]["confidence"] = card_confidence(scores)
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)

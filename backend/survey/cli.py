@@ -3,7 +3,8 @@
     uv run survey extract <scan_dir> --region <name>
 
 Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
-(default ``./results``). Raw Gemini responses go to ``data/runs/<region>/``.
+(default ``./results``). Each card's reading is cached in
+``data/runs/<region>/<extractor>/`` and replayed on a rerun.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed, so a scheduled run can tell.
 """
