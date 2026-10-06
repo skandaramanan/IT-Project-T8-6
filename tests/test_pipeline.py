@@ -385,11 +385,99 @@ def test_a_damaged_results_file_stops_the_run_before_any_extraction(tmp_path):
     (tmp_path / "north.jsonl").write_text("not json\n")
     extractor = FakeExtractor()
 
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match="north.jsonl line 1"):
         run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
 
     assert extractor.calls == 0
     assert (tmp_path / "north.jsonl").read_text() == "not json\n"
+
+
+def test_a_damaged_saved_reading_is_read_again_not_fatal_to_its_pdf(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+    cache = raw_dir / "gemini-3.5-flash-lite"
+    (cache / "unit_p0003.json").write_text("")
+    (cache / "unit_p0007.json").write_text('{"bogus": 1}')
+
+    again = FakeExtractor()
+    summary = run(
+        scan_dir, region="north", extractor=again, out_dir=tmp_path, raw_dir=raw_dir
+    )
+
+    assert again.calls == 2
+    assert summary.failed_pdfs == 0
+    assert summary.records == 2
+
+
+class CorrectingExtractor(FakeExtractor):
+    """A reviewer saves a correction while the run is under way."""
+
+    def __init__(self, out_dir: Path, corrected: dict) -> None:
+        super().__init__()
+        self.out_dir, self.corrected = out_dir, corrected
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        if self.calls == 0:
+            records = _read(self.out_dir)
+            records[0]["dwelling"]["house"]["garden"] = self.corrected
+            _write(self.out_dir, records)
+        return super().extract(image_path)
+
+
+def test_a_correction_saved_during_a_run_is_not_overwritten(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    garden = _read(tmp_path)[0]["dwelling"]["house"]["garden"]
+    corrected = {**garden, **CORRECTED}
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=CorrectingExtractor(tmp_path, corrected),
+        out_dir=tmp_path,
+    )
+
+    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+
+
+def test_a_blanked_household_number_keeps_the_record_id(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    household = records[0]["dwelling"]["households"][0]
+    corrected = {
+        **household["household_no"],
+        "value": None,
+        "status": "no_data",
+        "origin": "corrected",
+        "original_value": "1",
+    }
+    household["household_no"] = corrected
+    _write(tmp_path, records)
+
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    household = _read(tmp_path)[0]["dwelling"]["households"][0]
+    assert household["record_id"] == "27-0006-01"
+    assert household["household_no"] == corrected
+
+
+def test_a_results_file_with_a_bom_is_read_and_rerun(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    path = tmp_path / "north.jsonl"
+    path.write_text("\ufeff" + path.read_text(), encoding="utf-8")
+
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert summary.records == 2
 
 
 def test_merge_replaces_overlapping_records_and_keeps_the_rest():

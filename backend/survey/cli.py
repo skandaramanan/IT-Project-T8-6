@@ -59,13 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     if not extractor.is_available():
         parser.error("GEMINI_API_KEY is not set; add it to .env")
 
-    summary = run(
-        args.scan_dir,
-        region=args.region,
-        extractor=extractor,
-        out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
-        raw_dir=Path("data/runs") / args.region,
-    )
+    try:
+        summary = run(
+            args.scan_dir,
+            region=args.region,
+            extractor=extractor,
+            out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
+            raw_dir=Path("data/runs") / args.region,
+        )
+    except ValueError as error:
+        log.error("%s; nothing written", error)
+        return 1
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
         "%d PDFs failed",

@@ -70,7 +70,7 @@ def run(
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    previous = _read_records(out_path)  # first, so a damaged file costs no quota
+    _read_records(out_path)  # fail fast: a damaged file must cost no quota
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
@@ -87,7 +87,8 @@ def run(
             "%d cards failed in a row; stopping, rerun to resume",
             MAX_FAILURE_STREAK,
         )
-    merged = _merge(previous, records)
+    # re-read: corrections may have been saved meanwhile
+    merged = _merge(_read_records(out_path), records)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
     summary.records = len(merged)
@@ -169,7 +170,10 @@ def _read_card(
     )
     result = None
     if cache and cache.exists():
-        result = ExtractionResult(**json.loads(cache.read_text()))
+        try:
+            result = ExtractionResult(**json.loads(cache.read_text(encoding="utf-8")))
+        except (ValueError, TypeError):  # truncated, or saved before a format change
+            log.warning("%s: unreadable cached reading, reading again", where)
     if result is None or not result.fields:
         try:
             result = extractor.extract(image)
@@ -233,8 +237,15 @@ def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None
 def _read_records(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    text = path.read_text(encoding="utf-8")
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    records = []
+    for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError as error:
+            raise ValueError(f"{path} line {number}: not valid JSON") from error
+    return records
 
 
 def _household_cards(record: dict[str, Any]) -> list[list[tuple[str, int]]]:
@@ -286,12 +297,15 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
                 "rebuilt record"
             ) from error
     dwelling = new["dwelling"]
-    for household in dwelling["households"]:
-        household["record_id"] = build_record_id(
-            dwelling["municipality"]["value"] or "",
-            dwelling["dwelling_no"]["value"] or "",
-            household["household_no"]["value"] or "",
-        )
+    for kept, household in zip(old["dwelling"]["households"], dwelling["households"]):
+        try:
+            household["record_id"] = build_record_id(
+                dwelling["municipality"]["value"] or "",
+                dwelling["dwelling_no"]["value"] or "",
+                household["household_no"]["value"] or "",
+            )
+        except ValueError:  # a blanked identity can't form an id
+            household["record_id"] = kept["record_id"]
 
 
 def _corrected_fields(

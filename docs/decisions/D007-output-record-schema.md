@@ -1,6 +1,6 @@
 # D007 — Output record schema
 
-**Status:** Accepted, provisional — the envelope is settled, the field set is not
+**Status:** Accepted, provisional — the envelope is settled, the field set is not; amended by [D026](D026-rerun-merge-key.md) (reruns merge by coding card)
 **Date:** 2026-08-22
 **Decided by:** Skanda Ramanan (IT-39 assignee)
 **Linear issue:** IT-39
