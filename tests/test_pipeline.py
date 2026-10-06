@@ -66,6 +66,20 @@ class UnreadableOnceExtractor(FakeExtractor):
         return result
 
 
+class GarbageExtractor(FakeExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        return ExtractionResult(raw_text="not json")
+
+
+class FlakyExtractor(FakeExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        if self.calls + 1 == 3:
+            return super().extract(image_path)
+        self.calls += 1
+        raise RuntimeError("503 from the API")
+
+
 class DownExtractor(FakeExtractor):
     def extract(self, image_path: Path) -> ExtractionResult:
         self.calls += 1
@@ -252,6 +266,11 @@ def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
         raw_dir=raw_dir,
     )
 
+    cached = json.loads(
+        (raw_dir / "gemini-3.5-flash-lite" / "unit_p0003.json").read_text()
+    )
+    assert cached["raw_text"] == "not json"
+
     retry = FakeExtractor()
     summary = run(
         scan_dir, region="north", extractor=retry, out_dir=tmp_path, raw_dir=raw_dir
@@ -274,6 +293,24 @@ def test_a_run_stops_after_three_failed_cards_and_keeps_earlier_records(
     assert down.calls == summary.failed_cards == 3
     assert summary.records == len(_read(tmp_path)) == 5
     assert "3 cards failed in a row; stopping, rerun to resume" in caplog.text
+
+
+def test_unusable_answers_do_not_stop_a_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02", "r03", "r04", "r05"))
+    garbage = GarbageExtractor()
+
+    summary = run(scan_dir, region="north", extractor=garbage, out_dir=tmp_path)
+
+    assert garbage.calls == summary.failed_cards == 5
+
+
+def test_a_success_resets_the_failure_streak(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02", "r03", "r04", "r05"))
+    flaky = FlakyExtractor()
+
+    run(scan_dir, region="north", extractor=flaky, out_dir=tmp_path)
+
+    assert flaky.calls == 5
 
 
 def _write(out_dir: Path, records: list[dict]) -> None:
@@ -324,6 +361,23 @@ def test_a_corrected_field_survives_a_rerun_that_reextracts(tmp_path):
     assert len(records) == 2
     assert records[0]["dwelling"]["house"]["garden"] == corrected
     jsonschema.validate(records[0], SCHEMA)
+
+
+def test_a_corrected_household_number_carries_its_record_id(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    household = records[0]["dwelling"]["households"][0]
+    corrected = {**household["household_no"], **CORRECTED, "original_value": "1"}
+    household["household_no"] = corrected
+    household["record_id"] = "27-0006-02"
+    _write(tmp_path, records)
+
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    household = _read(tmp_path)[0]["dwelling"]["households"][0]
+    assert household["record_id"] == "27-0006-02"
+    assert household["household_no"] == corrected
 
 
 def test_a_damaged_results_file_stops_the_run_before_any_extraction(tmp_path):

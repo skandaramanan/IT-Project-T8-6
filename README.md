@@ -135,15 +135,16 @@ number and skipped, and so is a PDF that can't be opened; the rest of the
 batch carries on.
 
 **Rerunning is safe.** Run the same command again after an interruption, the
-daily cap, or new scans landing in the folder. Cards already read are replayed
-from `data/runs/`, so only unfinished ones cost a request. Records are matched
-to their previous version by scan and page (D026): no duplicates, a record the
-run didn't rebuild is kept, and a field a reviewer corrected is never
-overwritten. Once review has started, rerun on the branch holding the reviewed
-file. Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or
-`GEMINI_STRUCK_DETECTION` starts a fresh cache. After 3 cards fail in a row
-(the daily cap, or an outage) the run stops and writes what it has; rerun
-later to carry on.
+daily cap, or new scans landing in the folder. Cards already read on this
+machine are replayed from `data/runs/`, so only unfinished ones cost a request;
+on another machine every card is read again. Records are matched to their
+previous version by scan and page (D026): no duplicates, a record the run
+didn't rebuild is kept, and a field a reviewer corrected is never overwritten.
+Once review has started, rerun on the branch holding the reviewed file.
+Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
+starts a fresh cache. Delete `data/runs/<region>/<extractor>/` to force a
+re-read. After 3 cards fail in a row (the daily cap, or an outage) the run
+stops and writes what it has; rerun later to carry on.
 
 **Assumption:** new batches use the same printed forms as the cards already
 measured (coding cards C1/C2). A batch on a different form would still run, but

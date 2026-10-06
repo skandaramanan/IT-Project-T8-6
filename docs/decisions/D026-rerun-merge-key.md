@@ -1,4 +1,4 @@
-# D026 — Reruns merge by coding card, not record_id
+# D026 — Reruns merge by coding card, not record_id (amends D007)
 
 **Status:** Accepted
 **Date:** 2026-10-06
@@ -35,6 +35,11 @@ nothing.
 - No duplicates by construction, and a capped or failed run never truncates
   the file.
 - A record whose scan is removed from the folder stays until deleted by hand.
+- Without the reading cache (a rerun on another machine) every card is read
+  again, so uncorrected values may change; corrected fields, and the
+  record_id they imply, are kept.
+- PDF names must be unique within a region: two scans with the same name
+  would share a merge key and a cache entry.
 - Card `image` and `page` must stay the PDF name and PDF page number when
   association is wired in.
 

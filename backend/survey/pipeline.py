@@ -8,7 +8,8 @@ the previous file by the coding cards they were read from, and a reviewer's
 ``corrected`` field is never overwritten.
 
 A page the segmenter cannot place, a card with no readable identity and a card
-the extractor fails on are each logged and skipped; the run carries on.
+the extractor fails on are each logged and skipped; the run carries on unless
+3 cards in a row get no answer (the daily cap or an outage).
 
 Stopgaps until the work they stand in for lands:
 
@@ -39,7 +40,7 @@ from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_confidence_bands
-from survey.extraction.record import FIELD_MAP, build_record
+from survey.extraction.record import FIELD_MAP, build_record, build_record_id
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import CardType, classify_page, segment_pages
 
@@ -183,7 +184,6 @@ def _read_card(
     if not result.fields:
         log.error("%s: no usable reading, skipped", where)
         summary.failed_cards += 1
-        summary.failure_streak += 1
         return None
     summary.failure_streak = 0
     try:
@@ -285,6 +285,13 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
                 f"{image} p{page}: corrected field {where} has no place in the "
                 "rebuilt record"
             ) from error
+    dwelling = new["dwelling"]
+    for household in dwelling["households"]:
+        household["record_id"] = build_record_id(
+            dwelling["municipality"]["value"] or "",
+            dwelling["dwelling_no"]["value"] or "",
+            household["household_no"]["value"] or "",
+        )
 
 
 def _corrected_fields(
@@ -305,5 +312,5 @@ def _corrected_fields(
 
 def _write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     tmp.replace(path)

@@ -131,8 +131,8 @@ reference, not on the fields.
 One dwelling per line, one file per region batch. Each line repeats `region` and
 `batch` so a record stays self-describing when files are concatenated. This is
 what makes FR-02's region partitioning, NFR-04's idempotent re-runs and NFR-07's
-mid-batch resumability cheap: a run appends lines, and a resume reads back which
-`record_id`s are already present.
+mid-batch resumability cheap; how a rerun merges with the previous file is
+D026.
 
 ### The field set is out of scope here
 

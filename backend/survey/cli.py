@@ -51,8 +51,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
-    # Checked before anything is written: an empty or mistyped folder would
-    # otherwise replace the region's earlier output with an empty file.
+    # Fail loudly on an empty or mistyped folder rather than run on nothing.
     if not any(args.scan_dir.glob("*.pdf")):
         parser.error(f"no scan PDFs in {args.scan_dir}")
 
