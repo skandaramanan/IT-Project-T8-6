@@ -16,7 +16,7 @@ the paper.
 This record is written after the fact. D007 already cites D006 as settled —
 "already settled against in D006 — source-card references on traceability-
 relevant values, not coordinates on every field" — and
-`docs/schema/record-envelope.schema.json` carries the `source` key with the
+`schema/record-envelope.schema.json` carries the `source` key with the
 same citation. The decision was made and encoded; the record was never
 written. So this fixes a dangling reference as much as it decides anything,
 and it deliberately restates what the schema already does rather than

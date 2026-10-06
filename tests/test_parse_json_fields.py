@@ -5,7 +5,7 @@ field empty, which scores well on a card that is mostly empty cells -- so the
 parser has to reject it rather than let it through as a partial answer.
 """
 
-from json_extraction import parse_json_fields
+from survey.extraction.json_extraction import parse_json_fields
 
 
 def test_placeholder_object_is_rejected():
@@ -35,7 +35,7 @@ def test_banded_shape_unwraps_to_the_same_fields():
 
 
 def test_bands_are_read_back_only_where_reported():
-    from json_extraction import parse_confidence_bands
+    from survey.extraction.json_extraction import parse_confidence_bands
 
     bands = parse_confidence_bands(
         '{"Municipality": {"value": "56", "confidence": "HIGH"},'
@@ -48,7 +48,7 @@ def test_bands_are_read_back_only_where_reported():
 
 
 def test_unbanded_output_reports_no_bands():
-    from json_extraction import parse_confidence_bands
+    from survey.extraction.json_extraction import parse_confidence_bands
 
     assert parse_confidence_bands('{"Municipality": "56"}') == {}
     assert parse_confidence_bands(None) == {}

@@ -8,7 +8,7 @@ engine that fails FR-10 from one that had a bad card, which is what IT-99 AC4
 turns on.
 """
 
-from extraction.base import ExtractionResult
+from survey.extraction.base import ExtractionResult
 
 
 def test_confidence_defaults_to_none_not_empty():

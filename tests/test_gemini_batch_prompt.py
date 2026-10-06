@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from gemini_extractor import GeminiExtractor, banded_batch_prompt, batch_prompt
-from json_extraction import parse_confidence_bands
+from survey.extraction.gemini import GeminiExtractor, banded_batch_prompt, batch_prompt
+from survey.extraction.json_extraction import parse_confidence_bands
 
 
 class _FakeModels:

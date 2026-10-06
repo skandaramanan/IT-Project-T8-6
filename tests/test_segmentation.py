@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from segmentation.segmenter import classify_page, segment_scan
+from survey.segmentation.segmenter import classify_page, segment_pages, segment_scan
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RECORDS = [f"r{n:02d}" for n in range(1, 6)]
@@ -177,3 +177,37 @@ def _single_thin_line_page(tmp_path: Path) -> Path:
 
 def test_a_single_stray_line_is_not_mistaken_for_a_ruled_grid(tmp_path):
     assert classify_page(_single_thin_line_page(tmp_path)) != "front"
+
+
+def test_segment_pages_keeps_every_record_in_a_multi_record_scan_in_order():
+    source = Path("unit-batch.pdf")
+    roles = ["survey-front", "survey-back", "coding-front", "coding-back"]
+    pages = [_page(record, role) for record in ("r01", "r02") for role in roles]
+
+    cards = segment_pages(pages, source_scan=source)
+
+    assert [(c.card_type, c.page_index) for c in cards] == [
+        ("front", 0),
+        ("reverse", 1),
+        ("numeric_coding", 2),
+        ("front", 4),
+        ("reverse", 5),
+        ("numeric_coding", 6),
+    ]
+    assert all(c.source_scan == source for c in cards)
+    assert [c.image_path for c in cards] == [pages[i] for i in (0, 1, 2, 4, 5, 6)]
+
+
+def test_segment_pages_leaves_out_a_stray_third_page(tmp_path):
+    """The unrecognised page is absent, so the pipeline can log and skip it."""
+    rng = np.random.default_rng(0)
+    paths = []
+    for name, ink in [("rev.jpg", 0.03), ("cod.jpg", 0.06), ("stray.jpg", 0.06)]:
+        pixels = np.where(rng.random((500, 800)) < ink, 0, 255).astype("uint8")
+        Image.fromarray(pixels, mode="L").save(tmp_path / name)
+        paths.append(tmp_path / name)
+    pages = [_page("r01", "survey-front"), *paths]
+
+    cards = segment_pages(pages, source_scan=Path("stray.pdf"))
+
+    assert [c.page_index for c in cards] == [0, 1, 2]
