@@ -1,6 +1,6 @@
 # D004 — Data storage and secret scanning
 
-**Status:** Accepted
+**Status:** Accepted — amended by [D025](D025-committed-results.md) (`results/` is committed)
 **Date:** 2026-08-13
 **Decided by:** Skanda Ramanan (P1 Foundations lead)
 **Linear issue:** IT-36

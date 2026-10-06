@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/skandaramanan/IT-Project-T8-6/blob/main/schema/record-envelope.schema.json",
+  "title": "Survey dwelling record",
+  "description": "One dwelling per record, written one per line as JSON Lines. This validates the envelope only -- field names are deliberately open, because the field set is gated on IT-38. What it does enforce is that every leaf is a field object, never a bare value. See docs/decisions/D007-output-record-schema.md.",
+  "type": "object",
+  "required": ["schema_version", "region", "dwelling"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Envelope version. The field set moves independently of this."
+    },
+    "region": {
+      "type": "string",
+      "description": "Region batch this dwelling belongs to (FR-02). Repeated on every line so a record survives concatenation."
+    },
+    "batch": {
+      "type": ["string", "null"],
+      "description": "Source batch identifier, e.g. the scan PDF this came from."
+    },
+    "dwelling": { "$ref": "#/$defs/dwelling" }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "description": "Every extracted leaf. Bare values are not permitted anywhere in this schema.",
+      "required": ["value", "status", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "description": "As read, kept as text so leading zeros on codes like '04' survive. Null only when status is not 'ok'."
+        },
+        "code": {
+          "type": ["string", "null"],
+          "description": "The code book code, where one applies."
+        },
+        "label": {
+          "type": ["string", "null"],
+          "description": "Code book meaning of `code` (FR-07). Sentinels carry their meaning here -- '999' is labelled, not treated as missing (FR-08)."
+        },
+        "status": {
+          "enum": ["ok", "no_data", "illegible", "damaged", "omitted"],
+          "description": "FR-09. ok: The field was read successfully and contains a usable value. no_data: The source field is present but contains no value to extract. illegible: The source field contains markings that cannot be read reliably. damaged: The source field cannot be read because its source area is damaged or obscured. omitted: The expected field was not returned by the extractor."
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FR-10. Nullable: raw-OCR engines have no per-field score, and null says so rather than claiming certainty (NFR-01)."
+        },
+        "negated": {
+          "type": "boolean",
+          "description": "FR-06 -- crossed out, read as implicit negation of the option."
+        },
+        "origin": {
+          "enum": ["extracted", "corrected"],
+          "default": "extracted",
+          "description": "NFR-05. A human correction stays distinguishable from the machine value."
+        },
+        "original_value": {
+          "type": ["string", "null"],
+          "description": "The machine value this replaced. Required when origin is 'corrected'."
+        },
+        "source": {
+          "$ref": "#/$defs/card_role",
+          "description": "NFR-06 / D006 -- which card this value came from, on traceability-relevant values."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "origin": { "const": "corrected" } }, "required": ["origin"] },
+          "then": { "required": ["original_value"] }
+        },
+        {
+          "if": { "properties": { "status": { "const": "ok" } } },
+          "then": { "properties": { "value": { "type": "string" } } }
+        }
+      ]
+    },
+
+    "field_map": {
+      "type": "object",
+      "description": "An open set of named fields. Names are not fixed here; the constraint is that each value is a field object.",
+      "additionalProperties": { "$ref": "#/$defs/field" }
+    },
+
+    "card_role": {
+      "enum": ["survey-front", "survey-back", "coding-front", "coding-back", "secondary"],
+      "description": "'secondary' covers the unidentified card type in FR-21, pending the prevalence check."
+    },
+
+    "card": {
+      "type": "object",
+      "required": ["role", "image"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "$ref": "#/$defs/card_role" },
+        "image": { "type": "string", "description": "Path or identifier of the source scan." },
+        "page": { "type": ["integer", "null"], "description": "Page number within the source batch PDF." },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FR-20 -- card-level score, alongside the per-field ones."
+        }
+      }
+    },
+
+    "dwelling": {
+      "type": "object",
+      "required": ["municipality", "dwelling_no", "households"],
+      "additionalProperties": false,
+      "properties": {
+        "municipality": { "$ref": "#/$defs/field" },
+        "dwelling_no": { "$ref": "#/$defs/field" },
+        "address": { "$ref": "#/$defs/field" },
+        "families_in_dwelling": {
+          "$ref": "#/$defs/field",
+          "description": "From the survey front. How many household cards to expect below."
+        },
+        "house": {
+          "$ref": "#/$defs/field_map",
+          "description": "Fields describing the building rather than any one household -- structure, age, facilities."
+        },
+        "households": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/household" }
+        },
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
+      }
+    },
+
+    "household": {
+      "type": "object",
+      "required": ["record_id", "household_no"],
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "pattern": "^\\d{2}-\\d{4}-\\d{2}$",
+          "description": "municipality-dwelling-household, zero padded. Dwelling number alone is not unique across municipalities."
+        },
+        "household_no": { "$ref": "#/$defs/field" },
+        "head": {
+          "$ref": "#/$defs/field_map",
+          "description": "Head attributes from the coding card -- age, sex, occupation, earnings."
+        },
+        "counts": {
+          "$ref": "#/$defs/field_map",
+          "description": "Demographic aggregates from the coding card. These are counts of people, not people."
+        },
+        "coding": {
+          "$ref": "#/$defs/field_map",
+          "description": "Remaining coding-card fields for this household -- tenure, rent, income."
+        },
+        "persons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/person" },
+          "description": "From the survey front's column grid. The coding card contributes none of these."
+        },
+        "notes": {
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "properties": {
+            "text": { "type": ["string", "null"], "description": "FR-05 -- reverse-side interview notes, verbatim." },
+            "source": { "$ref": "#/$defs/card_role" },
+            "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+          }
+        },
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
+      }
+    },
+
+    "person": {
+      "type": "object",
+      "required": ["relationship"],
+      "additionalProperties": { "$ref": "#/$defs/field" },
+      "properties": {
+        "relationship": {
+          "$ref": "#/$defs/field",
+          "description": "To the head -- the only person field the grid always carries."
+        }
+      }
+    }
+  }
+}

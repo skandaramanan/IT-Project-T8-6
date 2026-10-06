@@ -8,6 +8,8 @@ downstream. See tests/fixtures/README.md for what the four pages are.
 
 from pathlib import Path
 
+from support import assert_intact_jpeg
+
 FIXTURES = Path(__file__).parent / "fixtures"
 RECORDS = [f"r{n:02d}" for n in range(1, 6)]
 ROLES = ["survey-front", "survey-back", "coding-front", "coding-back"]
@@ -20,6 +22,4 @@ def test_fixture_set_is_five_complete_records():
 
 def test_fixtures_are_intact_jpegs():
     for path in sorted(FIXTURES.glob("*.jpg")):
-        data = path.read_bytes()
-        assert data[:3] == b"\xff\xd8\xff", f"{path.name} is not a JPEG"
-        assert data[-2:] == b"\xff\xd9", f"{path.name} is truncated"
+        assert_intact_jpeg(path)

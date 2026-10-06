@@ -12,12 +12,12 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from extraction.field_schema import FIELD_SCHEMA
-from extraction.record import FIELD_MAP, build_record, build_record_id, normalise
+from survey.extraction.card_fields import FIELD_SCHEMA
+from survey.extraction.record import FIELD_MAP, build_record, build_record_id, normalise
 
 SCHEMA = json.loads(
     (
-        Path(__file__).parent.parent / "docs" / "schema" / "record-envelope.schema.json"
+        Path(__file__).parent.parent / "schema" / "record-envelope.schema.json"
     ).read_text()
 )
 

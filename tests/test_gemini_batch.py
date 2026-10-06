@@ -12,8 +12,8 @@ No API key and no network: the client is a stub returning canned responses.
 import json
 from types import SimpleNamespace
 
-import gemini_extractor
-from gemini_extractor import GeminiExtractor, _parse_batch_object
+import survey.extraction.gemini as gemini_extractor
+from survey.extraction.gemini import GeminiExtractor, _parse_batch_object
 
 
 def _response(text):

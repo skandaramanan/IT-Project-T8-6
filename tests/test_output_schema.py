@@ -16,10 +16,10 @@ from typing import get_args
 import jsonschema
 import pytest
 
-from extraction.field_schema import FieldStatus
+from survey.extraction.card_fields import FieldStatus
 
 REPO_ROOT = Path(__file__).parent.parent
-SCHEMA_DIR = REPO_ROOT / "docs" / "schema"
+SCHEMA_DIR = REPO_ROOT / "schema"
 SCHEMA = json.loads((SCHEMA_DIR / "record-envelope.schema.json").read_text())
 EXAMPLE = json.loads((SCHEMA_DIR / "example-r01-excerpt.json").read_text())
 
