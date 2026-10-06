@@ -16,7 +16,7 @@ from PIL import Image
 
 from survey import pipeline
 from survey.extraction.base import ExtractionResult
-from survey.pipeline import run
+from survey.pipeline import _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
@@ -253,3 +253,86 @@ def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
 
     assert retry.calls == 1
     assert summary.failed_cards == 0 and summary.records == 2
+
+
+def _write(out_dir: Path, records: list[dict]) -> None:
+    (out_dir / "north.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def _stub(*pages: int, **dwelling) -> dict:
+    households = [
+        {"cards": [{"role": "coding-front", "image": "unit.pdf", "page": p}]}
+        for p in pages
+    ]
+    return {"dwelling": {"households": households, **dwelling}}
+
+
+CORRECTED = {"value": "2", "status": "ok", "origin": "corrected", "original_value": "1"}
+
+
+def test_rerunning_a_finished_batch_changes_nothing(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    again = FakeExtractor()
+    run(scan_dir, region="north", extractor=again, out_dir=tmp_path, raw_dir=raw_dir)
+
+    assert again.calls == 0
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_corrected_field_survives_a_rerun_that_reextracts(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
+    records[0]["dwelling"]["house"]["garden"] = corrected
+    _write(tmp_path, records)
+
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    records = _read(tmp_path)
+    assert len(records) == 2
+    assert records[0]["dwelling"]["house"]["garden"] == corrected
+    jsonschema.validate(records[0], SCHEMA)
+
+
+def test_a_damaged_results_file_stops_the_run_before_any_extraction(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    (tmp_path / "north.jsonl").write_text("not json\n")
+    extractor = FakeExtractor()
+
+    with pytest.raises(json.JSONDecodeError):
+        run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
+
+    assert extractor.calls == 0
+    assert (tmp_path / "north.jsonl").read_text() == "not json\n"
+
+
+def test_merge_replaces_overlapping_records_and_keeps_the_rest():
+    merged = _merge([_stub(3, old=True), _stub(9)], [_stub(3, 7)])
+
+    assert merged == [_stub(3, 7), _stub(9)]
+
+
+def test_merge_refuses_to_move_a_correction_onto_a_regrouped_record():
+    with pytest.raises(ValueError, match="regrouped"):
+        _merge([_stub(3, garden=CORRECTED)], [_stub(3, 7)])
+
+
+def test_merge_refuses_a_correction_with_no_place_in_the_rebuilt_record():
+    with pytest.raises(ValueError, match="dwelling/gone/x"):
+        _merge([_stub(3, gone={"x": CORRECTED})], [_stub(3)])
+
+
+def test_merge_refuses_a_correction_when_households_are_reordered():
+    with pytest.raises(ValueError, match="regrouped"):
+        _merge([_stub(3, 7, garden=CORRECTED)], [_stub(7, 3)])
