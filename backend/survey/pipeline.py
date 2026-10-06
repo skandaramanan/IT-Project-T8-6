@@ -45,6 +45,8 @@ from survey.segmentation.segmenter import CardType, classify_page, segment_pages
 
 log = logging.getLogger(__name__)
 
+MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
+
 
 @dataclass
 class RunSummary:
@@ -53,6 +55,7 @@ class RunSummary:
     unreadable_cards: int = 0  # no municipality, dwelling or household number
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
+    failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
 
 
 def run(
@@ -69,6 +72,8 @@ def run(
     previous = _read_records(out_path)  # first, so a damaged file costs no quota
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
+        if summary.failure_streak >= MAX_FAILURE_STREAK:
+            break
         log.info("%s: reading", pdf.name)
         try:
             records += _run_pdf(pdf, region, extractor, raw_dir, summary)
@@ -76,6 +81,11 @@ def run(
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
 
+    if summary.failure_streak >= MAX_FAILURE_STREAK:
+        log.error(
+            "%d cards failed in a row; stopping, rerun to resume",
+            MAX_FAILURE_STREAK,
+        )
     merged = _merge(previous, records)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
@@ -130,6 +140,8 @@ def _run_pdf(
                 summary.skipped_pages += 1
 
         for card in cards:
+            if summary.failure_streak >= MAX_FAILURE_STREAK:
+                break
             if card.card_type != CardType.NUMERIC_CODING:
                 continue
             number = page_numbers[card.page_index]
@@ -163,6 +175,7 @@ def _read_card(
         except Exception:  # one bad card must not end a run of hundreds
             log.exception("%s: extraction failed, skipped", where)
             summary.failed_cards += 1
+            summary.failure_streak += 1
             return None
         if cache and result.raw_text:
             cache.parent.mkdir(parents=True, exist_ok=True)
@@ -170,7 +183,9 @@ def _read_card(
     if not result.fields:
         log.error("%s: no usable reading, skipped", where)
         summary.failed_cards += 1
+        summary.failure_streak += 1
         return None
+    summary.failure_streak = 0
     try:
         record = build_record(
             result.fields,

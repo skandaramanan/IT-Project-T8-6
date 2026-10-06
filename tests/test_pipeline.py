@@ -66,6 +66,12 @@ class UnreadableOnceExtractor(FakeExtractor):
         return result
 
 
+class DownExtractor(FakeExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+
 def _batch(tmp_path: Path, pages: list[Path]) -> Path:
     scan_dir = tmp_path / "scans"
     scan_dir.mkdir()
@@ -253,6 +259,21 @@ def test_an_unusable_reading_is_kept_on_disk_but_retried_next_run(tmp_path):
 
     assert retry.calls == 1
     assert summary.failed_cards == 0 and summary.records == 2
+
+
+def test_a_run_stops_after_three_failed_cards_and_keeps_earlier_records(
+    tmp_path, caplog
+):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02", "r03", "r04", "r05"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    down = DownExtractor()
+    with caplog.at_level(logging.ERROR):
+        summary = run(scan_dir, region="north", extractor=down, out_dir=tmp_path)
+
+    assert down.calls == summary.failed_cards == 3
+    assert summary.records == len(_read(tmp_path)) == 5
+    assert "3 cards failed in a row; stopping, rerun to resume" in caplog.text
 
 
 def _write(out_dir: Path, records: list[dict]) -> None:
