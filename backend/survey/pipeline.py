@@ -2,9 +2,10 @@
 
 Each PDF is split into page images, sorted into cards by the segmenter, and
 every numeric coding card is extracted, built into a D007 record and scored.
-A region's records go to ``<out_dir>/<region>.jsonl``. Reruns are safe
-(NFR-07, NFR-04, D026): cached readings are replayed, records are merged with
-the previous file by the coding cards they were read from, and a reviewer's
+A region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
+another region's records is refused (FR-02). Reruns are safe (NFR-07,
+NFR-04, D026): cached readings are replayed, records are merged with the
+previous file by the coding cards they were read from, and a reviewer's
 ``corrected`` field is never overwritten.
 
 A page the segmenter cannot place, a card with no readable identity and a card
@@ -74,7 +75,7 @@ def run(
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    _read_records(out_path)  # fail fast: a damaged file must cost no quota
+    _read_records(out_path, region)  # fail fast: a damaged file must cost no quota
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
@@ -92,7 +93,7 @@ def run(
             MAX_FAILURE_STREAK,
         )
     # re-read: corrections may have been saved meanwhile
-    merged = _merge(_read_records(out_path), records)
+    merged = _merge(_read_records(out_path, region), records)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
     summary.records = len(merged)
@@ -238,7 +239,7 @@ def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None
     household["cards"][0]["confidence"] = card_confidence(scores)
 
 
-def _read_records(path: Path) -> list[dict[str, Any]]:
+def _read_records(path: Path, region: str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     records = []
@@ -251,6 +252,12 @@ def _read_records(path: Path) -> list[dict[str, Any]]:
                 raise ValueError("no coding card")
         except (ValueError, KeyError, TypeError) as error:
             raise MergeRefused(f"{path} line {number}: not a valid record") from error
+        # FR-02: a renamed or misplaced file would otherwise be merged into this
+        # region and kept, since the run never rebuilds another region's cards.
+        if record.get("region") != region:
+            raise MergeRefused(
+                f"{path} line {number}: region {record.get('region')!r}, not {region!r}"
+            )
         records.append(record)
     return records
 

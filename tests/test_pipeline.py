@@ -521,3 +521,20 @@ def test_merge_refuses_a_correction_with_no_place_in_the_rebuilt_record():
 def test_merge_refuses_a_correction_when_households_are_reordered():
     with pytest.raises(MergeRefused, match="regrouped"):
         _merge([_stub(3, 7, garden=CORRECTED)], [_stub(7, 3)])
+
+
+def test_a_results_file_holding_another_regions_records_stops_the_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    # Renamed, or copied in from another machine's results/ under the wrong name.
+    (tmp_path / "north.jsonl").rename(tmp_path / "south.jsonl")
+    before = (tmp_path / "south.jsonl").read_bytes()
+    extractor = FakeExtractor()
+
+    with pytest.raises(
+        MergeRefused, match="south.jsonl line 1: region 'north', not 'south'"
+    ):
+        run(scan_dir, region="south", extractor=extractor, out_dir=tmp_path)
+
+    assert extractor.calls == 0
+    assert (tmp_path / "south.jsonl").read_bytes() == before
