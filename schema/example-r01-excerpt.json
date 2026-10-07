@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.3.0",
   "region": "williamstown",
   "batch": "1973-0002-00049-1-25-1-20",
   "dwelling": {
@@ -371,11 +371,6 @@
             }
           }
         ],
-        "notes": {
-          "text": null,
-          "source": "survey-back",
-          "confidence": null
-        },
         "cards": [
           {
             "role": "survey-front",
@@ -402,6 +397,20 @@
             "confidence": null
           }
         ]
+      }
+    ],
+    "notes": [
+      {
+        "text": {
+          "value": "Very big house in very good repair.\nVery well-furnished - obviously\nwell-to-do home.\nDining room has doors opening into lounge\nVery good garden - fish pond, fernery etc.",
+          "code": null,
+          "label": null,
+          "status": "ok",
+          "confidence": null,
+          "source": "survey-back"
+        },
+        "page": 2,
+        "household_id": "27-0006-01"
       }
     ],
     "cards": []

@@ -149,3 +149,48 @@ def test_an_unknown_card_role_is_rejected():
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)
+
+
+def _with_note(**changes):
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["notes"][0].update(changes)
+    return record
+
+
+def test_a_note_is_a_field_object_not_bare_text():
+    """FR-05 / FR-09: a bare string cannot say whether a back was blank or
+    never read -- the field object's status can."""
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(_with_note(text="Very big house"), SCHEMA)
+
+
+def test_a_note_names_a_household_only_by_record_id():
+    jsonschema.validate(_with_note(household_id=None), SCHEMA)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(_with_note(household_id="6"), SCHEMA)
+
+
+def test_a_note_must_say_which_page_it_came_from():
+    """NFR-06: two overflow fronts' backs share a role, so the page is what
+    tells their notes apart."""
+    record = json.loads(json.dumps(EXAMPLE))
+    del record["dwelling"]["notes"][0]["page"]
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_notes_are_no_longer_kept_per_household():
+    """Superseded by dwelling.notes in 0.3.0: the back belongs to the front,
+    and the front to the dwelling."""
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["households"][0]["notes"] = {"text": None}
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_example_is_the_current_schema_version():
+    from survey.extraction.record import SCHEMA_VERSION
+
+    assert EXAMPLE["schema_version"] == SCHEMA_VERSION

@@ -134,7 +134,38 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/household" }
         },
+        "notes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/note" },
+          "description": "FR-05 -- one per survey front's back, in scan order. On the dwelling because the front is one per dwelling, not per household."
+        },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
+      }
+    },
+
+    "note": {
+      "type": "object",
+      "required": ["text", "page", "household_id"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/field",
+          "description": "The interviewer's notes, verbatim. no_data is a blank back; omitted is a back that was not read or not found, with `flags` saying why."
+        },
+        "page": {
+          "type": ["integer", "null"],
+          "description": "PDF page of the back, null when none was found. Tells apart the backs of two overflow fronts, which share a role."
+        },
+        "household_id": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{2}-\\d{4}-\\d{2}$",
+          "description": "The household's record_id when the dwelling has exactly one; null otherwise, since the card does not say whose note it is."
+        },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Review signals on this note, e.g. note_on_blank_page, household_ambiguous."
+        }
       }
     },
 
@@ -165,16 +196,6 @@
           "type": "array",
           "items": { "$ref": "#/$defs/person" },
           "description": "From the survey front's column grid. The coding card contributes none of these."
-        },
-        "notes": {
-          "type": "object",
-          "required": ["text"],
-          "additionalProperties": false,
-          "properties": {
-            "text": { "type": ["string", "null"], "description": "FR-05 -- reverse-side interview notes, verbatim." },
-            "source": { "$ref": "#/$defs/card_role" },
-            "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
-          }
         },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
       }

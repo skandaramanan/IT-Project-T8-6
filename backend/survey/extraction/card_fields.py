@@ -529,6 +529,17 @@ SURVEY_FRONT_SCHEMA_BY_NAME: dict[str, FieldSpec] = {
 }
 
 
+# --- the survey back (FR-05) ------------------------------------------------
+# The interviewer's free prose, read as one value. Nothing on the back is
+# labelled, so there is nothing finer to ask for.
+
+REVERSE_NOTES_LABEL = "Interview Notes"
+REVERSE_NOTES_SCHEMA: list[FieldSpec] = [FieldSpec(REVERSE_NOTES_LABEL, "text")]
+REVERSE_NOTES_SCHEMA_BY_NAME: dict[str, FieldSpec] = {
+    spec.name: spec for spec in REVERSE_NOTES_SCHEMA
+}
+
+
 def describe_field(spec: FieldSpec) -> str:
     """One line per field, for embedding in a VLM extraction prompt."""
     if spec.kind == "categorical" and spec.code_book_category:
