@@ -4,7 +4,8 @@
 
 Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
 (default ``./results``). Each card's reading is cached in
-``data/runs/<region>/<extractor>/`` and replayed on a rerun.
+``data/runs/<region>/<extractor>/`` and replayed on a rerun; ``--fresh`` reads
+every card again.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed or any record failed the schema, so a scheduled run can tell.
 """
@@ -47,6 +48,12 @@ def main(argv: list[str] | None = None) -> int:
     extract.add_argument(
         "--region", required=True, help="region name; also the output file name"
     )
+    extract.add_argument(
+        "--fresh",
+        action="store_true",
+        help="read every card again instead of replaying cached readings; "
+        "reviewer corrections are still kept",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -66,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             extractor=extractor,
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
             raw_dir=Path("data/runs") / args.region,
+            fresh=args.fresh,
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)

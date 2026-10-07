@@ -148,8 +148,8 @@ corrected is never overwritten. Once review has started, rerun on the branch
 holding the reviewed file.
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache. Changing `GEMINI_MEDIA_RESOLUTION` or a prompt does not,
-so delete `data/runs/<region>/<extractor>/` to force a re-read. After 3 cards
-fail in a row (the daily cap, or an outage) the run stops and writes what it
+so add `--fresh` to read every card again (corrections are still kept). After
+3 cards fail in a row (the daily cap, or an outage) the run stops and writes what it
 has; rerun later to carry on. A run that can't merge safely (a damaged or
 schema-invalid results file, or a reviewed record that no longer lines up with its scan) stops with an
 error naming the line or page and writes nothing.

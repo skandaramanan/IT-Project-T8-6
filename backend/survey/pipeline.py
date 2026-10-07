@@ -79,8 +79,13 @@ def run(
     extractor: Extractor,
     out_dir: Path,
     raw_dir: Path | None = None,
+    fresh: bool = False,
 ) -> RunSummary:
-    """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
+    """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
+
+    ``fresh`` reads every card again instead of replaying its cached reading;
+    the new reading still replaces the cache, and corrections are still kept.
+    """
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
     _read_records(out_path)  # fail fast: a damaged file must cost no quota
@@ -90,7 +95,7 @@ def run(
             break
         log.info("%s: reading", pdf.name)
         try:
-            records += _run_pdf(pdf, region, extractor, raw_dir, summary)
+            records += _run_pdf(pdf, region, extractor, raw_dir, summary, fresh)
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
@@ -120,6 +125,7 @@ def _run_pdf(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
+    fresh: bool,
 ) -> list[dict[str, Any]]:
     records = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -161,7 +167,7 @@ def _run_pdf(
                 continue
             number = page_numbers[card.page_index]
             record = _read_card(
-                card.image_path, pdf, number, region, extractor, raw_dir, summary
+                card.image_path, pdf, number, region, extractor, raw_dir, summary, fresh
             )
             if record is not None:
                 records.append(record)
@@ -176,13 +182,14 @@ def _read_card(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
+    fresh: bool,
 ) -> dict[str, Any] | None:
     where = f"{pdf.name} p{number}"
     cache = (
         raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
     )
     result = None
-    if cache and cache.exists():
+    if cache and cache.exists() and not fresh:
         try:
             result = ExtractionResult(**json.loads(cache.read_text(encoding="utf-8")))
         except (ValueError, TypeError):  # truncated, or saved before a format change

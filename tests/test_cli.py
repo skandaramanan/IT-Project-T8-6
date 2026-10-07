@@ -54,6 +54,7 @@ def test_extract_exits_1_only_when_something_failed(
     assert cli.main(["extract", str(tmp_path), "--region", "north"]) == code
     assert calls["region"] == "north"
     assert calls["out_dir"].name == "results"
+    assert calls["fresh"] is False
 
 
 def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(

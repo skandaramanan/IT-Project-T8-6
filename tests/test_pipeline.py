@@ -255,6 +255,35 @@ def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
     assert summary.records == 2
 
 
+def test_a_fresh_run_reads_every_card_again_and_keeps_corrections(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+    records = _read(tmp_path)
+    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
+    records[0]["dwelling"]["house"]["garden"] = corrected
+    _write(tmp_path, records)
+
+    fresh = FakeExtractor()
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=fresh,
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+    )
+
+    assert (fresh.calls, summary.records) == (2, 2)
+    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+
+
 def test_an_unusable_reading_is_kept_and_not_bought_again(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     raw_dir = tmp_path / "raw"
