@@ -43,7 +43,7 @@ from typing import Any
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)
@@ -191,6 +191,13 @@ def normalise(value: str | None) -> str:
     return stripped.translate(_DIGIT_LOOKALIKES)
 
 
+def clean_text(value: str | None) -> str:
+    """Handwriting is kept as written. A cell holding only dashes, dots,
+    underscores or spaces is blank."""
+    text = (value or "").strip()
+    return "" if set(text) <= set("-–—_ .") else text
+
+
 # --- 3. one field -----------------------------------------------------------
 
 
@@ -223,7 +230,8 @@ def build_field(
     """
     # Struck empties the value first, so every check below reads off `value`
     # alone rather than re-deriving the rule.
-    value = "" if struck else normalise(raw)
+    clean = clean_text if spec.kind == "text" else normalise
+    value = "" if struck else clean(raw)
     field: dict[str, Any] = {
         "value": value or None,
         "code": None,

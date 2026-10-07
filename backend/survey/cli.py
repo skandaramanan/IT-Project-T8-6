@@ -1,11 +1,12 @@
 """Command line entry point for the extraction pipeline (FR-17, IT-120).
 
-    uv run survey extract <scan_dir> --region <name>
+    uv run survey extract <scan_dir> [--region <name>]
 
-Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl``
-(default ``./results``). Each card's reading is cached in
-``data/runs/<region>/<extractor>/`` and replayed on a rerun; ``--fresh`` reads
-every card again.
+A region is one archive unit folder (FR-02, D027): ``--region`` defaults to the
+folder's name, e.g. ``216412``. Reads every PDF in ``scan_dir`` and writes
+``<SURVEY_OUTPUT_DIR>/<region>.jsonl`` (default ``./results``). Each card's
+reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun;
+``--fresh`` reads every card again.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed or any record failed the schema, so a scheduled run can tell.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +24,10 @@ from survey.extraction.gemini import GeminiExtractor
 from survey.pipeline import MergeRefused, run
 
 log = logging.getLogger("survey")
+
+# The region names a file and a cache folder, and the reviewer filters on it:
+# lowercase only, so `North` and `north` can't share one file on macOS/Windows.
+REGION = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 
 def load_env(path: Path = Path(".env")) -> None:
@@ -46,7 +52,8 @@ def main(argv: list[str] | None = None) -> int:
     extract = commands.add_parser("extract", help="extract a folder of scan PDFs")
     extract.add_argument("scan_dir", type=Path, help="folder of scan PDFs")
     extract.add_argument(
-        "--region", required=True, help="region name; also the output file name"
+        "--region",
+        help="region name, also the output file name (default: the folder's name)",
     )
     extract.add_argument(
         "--fresh",
@@ -55,6 +62,12 @@ def main(argv: list[str] | None = None) -> int:
         "reviewer corrections are still kept",
     )
     args = parser.parse_args(argv)
+    region = args.scan_dir.resolve().name if args.region is None else args.region
+    if not REGION.fullmatch(region):
+        parser.error(
+            f"region {region!r} must be lowercase letters, digits, - or _; "
+            "pass --region to name it"
+        )
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
@@ -69,10 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         summary = run(
             args.scan_dir,
-            region=args.region,
+            region=region,
             extractor=extractor,
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
-            raw_dir=Path("data/runs") / args.region,
+            raw_dir=Path("data/runs") / region,
             fresh=args.fresh,
         )
     except MergeRefused as error:

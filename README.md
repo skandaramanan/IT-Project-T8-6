@@ -114,11 +114,18 @@ uv run python benchmark/run_benchmark.py --help  # calibration harness
 
 ### Extracting a new batch of scans
 
-Put the batch's PDFs in one folder, set `GEMINI_API_KEY` in `.env`, and run:
+Each folder of the archive is one region (D027). Set `GEMINI_API_KEY` in
+`.env` and point the command at the folder:
 
 ```bash
-uv run survey extract data/scans/northcote --region northcote
+uv run survey extract data/Wilfred_Prest_Survey_Data/216429
 ```
+
+The region is named after the folder (`216429`); pass `--region <name>` to
+name it yourself (lowercase letters, digits, `-`, `_`). A region's run only
+touches `results/<region>.jsonl` and `data/runs/<region>/`, and it refuses a
+results file holding another region's records. Run one folder under one name
+only: the same scans under two names end up in two files.
 
 There is no separate export step: this one command reads the scans and writes
 the region's results file. In order, it:

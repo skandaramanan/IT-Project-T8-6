@@ -74,7 +74,7 @@ def test_none_and_unparseable_report_nothing_struck():
 
 def test_prompt_asks_for_the_column_slash_rule():
     """The prompt states the rule. Whether the model obeys it is unmeasured --
-    no column-slash fixture exists yet, so nothing here tests behaviour."""
+    no column slash has been found on a coding card, so there is no fixture."""
     assert "entire column" in STRUCK_EXTRACTION_PROMPT
 
 

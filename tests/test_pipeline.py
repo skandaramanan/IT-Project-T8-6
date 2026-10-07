@@ -86,9 +86,9 @@ class DownExtractor(FakeExtractor):
         raise RuntimeError("429 RESOURCE_EXHAUSTED")
 
 
-def _batch(tmp_path: Path, pages: list[Path]) -> Path:
-    scan_dir = tmp_path / "scans"
-    scan_dir.mkdir()
+def _batch(tmp_path: Path, pages: list[Path], unit: str = "unit") -> Path:
+    scan_dir = tmp_path / "scans" / unit
+    scan_dir.mkdir(parents=True)
     images = []
     for page in pages:
         image = Image.open(page).convert("RGB")
@@ -96,7 +96,7 @@ def _batch(tmp_path: Path, pages: list[Path]) -> Path:
         # pipeline's lossless page write slow.
         image.thumbnail((1200, 1200))
         images.append(image)
-    images[0].save(scan_dir / "unit.pdf", save_all=True, append_images=images[1:])
+    images[0].save(scan_dir / f"{unit}.pdf", save_all=True, append_images=images[1:])
     return scan_dir
 
 
@@ -113,8 +113,8 @@ def _stray_page(tmp_path: Path) -> Path:
     return path
 
 
-def _read(out_dir: Path) -> list[dict]:
-    return [json.loads(line) for line in (out_dir / "north.jsonl").open()]
+def _read(out_dir: Path, region: str = "north") -> list[dict]:
+    return [json.loads(line) for line in (out_dir / f"{region}.jsonl").open()]
 
 
 def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
@@ -626,3 +626,68 @@ def test_merge_refuses_a_correction_with_no_place_in_the_rebuilt_record():
 def test_merge_refuses_a_correction_when_households_are_reordered():
     with pytest.raises(MergeRefused, match="regrouped"):
         _merge([_stub(3, 7, garden=CORRECTED)], [_stub(7, 3)])
+
+
+def test_a_results_file_holding_another_regions_records_stops_the_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    # Renamed, or copied in from another machine's results/ under the wrong name.
+    (tmp_path / "north.jsonl").rename(tmp_path / "south.jsonl")
+    before = (tmp_path / "south.jsonl").read_bytes()
+    extractor = FakeExtractor()
+
+    with pytest.raises(
+        MergeRefused, match="south.jsonl line 1: region 'north', not 'south'"
+    ):
+        run(scan_dir, region="south", extractor=extractor, out_dir=tmp_path)
+
+    assert extractor.calls == 0
+    assert (tmp_path / "south.jsonl").read_bytes() == before
+
+
+def test_two_regions_write_their_own_files_and_never_touch_each_other(tmp_path):
+    """FR-02 verification: >=2 region batches, partitioned, no cross-contamination."""
+    out_dir, raw = tmp_path / "results", tmp_path / "raw"
+    north = _batch(tmp_path, _fixture_pages("r01"), unit="216412")
+    south = _batch(tmp_path, _fixture_pages("r02"), unit="216413")
+
+    run(
+        north,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=out_dir,
+        raw_dir=raw / "north",
+    )
+    before = (out_dir / "north.jsonl").read_bytes()
+    run(
+        south,
+        region="south",
+        extractor=FakeExtractor(),
+        out_dir=out_dir,
+        raw_dir=raw / "south",
+    )
+
+    # AC2: the second run left the first region's output alone
+    assert (out_dir / "north.jsonl").read_bytes() == before
+    assert sorted(p.name for p in out_dir.iterdir()) == ["north.jsonl", "south.jsonl"]
+    assert sorted(p.name for p in raw.iterdir()) == ["north", "south"]
+    # AC1: every record in a file belongs to its region and its own scans
+    keys = {}
+    for region, pdf in [("north", "216412.pdf"), ("south", "216413.pdf")]:
+        records = _read(out_dir, region)
+        assert records
+        assert {r["region"] for r in records} == {region}
+        assert {r["batch"] for r in records} == {pdf}
+        keys[region] = {c for r in records for c in pipeline._coding_cards(r)}
+    # AC2: no record appears in both (D026 merge key: scan and page)
+    assert not keys["north"] & keys["south"]
+
+
+def test_a_region_with_no_coding_cards_still_writes_its_empty_file(tmp_path):
+    pages = [FIXTURES / "r01-survey-front.jpg", FIXTURES / "r01-survey-back.jpg"]
+    scan_dir = _batch(tmp_path, pages)
+
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert summary.records == 0
+    assert (tmp_path / "north.jsonl").read_text() == ""
