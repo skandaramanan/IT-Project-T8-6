@@ -6,7 +6,9 @@ A region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
 another region's records is refused (FR-02). Reruns are safe (NFR-07,
 NFR-04, D026): cached readings are replayed, records are merged with the
 previous file by the coding cards they were read from, and a reviewer's
-``corrected`` field is never overwritten.
+``corrected`` field is never overwritten. Every record is validated against
+the D007 envelope (IT-66): a new one that fails is logged and not written, and
+a previous one that fails stops the run.
 
 A page the segmenter cannot place, a card with no readable identity and a card
 the extractor fails on are each logged and skipped; the run carries on unless
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import tempfile
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
@@ -34,6 +37,7 @@ from operator import getitem
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
 from survey.confidence.agreement import NO_SECOND_OPINION
@@ -49,6 +53,11 @@ log = logging.getLogger(__name__)
 
 MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
 
+# ponytail: repo-relative, which holds for the editable install uv makes. Move
+# the schema into the package if survey is ever installed from a wheel.
+SCHEMA_PATH = Path(__file__).parents[2] / "schema" / "record-envelope.schema.json"
+_VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text()))
+
 
 class MergeRefused(ValueError):
     """The previous results can't be merged safely, so nothing was written."""
@@ -62,6 +71,7 @@ class RunSummary:
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
     failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
+    invalid_records: int = 0  # failed the envelope, not written
 
 
 def run(
@@ -71,11 +81,22 @@ def run(
     extractor: Extractor,
     out_dir: Path,
     raw_dir: Path | None = None,
+    fresh: bool = False,
 ) -> RunSummary:
-    """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``."""
+    """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
+
+    ``fresh`` sets the cached readings aside (``<extractor>.previous``) and
+    reads every card again; corrections are still kept. Set aside once, at the
+    start, so a fresh run cut short resumes with a plain rerun.
+    """
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
     _read_records(out_path, region)  # fail fast: a damaged file must cost no quota
+    cache_dir = raw_dir / extractor.name if raw_dir else None
+    if fresh and cache_dir and cache_dir.exists():
+        previous = cache_dir.with_name(cache_dir.name + ".previous")
+        shutil.rmtree(previous, ignore_errors=True)
+        cache_dir.rename(previous)
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
@@ -211,7 +232,26 @@ def _read_card(
     # The Gemini extractor's `name` carries -banded/-struck suffixes; the
     # confidence tables are keyed by the bare model id.
     _score(record, result, getattr(extractor, "model_id", extractor.name))
+    if errors := _schema_errors(record):
+        # Not written, so the merge keeps this card's previous record, if any.
+        record_id = record["dwelling"]["households"][0]["record_id"]
+        log.error(
+            "%s: %s fails the schema, not written: %s",
+            where,
+            record_id,
+            "; ".join(errors),
+        )
+        summary.invalid_records += 1
+        return None
     return record
+
+
+def _schema_errors(record: dict[str, Any]) -> list[str]:
+    """Every way ``record`` breaks the envelope, as ``"<path>: <reason>"``."""
+    return [
+        f"{'/'.join(map(str, error.absolute_path)) or '<record>'}: {error.message}"
+        for error in _VALIDATOR.iter_errors(record)
+    ]
 
 
 def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None:
@@ -252,6 +292,9 @@ def _read_records(path: Path, region: str) -> list[dict[str, Any]]:
                 raise ValueError("no coding card")
         except (ValueError, KeyError, TypeError) as error:
             raise MergeRefused(f"{path} line {number}: not a valid record") from error
+        # A hand-edited line (D025) is the likeliest way in.
+        if errors := _schema_errors(record):
+            raise MergeRefused(f"{path} line {number}: {'; '.join(errors)}")
         # FR-02: a renamed or misplaced file would otherwise be merged into this
         # region and kept, since the run never rebuilds another region's cards.
         if record.get("region") != region:
@@ -320,6 +363,12 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             )
         except ValueError:  # a blanked identity can't form an id
             household["record_id"] = kept["record_id"]
+    # A corrected identity rebuilds record_id, which the reviewer never saw.
+    if errors := _schema_errors(new):
+        raise MergeRefused(
+            f"{image} p{page}: reviewed record fails the schema once its "
+            f"corrections are applied: {'; '.join(errors)}"
+        )
 
 
 def _corrected_fields(

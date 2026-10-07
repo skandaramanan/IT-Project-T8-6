@@ -186,16 +186,17 @@ per-family columns the `00049` fixture cards do not. Locking a field list across
 two layouts we have not reconciled would be redone twice.
 
 **A JSON Schema for the envelope, versus prose only.** The schema file is a
-dependency (`jsonschema`, dev group only) and a file to keep in step with this
-record. Taken anyway: prose cannot fail, and the invariant worth protecting —
-that no leaf is ever a bare value — is the one a hurried extractor will break
-first. One test now fails if the envelope drifts.
+dependency (`jsonschema`, a runtime one since IT-66) and a file to keep in step
+with this record. Taken anyway: prose cannot fail, and the invariant worth
+protecting — that no leaf is ever a bare value — is the one a hurried extractor
+will break first. One test now fails if the envelope drifts.
 
 This does **not** satisfy FR-15. That requirement's verification line is "output
 validates against agreed schema", and the agreed schema it means is the final
 one, which FR-15 itself gates on reviewing the 1980s transcription. FR-15 stays
 open until IT-38 unblocks. What the schema file makes checkable today is FR-10 —
-a confidence score on every extracted field.
+a confidence score on every extracted field. Since IT-66 the pipeline also
+validates every record against the envelope before writing it.
 
 ## Consequences
 
@@ -215,8 +216,9 @@ a confidence score on every extracted field.
   the names should be disambiguated when IT-79 lands. *Done in IT-126 (D024):*
   the input fields are now `backend/survey/extraction/card_fields.py` and the
   envelope is `schema/`.
-- `jsonschema` is added to the dev group only, consistent with D001 keeping
-  runtime dependencies out until code needs them.
+- `jsonschema` was added to the dev group only, consistent with D001 keeping
+  runtime dependencies out until code needs them. IT-66 moved it to runtime:
+  the pipeline validates each record before it is written.
 
 ## Open questions
 

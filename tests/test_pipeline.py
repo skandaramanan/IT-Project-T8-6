@@ -255,6 +255,71 @@ def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
     assert summary.records == 2
 
 
+def test_a_fresh_run_reads_every_card_again_and_keeps_corrections(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+    records = _read(tmp_path)
+    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
+    records[0]["dwelling"]["house"]["garden"] = corrected
+    _write(tmp_path, records)
+
+    fresh = FakeExtractor()
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=fresh,
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+    )
+
+    assert (fresh.calls, summary.records) == (2, 2)
+    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+    assert (raw_dir / f"{FakeExtractor.name}.previous").is_dir()
+
+
+def test_an_interrupted_fresh_run_resumes_with_a_plain_rerun(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    kwargs = {"region": "north", "out_dir": tmp_path, "raw_dir": raw_dir}
+    run(scan_dir, extractor=FakeExtractor(), **kwargs)
+    with pytest.raises(KeyboardInterrupt):
+        run(scan_dir, extractor=KilledExtractor(), fresh=True, **kwargs)
+
+    resumed = FakeExtractor()
+    summary = run(scan_dir, extractor=resumed, **kwargs)
+
+    # Card 1 was re-read before the interrupt; only card 2 is bought again.
+    assert (resumed.calls, summary.records) == (1, 2)
+
+
+def test_a_correction_that_breaks_the_record_id_stops_the_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    dwelling_no = records[0]["dwelling"]["dwelling_no"]
+    records[0]["dwelling"]["dwelling_no"] = {
+        **dwelling_no,
+        **CORRECTED,
+        "value": "12345",
+        "original_value": dwelling_no["value"],
+    }
+    _write(tmp_path, records)
+    before = (tmp_path / "north.jsonl").read_text()
+
+    with pytest.raises(MergeRefused, match="unit.pdf p3: .*record_id"):
+        run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert (tmp_path / "north.jsonl").read_text() == before
+
+
 def test_an_unusable_reading_is_kept_and_not_bought_again(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     raw_dir = tmp_path / "raw"
@@ -392,16 +457,20 @@ def test_a_damaged_results_file_stops_the_run_before_any_extraction(tmp_path):
     assert (tmp_path / "north.jsonl").read_text() == "not json\n"
 
 
-@pytest.mark.parametrize("line", ["null", "[]", '{"dwelling": {}}', "no-coding-card"])
+@pytest.mark.parametrize(
+    "line", ["null", "[]", '{"dwelling": {}}', "no-coding-card", "bare-value"]
+)
 def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
     tmp_path, line
 ):
     scan_dir = _batch(tmp_path, _fixture_pages("r01"))
-    if line == "no-coding-card":
+    if line in ("no-coding-card", "bare-value"):
         run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
         record = _read(tmp_path)[0]
+        if line == "bare-value":  # a hand edit that breaks the envelope (D025)
+            record["dwelling"]["house"]["garden"] = "1"
         for card in record["dwelling"]["households"][0]["cards"]:
-            if card["role"] == "coding-front":
+            if line == "no-coding-card" and card["role"] == "coding-front":
                 card["role"] = "survey-front"
         line = json.dumps(record)
     (tmp_path / "north.jsonl").write_text(line + "\n")
@@ -412,6 +481,42 @@ def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
 
     assert extractor.calls == 0
     assert (tmp_path / "north.jsonl").read_text() == line + "\n"
+
+
+def _plant_bare_value(monkeypatch) -> None:
+    """Make every built record break the envelope, as a buggy extractor would."""
+    build = pipeline.build_record
+
+    def broken(*args, **kwargs):
+        record = build(*args, **kwargs)
+        record["dwelling"]["house"]["stray"] = "1"  # a field _score doesn't visit
+        return record
+
+    monkeypatch.setattr(pipeline, "build_record", broken)
+
+
+def test_an_invalid_record_is_reported_and_not_written(tmp_path, monkeypatch, caplog):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    _plant_bare_value(monkeypatch)
+
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert (summary.invalid_records, summary.records) == (1, 0)
+    assert _read(tmp_path) == []
+    assert "unit.pdf p3: 27-0006-01 fails the schema" in caplog.text
+    assert "dwelling/house/stray" in caplog.text
+
+
+def test_an_invalid_rereading_keeps_the_previous_record(tmp_path, monkeypatch):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    before = (tmp_path / "north.jsonl").read_bytes()
+    _plant_bare_value(monkeypatch)
+
+    summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert summary.invalid_records == 2
+    assert (tmp_path / "north.jsonl").read_bytes() == before
 
 
 def test_a_damaged_saved_reading_is_read_again_not_fatal_to_its_pdf(tmp_path):

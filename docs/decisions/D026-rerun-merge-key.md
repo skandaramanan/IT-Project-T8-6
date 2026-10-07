@@ -35,8 +35,8 @@ nothing.
 - No duplicates by construction, and a capped or failed run never truncates
   the file.
 - A record whose scan is removed from the folder stays until deleted by hand.
-- Without the reading cache (a rerun on another machine) every card is read
-  again, so uncorrected values may change; corrected fields, and the
+- Without the reading cache (a rerun on another machine, or `--fresh`, which
+  sets it aside) every card is read again, so uncorrected values may change; corrected fields, and the
   record_id they imply, are kept.
 - PDF names must be unique within a region: two scans with the same name
   would share a merge key and a cache entry.

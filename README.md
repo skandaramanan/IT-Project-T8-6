@@ -127,36 +127,50 @@ touches `results/<region>.jsonl` and `data/runs/<region>/`, and it refuses a
 results file holding another region's records. Run one folder under one name
 only: the same scans under two names end up in two files.
 
-Every PDF in the folder is split into pages, the pages are sorted into cards,
-and each coding card is read by Gemini and scored. The output is:
+There is no separate export step: this one command reads the scans and writes
+the region's results file. In order, it:
 
-- `results/<region>.jsonl` — one D007 record per line, in scan order. Set
-  `SURVEY_OUTPUT_DIR` to write somewhere else.
-- `data/runs/<region>/<extractor>/` — each card's reading, gitignored.
-- A summary line: records written, pages skipped, cards unreadable, cards
-  failed, PDFs failed. The command exits 1 if any card or PDF failed, so a
-  scheduled run can tell.
+1. Splits every PDF into pages and sorts the pages into cards. A page that
+   isn't a recognised card, or a PDF that can't be opened, is logged and
+   skipped; the rest of the batch carries on.
+2. Has Gemini read each coding card and scores every field. Each reading is
+   cached in `data/runs/<region>/<extractor>/` (gitignored), so no card is paid
+   for twice.
+3. Checks every record against `schema/record-envelope.schema.json`. One that
+   fails is logged with its record_id and the failing field, and not written,
+   so its previous version (if any) is kept.
+4. Merges the records into `results/<region>.jsonl`, one D007 record per
+   coding card, in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+5. Logs a summary line: records written, pages skipped, cards unreadable, cards
+   failed, PDFs failed, records invalid. The command exits 1 if any card, PDF
+   or record failed, so a scheduled run can tell.
 
-A page that isn't a card the segmenter recognises is logged with its PDF page
-number and skipped, and so is a PDF that can't be opened; the rest of the
-batch carries on.
+`results/` is committed (D025): committing the file is how the client gets
+the data and how reviewers' corrections come back.
 
-**Rerunning is safe.** Run the same command again after an interruption, the
-daily cap, or new scans landing in the folder. Cards already read on this
-machine are replayed from `data/runs/`, so only unfinished ones cost a request;
-on another machine every card is read again. A card Gemini couldn't read is
-saved too and not sent again; delete its file under `data/runs/` to retry it.
-Records are matched to their previous version by scan and page (D026): no
-duplicates, a record the run didn't rebuild is kept, and a field a reviewer
-corrected is never overwritten. Once review has started, rerun on the branch
-holding the reviewed file.
+**Rerunning is safe.** Records are matched to their previous version by scan
+and page (D026): no duplicates, a record the run didn't rebuild is kept, and a
+field a reviewer corrected is never overwritten. Once review has started,
+rerun on the branch holding the reviewed file.
+
+| Run | What it does |
+|---|---|
+| the same command | Replays cards already read on this machine, so only new or unfinished ones cost a request. Use it after an interruption, the daily cap, or new scans landing in the folder. On another machine every card is read again. |
+| the same command with `--fresh` | Moves the cached readings aside to `data/runs/<region>/<extractor>.previous/` and reads every card again. Use it after changing a prompt or `GEMINI_MEDIA_RESOLUTION`, which a normal rerun would not pick up. If it is cut short, rerun **without** `--fresh` to carry on; repeating `--fresh` starts over. |
+
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
-starts a fresh cache. Changing `GEMINI_MEDIA_RESOLUTION` or a prompt does not,
-so delete `data/runs/<region>/<extractor>/` to force a re-read. After 3 cards
-fail in a row (the daily cap, or an outage) the run stops and writes what it
-has; rerun later to carry on. A run that can't merge safely (a damaged results
-file, or a reviewed record that no longer lines up with its scan) stops with an
-error naming the line or page and writes nothing.
+starts a fresh cache by itself. A card Gemini couldn't read is cached too and
+not sent again; delete its file under `data/runs/` (or use `--fresh`) to retry
+it.
+
+**When a run stops early.** After 3 cards fail in a row (the daily cap, or an
+outage) the run stops and writes what it has; rerun later to carry on. A run
+that can't merge safely stops with an error naming the line or page, and writes
+nothing. A damaged or schema-invalid results file is caught before any card is
+read. A reviewed record that no longer lines up with its scan, or that fails
+the schema once its corrections are applied (say, a corrected dwelling number
+that makes an invalid record_id), is caught after reading; the readings are
+cached, so fixing the correction and rerunning costs nothing.
 
 **Assumption:** new batches use the same printed forms as the cards already
 measured (coding cards C1/C2). A batch on a different form would still run, but

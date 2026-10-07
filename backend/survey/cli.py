@@ -5,9 +5,10 @@
 A region is one archive unit folder (FR-02, D027): ``--region`` defaults to the
 folder's name, e.g. ``216412``. Reads every PDF in ``scan_dir`` and writes
 ``<SURVEY_OUTPUT_DIR>/<region>.jsonl`` (default ``./results``). Each card's
-reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun.
+reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun;
+``--fresh`` reads every card again.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
-PDF failed, so a scheduled run can tell.
+PDF failed or any record failed the schema, so a scheduled run can tell.
 """
 
 from __future__ import annotations
@@ -54,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
         "--region",
         help="region name, also the output file name (default: the folder's name)",
     )
+    extract.add_argument(
+        "--fresh",
+        action="store_true",
+        help="read every card again instead of replaying cached readings; "
+        "reviewer corrections are still kept",
+    )
     args = parser.parse_args(argv)
     region = args.scan_dir.resolve().name if args.region is None else args.region
     if not REGION.fullmatch(region):
@@ -79,20 +86,23 @@ def main(argv: list[str] | None = None) -> int:
             extractor=extractor,
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
             raw_dir=Path("data/runs") / region,
+            fresh=args.fresh,
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
         return 1
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
-        "%d PDFs failed",
+        "%d PDFs failed, %d records invalid",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
         summary.failed_cards,
         summary.failed_pdfs,
+        summary.invalid_records,
     )
-    return 1 if summary.failed_cards or summary.failed_pdfs else 0
+    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -30,7 +30,12 @@ def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatc
 
 @pytest.mark.parametrize(
     ("failed", "code"),
-    [({}, 0), ({"failed_cards": 1}, 1), ({"failed_pdfs": 1}, 1)],
+    [
+        ({}, 0),
+        ({"failed_cards": 1}, 1),
+        ({"failed_pdfs": 1}, 1),
+        ({"invalid_records": 1}, 1),
+    ],
 )
 def test_extract_exits_1_only_when_something_failed(
     tmp_path, monkeypatch, failed, code
@@ -50,6 +55,10 @@ def test_extract_exits_1_only_when_something_failed(
     assert cli.main(["extract", str(tmp_path), "--region", "north"]) == code
     assert calls["region"] == "north"
     assert calls["out_dir"].name == "results"
+    assert calls["fresh"] is False
+
+    cli.main(["extract", str(tmp_path), "--region", "north", "--fresh"])
+    assert calls["fresh"] is True
 
 
 def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(
