@@ -1,6 +1,7 @@
 """The extract command: .env loading, and the exit code a scheduled run reads."""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -99,3 +100,55 @@ def test_extract_refuses_a_folder_with_no_pdfs_before_writing(tmp_path, monkeypa
     with pytest.raises(SystemExit) as error:
         cli.main(["extract", str(tmp_path), "--region", "north"])
     assert error.value.code == 2
+
+
+def test_extract_names_the_region_after_the_scan_folder_by_default(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("SURVEY_OUTPUT_DIR", raising=False)
+    calls = {}
+
+    def fake_run(scan_dir, **kwargs):
+        calls.update(kwargs)
+        return RunSummary(records=1)
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    unit = tmp_path / "216412"
+    unit.mkdir()
+    (unit / "scan.pdf").touch()
+
+    assert cli.main(["extract", str(unit)]) == 0
+    assert calls["region"] == "216412"
+    assert calls["raw_dir"] == Path("data/runs/216412")
+
+
+@pytest.mark.parametrize("region", ["", "North", "../north", "a/b", "north melbourne"])
+def test_extract_refuses_a_region_that_is_not_a_plain_lowercase_name(
+    tmp_path, monkeypatch, region
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setattr(cli, "run", lambda *a, **k: pytest.fail("run was called"))
+    (tmp_path / "unit.pdf").touch()
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(["extract", str(tmp_path), "--region", region])
+    assert error.value.code == 2
+
+
+def test_extract_asks_for_a_region_when_the_folder_name_is_not_one(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setattr(cli, "run", lambda *a, **k: pytest.fail("run was called"))
+    unit = tmp_path / "Prest Scans"
+    unit.mkdir()
+    (unit / "scan.pdf").touch()
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(["extract", str(unit)])
+    assert error.value.code == 2
+    assert "--region" in capsys.readouterr().err
