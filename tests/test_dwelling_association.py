@@ -177,6 +177,18 @@ def test_a_later_front_fills_blanks_and_flags_disagreement():
     assert dwellings[0].flags == {Flag.FRONTS_DISAGREE}
 
 
+def test_an_unnumbered_front_at_the_same_address_is_overflow():
+    boarder = {survey_front_label("Relationship", 1): "Boarder"}
+    records, dwellings, _ = _records(
+        (F, _front("89", "Head")),
+        (C, _coding("89")),
+        (F, ExtractionResult(fields={"Address": "89 Hall St. Cont.", **boarder})),
+        (F, ExtractionResult(fields={"Address": "12 Bay St.", **boarder})),
+    )
+    assert _people(records[0]["dwelling"]["households"][0]) == ["Head", "Boarder"]
+    assert Flag.MISSING_DWELLING_NO in dwellings[1].flags
+
+
 def test_coding_cards_from_two_municipalities_yield_no_record():
     records, dwellings, _ = _records(
         (F, _front("5")), (C, _coding("5")), (C, _coding("5", "2", municipality="28"))

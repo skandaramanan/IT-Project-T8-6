@@ -177,8 +177,8 @@ measured (coding cards C1/C2). A batch on a different form would still run, but
 the field schema and the confidence numbers were calibrated on these forms
 only, so its output can't be trusted without a new benchmark.
 
-For now only the coding card is extracted, one record per card. Grouping cards
-into dwellings (IT-105) and reading survey fronts (IT-117) land separately.
+For now only the coding card is extracted, one record per card. Survey fronts
+and dwelling grouping (`survey.association.records`) aren't called yet.
 
 ## Contributing
 

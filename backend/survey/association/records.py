@@ -6,11 +6,18 @@ survey front adds the address, the dwelling as written, and the person grid.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
-from survey.association.dwelling import Dwelling, ReviewFlag, associate, dwelling_number
+from survey.association.dwelling import (
+    Dwelling,
+    ReviewFlag,
+    associate,
+    dwelling_key,
+    dwelling_number,
+)
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.record import build_record
 from survey.extraction.survey_front import SOURCE as SURVEY_FRONT
@@ -34,6 +41,24 @@ def extract(
         else (card, None)
         for card in cards
     ]
+
+
+def _numbers(extracted: Extracted) -> list[tuple[SegmentedCard, str | None]]:
+    """Each card with its dwelling number. An unnumbered front at the last numbered
+    front's address ("89 Elphin St Cont.") is its overflow and takes its number."""
+    numbers: list[tuple[SegmentedCard, str | None]] = []
+    last = None
+    for card, result in extracted:
+        number = dwelling_number(card, result.fields) if result else None
+        if card.card_type is CardType.FRONT and result:
+            words = re.findall(r"\w+", (result.fields.get("Address") or "").lower())
+            street = tuple(w[:5] for w in words[:2])  # house number, street
+            if dwelling_key(number):
+                last = (street, number)
+            elif street and last and last[0] == street:
+                number = last[1]
+        numbers.append((card, number))
+    return numbers
 
 
 def _card(card: SegmentedCard, role: str) -> dict[str, Any]:
@@ -114,12 +139,7 @@ def build_dwelling_records(
     list with its flags.
     """
     results = {card: result for card, result in extracted if result is not None}
-    dwellings, unplaced = associate(
-        [
-            (card, dwelling_number(card, r.fields) if r else None)
-            for card, r in extracted
-        ]
-    )
+    dwellings, unplaced = associate(_numbers(extracted))
     built = [(d, _record(d, results, region=region, batch=batch)) for d in dwellings]
     ids = Counter(
         h["record_id"] for _, r in built if r for h in r["dwelling"]["households"]
