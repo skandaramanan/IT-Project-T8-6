@@ -1,54 +1,19 @@
-"""Reverse-side interview notes, read verbatim and attached to their dwelling
-(FR-05, IT-89).
+"""Reverse-side interview notes, read verbatim and attached to their dwelling (FR-05).
 
-The back of a survey card carries the interviewer's free prose. Nothing on it
-says which dwelling it belongs to: the only link is that it was scanned
-straight after its own front. So a note is placed by its front, never by its
-content, in three steps:
+A survey back says nothing about which dwelling it belongs to, so each note is
+placed by the front scanned before it, never by its content:
 
-1. :func:`find_reverses` decides, for every survey front, which page is its
-   back. ``associate()`` (FR-04) is the source of truth for a reverse it
-   already placed; the page list is consulted only where a front has none.
-2. :func:`read_notes` reads each of those pages with a reverse-notes
-   extractor and turns the answer into one D007 field object.
-3. :func:`attach_notes` adds the notes to the dwelling records built from the
-   same dwellings.
+1. :func:`find_reverses` picks each front's back.
+2. :func:`read_notes` reads it into a D007 field object.
+3. :func:`attach_notes` adds it to the dwelling's record as ``dwelling.notes``.
 
-**Notes belong to the dwelling.** The survey front is one per dwelling (D007),
-and its back is the same sheet, so a note cannot be pinned to one household
-from the card. ``household_id`` is filled only when the dwelling has exactly
-one household and is left null, flagged, otherwise -- the same call
-``build_dwelling_records`` makes for the person grid. No note is linked to an
-individual: the back has no columns to link by.
+A blank back is read too, and comes back ``no_data``, FR-05's explicit empty.
+Notes sit on the dwelling, not a household, because the front is one per
+dwelling; see D007 for the schema and ``REVERSE_NOTES_PROMPT`` for what
+"verbatim" means.
 
-**A blank back is a stated empty, not a missing one.** The segmenter drops a
-page under its blank-ink cutoff, so the blank back of a front never becomes a
-card. Exactly one dropped page between a front and the next card is that
-front's back, and it is read anyway: an empty answer becomes ``no_data``,
-which is FR-05's explicit empty. Anything the model does find there is kept,
-because a short note can fall under the cutoff, but flagged
-``note_on_blank_page`` so a note invented on a blank card is never passed off
-as a clean reading.
-
-**Verbatim**, as the prompt (``json_extraction.REVERSE_NOTES_PROMPT``) and the
-fixtures' expected text both apply it:
-
-- spelling, abbreviations, punctuation and word order are kept as written;
-- struck words are left out and their replacements kept (D020 counts a
-  correction to back-of-card text as part of it);
-- an unreadable word is written ``[illegible]``;
-- line breaks are kept as returned.
-
-``clean_text`` (via ``build_field``) only strips the ends and treats a
-dash-only answer as blank, which is right for notes too.
-
-Deliberately not done here:
-
-- Printed reverse forms (R1 in the IT-73 spike) are not told apart from
-  handwritten notes; whether they are in scope is open.
-- No confidence (FR-10) and no ``illegible`` status (FR-09).
-- Pipeline wiring. Every function takes plain data, so ``pipeline.py`` only
-  has to call them once it builds dwelling records.
+Not yet handled: printed reverse forms (R1), confidence (FR-10), and calling
+this from ``pipeline.py``.
 """
 
 from __future__ import annotations

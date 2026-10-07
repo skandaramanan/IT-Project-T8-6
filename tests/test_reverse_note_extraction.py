@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from survey.notes import build_note_text
+from survey.association.notes import build_note_text
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GROUND_TRUTH_PATH = FIXTURES / "reverse_notes/ground_truth.json"

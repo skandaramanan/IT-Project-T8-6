@@ -15,12 +15,7 @@ import pytest
 
 import survey.extraction.gemini as gemini_extractor
 from survey.association.dwelling import associate
-from survey.association.records import build_dwelling_records
-from survey.extraction.base import ExtractionResult
-from survey.extraction.card_fields import REVERSE_NOTES_SCHEMA_BY_NAME
-from survey.extraction.gemini import GeminiExtractor
-from survey.extraction.json_extraction import REVERSE_NOTES_PROMPT, parse_json_fields
-from survey.notes import (
+from survey.association.notes import (
     NoteFlag,
     ReverseSlot,
     attach_notes,
@@ -28,6 +23,11 @@ from survey.notes import (
     find_reverses,
     read_notes,
 )
+from survey.association.records import build_dwelling_records
+from survey.extraction.base import ExtractionResult
+from survey.extraction.card_fields import REVERSE_NOTES_SCHEMA_BY_NAME
+from survey.extraction.gemini import GeminiExtractor
+from survey.extraction.json_extraction import REVERSE_NOTES_PROMPT, parse_json_fields
 from survey.segmentation.segmenter import CardType, SegmentedCard, segment_scan
 
 FIXTURES = Path(__file__).parent / "fixtures"

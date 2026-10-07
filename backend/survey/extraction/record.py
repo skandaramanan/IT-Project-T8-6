@@ -34,7 +34,7 @@ Deliberately not done here:
   ``docs/decisions/D023-resolving-struck-options.md``.
 - ``persons`` stay empty. They come off the survey front, and the coding card
   carries none; ``association/records.py`` adds them. The dwelling's
-  ``notes`` come off the survey back, in ``survey/notes.py``.
+  ``notes`` come off the survey back, in ``association/notes.py``.
 """
 
 from __future__ import annotations
