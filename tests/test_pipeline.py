@@ -282,6 +282,42 @@ def test_a_fresh_run_reads_every_card_again_and_keeps_corrections(tmp_path):
 
     assert (fresh.calls, summary.records) == (2, 2)
     assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+    assert (raw_dir / f"{FakeExtractor.name}.previous").is_dir()
+
+
+def test_an_interrupted_fresh_run_resumes_with_a_plain_rerun(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    kwargs = {"region": "north", "out_dir": tmp_path, "raw_dir": raw_dir}
+    run(scan_dir, extractor=FakeExtractor(), **kwargs)
+    with pytest.raises(KeyboardInterrupt):
+        run(scan_dir, extractor=KilledExtractor(), fresh=True, **kwargs)
+
+    resumed = FakeExtractor()
+    summary = run(scan_dir, extractor=resumed, **kwargs)
+
+    # Card 1 was re-read before the interrupt; only card 2 is bought again.
+    assert (resumed.calls, summary.records) == (1, 2)
+
+
+def test_a_correction_that_breaks_the_record_id_stops_the_run(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    dwelling_no = records[0]["dwelling"]["dwelling_no"]
+    records[0]["dwelling"]["dwelling_no"] = {
+        **dwelling_no,
+        **CORRECTED,
+        "value": "12345",
+        "original_value": dwelling_no["value"],
+    }
+    _write(tmp_path, records)
+    before = (tmp_path / "north.jsonl").read_text()
+
+    with pytest.raises(MergeRefused, match="unit.pdf p3: .*record_id"):
+        run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+
+    assert (tmp_path / "north.jsonl").read_text() == before
 
 
 def test_an_unusable_reading_is_kept_and_not_bought_again(tmp_path):

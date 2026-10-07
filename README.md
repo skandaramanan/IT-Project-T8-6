@@ -149,7 +149,7 @@ rerun on the branch holding the reviewed file.
 | Run | What it does |
 |---|---|
 | the same command | Replays cards already read on this machine, so only new or unfinished ones cost a request. Use it after an interruption, the daily cap, or new scans landing in the folder. On another machine every card is read again. |
-| the same command with `--fresh` | Reads every card again and replaces its cached reading. Use it after changing a prompt or `GEMINI_MEDIA_RESOLUTION`, which a normal rerun would not pick up. |
+| the same command with `--fresh` | Moves the cached readings aside to `data/runs/<region>/<extractor>.previous/` and reads every card again. Use it after changing a prompt or `GEMINI_MEDIA_RESOLUTION`, which a normal rerun would not pick up. If it is cut short, rerun **without** `--fresh` to carry on; repeating `--fresh` starts over. |
 
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache by itself. A card Gemini couldn't read is cached too and
@@ -158,9 +158,12 @@ it.
 
 **When a run stops early.** After 3 cards fail in a row (the daily cap, or an
 outage) the run stops and writes what it has; rerun later to carry on. A run
-that can't merge safely (a damaged or schema-invalid results file, or a
-reviewed record that no longer lines up with its scan) stops before reading any
-card, with an error naming the line or page, and writes nothing.
+that can't merge safely stops with an error naming the line or page, and writes
+nothing. A damaged or schema-invalid results file is caught before any card is
+read. A reviewed record that no longer lines up with its scan, or that fails
+the schema once its corrections are applied (say, a corrected dwelling number
+that makes an invalid record_id), is caught after reading; the readings are
+cached, so fixing the correction and rerunning costs nothing.
 
 **Assumption:** new batches use the same printed forms as the cards already
 measured (coding cards C1/C2). A batch on a different form would still run, but

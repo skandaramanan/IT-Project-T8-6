@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import tempfile
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
@@ -83,19 +84,25 @@ def run(
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
 
-    ``fresh`` reads every card again instead of replaying its cached reading;
-    the new reading still replaces the cache, and corrections are still kept.
+    ``fresh`` sets the cached readings aside (``<extractor>.previous``) and
+    reads every card again; corrections are still kept. Set aside once, at the
+    start, so a fresh run cut short resumes with a plain rerun.
     """
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
     _read_records(out_path)  # fail fast: a damaged file must cost no quota
+    cache_dir = raw_dir / extractor.name if raw_dir else None
+    if fresh and cache_dir and cache_dir.exists():
+        previous = cache_dir.with_name(cache_dir.name + ".previous")
+        shutil.rmtree(previous, ignore_errors=True)
+        cache_dir.rename(previous)
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
             break
         log.info("%s: reading", pdf.name)
         try:
-            records += _run_pdf(pdf, region, extractor, raw_dir, summary, fresh)
+            records += _run_pdf(pdf, region, extractor, raw_dir, summary)
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
@@ -125,7 +132,6 @@ def _run_pdf(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
-    fresh: bool,
 ) -> list[dict[str, Any]]:
     records = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -167,7 +173,7 @@ def _run_pdf(
                 continue
             number = page_numbers[card.page_index]
             record = _read_card(
-                card.image_path, pdf, number, region, extractor, raw_dir, summary, fresh
+                card.image_path, pdf, number, region, extractor, raw_dir, summary
             )
             if record is not None:
                 records.append(record)
@@ -182,14 +188,13 @@ def _read_card(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
-    fresh: bool,
 ) -> dict[str, Any] | None:
     where = f"{pdf.name} p{number}"
     cache = (
         raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
     )
     result = None
-    if cache and cache.exists() and not fresh:
+    if cache and cache.exists():
         try:
             result = ExtractionResult(**json.loads(cache.read_text(encoding="utf-8")))
         except (ValueError, TypeError):  # truncated, or saved before a format change
@@ -351,6 +356,12 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             )
         except ValueError:  # a blanked identity can't form an id
             household["record_id"] = kept["record_id"]
+    # A corrected identity rebuilds record_id, which the reviewer never saw.
+    if errors := _schema_errors(new):
+        raise MergeRefused(
+            f"{image} p{page}: reviewed record fails the schema once its "
+            f"corrections are applied: {'; '.join(errors)}"
+        )
 
 
 def _corrected_fields(

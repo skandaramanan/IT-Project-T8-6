@@ -56,6 +56,9 @@ def test_extract_exits_1_only_when_something_failed(
     assert calls["out_dir"].name == "results"
     assert calls["fresh"] is False
 
+    cli.main(["extract", str(tmp_path), "--region", "north", "--fresh"])
+    assert calls["fresh"] is True
+
 
 def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(
     tmp_path, monkeypatch, caplog
