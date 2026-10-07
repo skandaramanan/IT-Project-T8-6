@@ -127,12 +127,15 @@ and each coding card is read by Gemini and scored. The output is:
   `SURVEY_OUTPUT_DIR` to write somewhere else.
 - `data/runs/<region>/<extractor>/` — each card's reading, gitignored.
 - A summary line: records written, pages skipped, cards unreadable, cards
-  failed, PDFs failed. The command exits 1 if any card or PDF failed, so a
-  scheduled run can tell.
+  failed, PDFs failed, records invalid. The command exits 1 if any card, PDF or
+  record failed, so a scheduled run can tell.
 
 A page that isn't a card the segmenter recognises is logged with its PDF page
 number and skipped, and so is a PDF that can't be opened; the rest of the
-batch carries on.
+batch carries on. Every record is checked against
+`schema/record-envelope.schema.json` before it is written; one that fails is
+logged with its record_id and the failing field, and not written, so its
+previous version (if any) is kept.
 
 **Rerunning is safe.** Run the same command again after an interruption, the
 daily cap, or new scans landing in the folder. Cards already read on this
@@ -147,8 +150,8 @@ Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache. Changing `GEMINI_MEDIA_RESOLUTION` or a prompt does not,
 so delete `data/runs/<region>/<extractor>/` to force a re-read. After 3 cards
 fail in a row (the daily cap, or an outage) the run stops and writes what it
-has; rerun later to carry on. A run that can't merge safely (a damaged results
-file, or a reviewed record that no longer lines up with its scan) stops with an
+has; rerun later to carry on. A run that can't merge safely (a damaged or
+schema-invalid results file, or a reviewed record that no longer lines up with its scan) stops with an
 error naming the line or page and writes nothing.
 
 **Assumption:** new batches use the same printed forms as the cards already

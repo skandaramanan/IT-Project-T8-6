@@ -6,7 +6,7 @@ Reads every PDF in ``scan_dir`` and writes ``<SURVEY_OUTPUT_DIR>/<region>.jsonl`
 (default ``./results``). Each card's reading is cached in
 ``data/runs/<region>/<extractor>/`` and replayed on a rerun.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
-PDF failed, so a scheduled run can tell.
+PDF failed or any record failed the schema, so a scheduled run can tell.
 """
 
 from __future__ import annotations
@@ -72,14 +72,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
-        "%d PDFs failed",
+        "%d PDFs failed, %d records invalid",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
         summary.failed_cards,
         summary.failed_pdfs,
+        summary.invalid_records,
     )
-    return 1 if summary.failed_cards or summary.failed_pdfs else 0
+    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

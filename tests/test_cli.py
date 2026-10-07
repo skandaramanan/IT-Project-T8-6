@@ -29,7 +29,12 @@ def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatc
 
 @pytest.mark.parametrize(
     ("failed", "code"),
-    [({}, 0), ({"failed_cards": 1}, 1), ({"failed_pdfs": 1}, 1)],
+    [
+        ({}, 0),
+        ({"failed_cards": 1}, 1),
+        ({"failed_pdfs": 1}, 1),
+        ({"invalid_records": 1}, 1),
+    ],
 )
 def test_extract_exits_1_only_when_something_failed(
     tmp_path, monkeypatch, failed, code
