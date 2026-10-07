@@ -47,8 +47,8 @@ dwelling.
 | 10 | `r03-survey-back.jpg` | hard | 27-0012-01 |
 | 14 | `r04-survey-back.jpg` | dense | 27-0014-01 |
 | 18 | `r05-survey-back.jpg` | sparse | 27-0023-01 |
-| 66 | `reverse_notes/p066-survey-back.jpg` | dense, overflow | 27-0046-01 |
-| 68 | `reverse_notes/p068-survey-back.jpg` | blank, overflow | 27-0046-01 |
+| 66 | `reverse_notes/p066-survey-back.jpg` | dense | 27-0046-01 (main sheet) |
+| 68 | `reverse_notes/p068-survey-back.jpg` | blank | 27-0046-01 (overflow sheet) |
 
 Pages 65 to 69 are one dwelling at 89 Elphin St with two fronts: the main one
 (65, notes on 66) and an overflow sheet for two boarders (67, blank back 68),
@@ -60,15 +60,22 @@ checked by a person against the scan.
 
 ## Provenance
 
-All of it comes from `1260908_1973-0002-00049.pdf`, from the shared Drive
-folder (see the README).
+The `rNN` records and `reverse_notes/` come from
+`1260908_1973-0002-00049.pdf`, from the shared Drive folder (see the README).
+`crossed_out/` comes from a different unit; see its bullet below.
 
+- `rNN-*.jpg` are pages 1 to 20 in order: page 1 is `r01-survey-front.jpg`,
+  page 20 is `r05-coding-back.jpg`.
 - `reverse_notes/p066-survey-back.jpg` and `p068-survey-back.jpg` are pages 66
   and 68, named by their page. Every survey back in pages 1 to 20 carries notes,
   so the set had no blank back to test the explicit empty against (IT-90 AC4).
   Page 68 is a blank back from the same PDF, and page 66 comes with it because
   both belong to one overflow dwelling: two fronts, each with its own back, and
   one coding card (page 69).
+- `crossed_out/family_boarders_1.jpg` and `family_boarders_2.jpg` come from
+  unit 216413, pages 43 and 63, as `crossed_out/manifest.json` records (IT-93).
+  They are not the raw page JPEGs: at about 2670×1730 they are smaller than a
+  full page, so the byte-for-byte note and the script below do not cover them.
 
 ## Why JPEG and not PNG
 
@@ -80,15 +87,20 @@ Converting to PNG would losslessly re-wrap pixels that are already lossy: no
 fidelity gained, and scans this size run 5–15 MB each as PNG, which would put
 roughly 150 MB in git forever instead of 7.2 MB.
 
-If you ever need to regenerate them:
+If you ever need to regenerate the `rNN` and `reverse_notes/` files, run this
+from `tests/fixtures/`:
 
 ```python
 from pypdf import PdfReader
 
+KINDS = ["survey-front", "survey-back", "coding-front", "coding-back"]
+NAMES = {i: f"r{(i - 1) // 4 + 1:02d}-{KINDS[(i - 1) % 4]}.jpg" for i in range(1, 21)}
+NAMES |= {i: f"reverse_notes/p{i:03d}-survey-back.jpg" for i in (66, 68)}
+
 r = PdfReader("1260908_1973-0002-00049.pdf")
-for i, page in enumerate(r.pages, 1):
-    for _, ref in page["/Resources"]["/XObject"].get_object().items():
+for i, name in NAMES.items():
+    for _, ref in r.pages[i - 1]["/Resources"]["/XObject"].get_object().items():
         obj = ref.get_object()
         if obj.get("/Subtype") == "/Image":
-            open(f"p{i:02d}.jpg", "wb").write(obj._data)  # raw stream, no re-encode
+            open(name, "wb").write(obj._data)  # raw stream, no re-encode
 ```

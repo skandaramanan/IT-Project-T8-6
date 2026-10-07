@@ -63,6 +63,15 @@ def test_every_survey_back_in_the_record_set_is_covered():
 def test_each_back_appears_once():
     pages = [(back["source"]["pdf"], back["source"]["page"]) for back in CARDS]
     assert len(pages) == len(set(pages))
+    images = [back["image"] for back in CARDS]
+    assert len(images) == len(set(images))
+
+
+def test_overflow_backs_share_a_record():
+    """Pages 66 and 68 are the main and overflow sheets of one dwelling, so a
+    note and an explicit empty must both land on the same record."""
+    by_page = {back["source"]["page"]: back for back in CARDS}
+    assert by_page[66]["record_id"] == by_page[68]["record_id"]
 
 
 @BACKS
@@ -72,7 +81,9 @@ def test_back_is_well_formed(back):
     assert back["source"]["pdf"].endswith(".pdf")
     assert isinstance(back["source"]["page"], int)
     assert isinstance(back["front_page"], int)
-    assert back["front_page"] < back["source"]["page"]
+    assert back["source"]["page"] == back["front_page"] + 1
+    if back["image"].startswith("reverse_notes/"):
+        assert back["image"].startswith(f"reverse_notes/p{back['source']['page']:03d}-")
 
 
 @BACKS
