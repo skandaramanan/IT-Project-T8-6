@@ -32,11 +32,43 @@ fixture set with none would let blank-detection bugs through.
 the crossed-out case the client flagged as implicit negation. Worth pointing
 tests at when that handling lands.
 
+## Reverse-side notes (FR-05)
+
+`reverse_notes/ground_truth.json` is the note text each survey back should
+yield, checked by `tests/test_reverse_note_fixtures.py`. It covers all five
+`rNN-survey-back.jpg` files above, plus two later backs copied into
+`reverse_notes/` for the cases pages 1 to 20 lack: a blank back and an overflow
+dwelling.
+
+| PDF page | Image | Case | Record |
+| --- | --- | --- | --- |
+| 2 | `r01-survey-back.jpg` | dense | 27-0006-01 |
+| 6 | `r02-survey-back.jpg` | hard | 27-0007-01 |
+| 10 | `r03-survey-back.jpg` | hard | 27-0012-01 |
+| 14 | `r04-survey-back.jpg` | dense | 27-0014-01 |
+| 18 | `r05-survey-back.jpg` | sparse | 27-0023-01 |
+| 66 | `reverse_notes/p066-survey-back.jpg` | dense, overflow | 27-0046-01 |
+| 68 | `reverse_notes/p068-survey-back.jpg` | blank, overflow | 27-0046-01 |
+
+Pages 65 to 69 are one dwelling at 89 Elphin St with two fronts: the main one
+(65, notes on 66) and an overflow sheet for two boarders (67, blank back 68),
+then a single coding card (69). The pair tests that both backs land on the same
+record, one with text and one with an explicit empty.
+
+Every expected note follows the verbatim rules in the test's docstring and was
+checked by a person against the scan.
+
 ## Provenance
 
-Pages 1–20 of `1973-0002-00049-1-25-1-20.pdf`, from the shared Drive folder
-(see the README). File order maps straight through: page 1 is
-`r01-survey-front.jpg`, page 20 is `r05-coding-back.jpg`.
+All of it comes from `1260908_1973-0002-00049.pdf`, from the shared Drive
+folder (see the README).
+
+- `reverse_notes/p066-survey-back.jpg` and `p068-survey-back.jpg` are pages 66
+  and 68, named by their page. Every survey back in pages 1 to 20 carries notes,
+  so the set had no blank back to test the explicit empty against (IT-90 AC4).
+  Page 68 is a blank back from the same PDF, and page 66 comes with it because
+  both belong to one overflow dwelling: two fronts, each with its own back, and
+  one coding card (page 69).
 
 ## Why JPEG and not PNG
 
@@ -53,7 +85,7 @@ If you ever need to regenerate them:
 ```python
 from pypdf import PdfReader
 
-r = PdfReader("1973-0002-00049-1-25-1-20.pdf")
+r = PdfReader("1260908_1973-0002-00049.pdf")
 for i, page in enumerate(r.pages, 1):
     for _, ref in page["/Resources"]["/XObject"].get_object().items():
         obj = ref.get_object()

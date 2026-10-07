@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.1.0",
+  "cards": [
+    {
+      "image": "r01-survey-back.jpg",
+      "case": "dense",
+      "expected_note": "Very big house in very good repair.\nVery well-furnished - obviously\nwell-to-do home.\nDining room has doors opening into lounge\nVery good garden - fish pond, fernery etc.",
+      "dwelling_no": "6",
+      "record_id": "27-0006-01",
+      "front_page": 1,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 2}
+    },
+    {
+      "image": "r02-survey-back.jpg",
+      "case": "hard",
+      "expected_note": "Young girl employed in shop.\nSaw son (head) - did not see over\nhouse. Not prepared to furnish\ninformation re net profit - appears\nprosperous business.\n[illegible] fair repair.",
+      "dwelling_no": "7",
+      "record_id": "27-0007-01",
+      "front_page": 5,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 6}
+    },
+    {
+      "image": "r03-survey-back.jpg",
+      "case": "hard",
+      "expected_note": "No one at home [illegible] 24/9\nVery good type of house - in very good repair (modern)\nbright, large, airy rooms - well decorated &\nwell furnished.\nSaw wife. [illegible] 25/9/41.",
+      "dwelling_no": "12",
+      "record_id": "27-0012-01",
+      "front_page": 9,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 10}
+    },
+    {
+      "image": "r04-survey-back.jpg",
+      "case": "dense",
+      "expected_note": "Very good type of house - in v. gd. condition externally\nVery nicely decorated & furnished inside.\nRooms bright, clean & airy.\nWife says husband did not want her to give information.\nI persuaded her to give me partics. re house & family\nbut she did not wish to say What husband did or earned.\nI think he probably works on Railways at Newport &\nmay be on office staff as he has once been an office worker\nI gathered from her conversation.",
+      "dwelling_no": "14",
+      "record_id": "27-0014-01",
+      "front_page": 13,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 14}
+    },
+    {
+      "image": "r05-survey-back.jpg",
+      "case": "sparse",
+      "expected_note": "Wife interviewed - very co-operative. Son has had pleurisy & unable\nto work for past year",
+      "dwelling_no": "23",
+      "record_id": "27-0023-01",
+      "front_page": 17,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 18}
+    },
+    {
+      "image": "reverse_notes/p066-survey-back.jpg",
+      "case": "dense",
+      "expected_note": "The Mother was interviewed. She did not know what the various members of the\nfamily earned. She said the only thing that mattered to her was their money.\nThe same applied to the boarders. The 1st boarder had been called up and was\ngoing into Camp for the duration of the War. The Son that was Missing had not been\nliving at home for some time.\nThe house was in fair order, needed papering inside, they were buying through\nthe Credit Foncier.\nThe allotment was about 30 x 80ft.",
+      "dwelling_no": "46",
+      "record_id": "27-0046-01",
+      "front_page": 65,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 66}
+    },
+    {
+      "image": "reverse_notes/p068-survey-back.jpg",
+      "case": "blank",
+      "expected_note": null,
+      "dwelling_no": "46",
+      "record_id": "27-0046-01",
+      "front_page": 67,
+      "source": {"pdf": "1260908_1973-0002-00049.pdf", "page": 68}
+    }
+  ]
+}
