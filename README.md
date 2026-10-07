@@ -133,17 +133,22 @@ the region's results file. In order, it:
 1. Splits every PDF into pages and sorts the pages into cards. A page that
    isn't a recognised card, or a PDF that can't be opened, is logged and
    skipped; the rest of the batch carries on.
-2. Has Gemini read each coding card and scores every field. Each reading is
-   cached in `data/runs/<region>/<extractor>/` (gitignored), so no card is paid
-   for twice.
-3. Checks every record against `schema/record-envelope.schema.json`. One that
+2. Has Gemini read each coding card and scores every field. With `--fronts`
+   it reads each survey front too (address, persons), at one more request per
+   front. Each reading is cached in `data/runs/<region>/<extractor>/`
+   (gitignored), so no card is paid for twice.
+3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
+   A front not read takes the dwelling number of the coding card after it. A
+   dwelling with a coding card that failed is not rebuilt, so its previous
+   version (if any) is kept.
+4. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.
-4. Merges the records into `results/<region>.jsonl`, one D007 record per
-   coding card, in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
-5. Logs a summary line: records written, pages skipped, cards unreadable, cards
-   failed, PDFs failed, records invalid. The command exits 1 if any card, PDF
-   or record failed, so a scheduled run can tell.
+5. Merges the records into `results/<region>.jsonl`, one D007 record per
+   dwelling (its households nested inside), in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+6. Logs a summary line: records written, pages skipped, cards unreadable,
+   cards unplaced, cards failed, PDFs failed, records invalid. The command
+   exits 1 if any card, PDF or record failed, so a scheduled run can tell.
 
 `results/` is committed (D025): committing the file is how the client gets
 the data and how reviewers' corrections come back.
@@ -177,8 +182,12 @@ measured (coding cards C1/C2). A batch on a different form would still run, but
 the field schema and the confidence numbers were calibrated on these forms
 only, so its output can't be trusted without a new benchmark.
 
-For now only the coding card is extracted, one record per card. Grouping cards
-into dwellings (IT-105) and reading survey fronts (IT-117) land separately.
+Survey fronts are read only with `--fronts`, which roughly doubles a run's
+requests. Without it, a dwelling's address and persons stay empty. A later run
+with `--fronts` fills them in, paying only for the fronts: coding cards replay
+from the cache. A dwelling whose fronts were read differently (an
+overflow front joining two dwellings) is regrouped, and a run that would move a
+reviewer's correction that way stops instead.
 
 ## Contributing
 

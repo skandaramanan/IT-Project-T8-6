@@ -2,8 +2,10 @@
 
 Takes a batch's cards in scan order, each paired with the dwelling number read
 off it (top-left of a front, "Number of Dwelling" on a coding card, none on a
-reverse). Proximity groups the cards; dwelling number cross-checks the group.
-Anything that does not check out is flagged or left unplaced, never guessed.
+reverse). Proximity groups the cards; dwelling number cross-checks the group. A front
+with no number (blank, or not read) takes its coding card's, flagged, when no
+other front has that number. Anything else that does not check out is flagged
+or left unplaced, never guessed.
 
 A dwelling holds one coding card per household, matching D007's dwelling ->
 households nesting; ``build_record`` splits them by "Number of Household".
@@ -33,6 +35,8 @@ class ReviewFlag(StrEnum):
     MUNICIPALITY_MISMATCH = "municipality_mismatch"
     # A record_id another coding card in the batch also has.
     DUPLICATE_RECORD_ID = "duplicate_record_id"
+    # A coding card here has no reading (failed, or the run stopped first).
+    UNREAD_CODING_CARD = "unread_coding_card"
     # Two fronts of one dwelling read differently for the same field; the
     # first front's value is kept.
     FRONTS_DISAGREE = "fronts_disagree"
@@ -66,7 +70,7 @@ def associate(
     """Dwellings, and the cards that could not be placed in one."""
     dwellings: list[Dwelling] = []
     unplaced: list[SegmentedCard] = []
-    deferred: list[tuple[SegmentedCard, str]] = []
+    deferred: list[tuple[SegmentedCard, str, Dwelling | None]] = []
     current: Dwelling | None = None
     previous: CardType | None = None
 
@@ -88,19 +92,26 @@ def associate(
         elif current and current.dwelling_no == key:
             current.cards.append(card)
         else:
-            deferred.append((card, key))
+            deferred.append((card, key, current))
         previous = card.card_type
 
-    # A coding card away from its front joins it only if exactly one fits.
+    # A coding card away from its front joins it only if exactly one fits. One
+    # whose number no front has joins the front before it if that front has no
+    # number (blank, or not read): the card names the dwelling.
     counts = Counter(d.dwelling_no for d in dwellings)
     by_key = {d.dwelling_no: d for d in dwellings}
-    for card, key in deferred:
+    for card, key, near in deferred:
         if counts[key] == 1:
             by_key[key].cards.append(card)
             by_key[key].flags.add(ReviewFlag.OUT_OF_ORDER)
+        elif counts[key] == 0 and near and near.dwelling_no in (None, key):
+            near.dwelling_no = key
+            near.cards.append(card)
+            near.flags.add(ReviewFlag.MISSING_DWELLING_NO)
         else:
             unplaced.append(card)
 
+    counts = Counter(d.dwelling_no for d in dwellings)  # with the named ones
     for d in dwellings:
         if d.dwelling_no is None:
             d.flags.add(ReviewFlag.MISSING_DWELLING_NO)
