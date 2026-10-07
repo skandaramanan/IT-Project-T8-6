@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 from survey.association.dwelling import ReviewFlag as Flag
 from survey.association.dwelling import associate
@@ -197,6 +198,37 @@ def test_a_later_front_fills_blanks_and_flags_disagreement():
     assert dwelling["handwritten"]["type_of_dwelling"]["value"] == "D"
     assert dwelling["handwritten"]["structural_material"]["value"] == "Brick"
     assert dwellings[0].flags == {Flag.FRONTS_DISAGREE}
+
+
+def test_an_unnumbered_front_at_the_same_address_is_overflow():
+    boarder = {survey_front_label("Relationship", 1): "Boarder"}
+    records, dwellings, _ = _records(
+        (F, _front("89", "Head")),
+        (C, _coding("89")),
+        (F, ExtractionResult(fields={"Address": "89 Hall St. Cont.", **boarder})),
+        (F, ExtractionResult(fields={"Address": "12 Bay St.", **boarder})),
+    )
+    assert _people(records[0]["dwelling"]["households"][0]) == ["Head", "Boarder"]
+    assert Flag.MISSING_DWELLING_NO in dwellings[1].flags
+
+
+@pytest.mark.parametrize(
+    ("first", "later"),
+    [
+        ("89 Hall St.", "89 Hall St."),  # same house, no marker: a flat, say
+        ("Andrew St.", "Andrew St."),  # street only
+        ("89 Hall St.", "89 Cont."),  # one word besides the marker
+    ],
+)
+def test_an_unnumbered_front_without_a_continuation_is_not_merged(first, later):
+    boarder = {survey_front_label("Relationship", 1): "Boarder"}
+    records, dwellings, _ = _records(
+        (F, ExtractionResult(fields={**_front("89", "Head").fields, "Address": first})),
+        (C, _coding("89")),
+        (F, ExtractionResult(fields={"Address": later, **boarder})),
+    )
+    assert _people(records[0]["dwelling"]["households"][0]) == ["Head"]
+    assert Flag.MISSING_DWELLING_NO in dwellings[1].flags
 
 
 def test_coding_cards_from_two_municipalities_yield_no_record():

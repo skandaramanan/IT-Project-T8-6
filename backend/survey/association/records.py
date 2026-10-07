@@ -7,11 +7,18 @@ survey front adds the address, the dwelling as written, and the person grid.
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from survey.association.dwelling import Dwelling, ReviewFlag, associate, dwelling_number
+from survey.association.dwelling import (
+    Dwelling,
+    ReviewFlag,
+    associate,
+    dwelling_key,
+    dwelling_number,
+)
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.record import build_record
 from survey.extraction.survey_front import SOURCE as SURVEY_FRONT
@@ -39,6 +46,27 @@ def extract(
         else (card, None)
         for card in cards
     ]
+
+
+def _numbers(extracted: Extracted) -> list[tuple[SegmentedCard, str | None]]:
+    """Each card with its dwelling number. An unnumbered front marked as a
+    continuation at the last numbered front's address ("89 Elphin St Cont.") is
+    its overflow and takes its number; any other stays unnumbered and flagged."""
+    numbers: list[tuple[SegmentedCard, str | None]] = []
+    last = None
+    for card, result in extracted:
+        number = dwelling_number(card, result.fields) if result else None
+        if card.card_type is CardType.FRONT and result:
+            words = re.findall(r"\w+", (result.fields.get("Address") or "").lower())
+            cont = any(w.startswith("cont") for w in words)
+            # house number and street, the first two words that aren't the marker
+            street = tuple(w[:5] for w in words if not w.startswith("cont"))[:2]
+            if dwelling_key(number):
+                last = (street, number)
+            elif cont and len(street) == 2 and last and last[0] == street:
+                number = last[1]
+        numbers.append((card, number))
+    return numbers
 
 
 def _image_page(card: SegmentedCard) -> tuple[str, int]:
@@ -147,12 +175,7 @@ def build_dwelling_records(
     card's own image and position, suits cards that are their own scans.
     """
     results = {card: result for card, result in extracted if result is not None}
-    dwellings, unplaced = associate(
-        [
-            (card, dwelling_number(card, r.fields) if r else None)
-            for card, r in extracted
-        ]
-    )
+    dwellings, unplaced = associate(_numbers(extracted))
     # An unread coding card has no dwelling number, so it is never placed; it
     # belongs to the last dwelling started before it.
     for card in unplaced:
