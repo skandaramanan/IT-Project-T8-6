@@ -183,10 +183,10 @@ per-family columns the `00049` fixture cards do not. Locking a field list across
 two layouts we have not reconciled would be redone twice.
 
 **A JSON Schema for the envelope, versus prose only.** The schema file is a
-dependency (`jsonschema`, a runtime one since IT-66) and a file to keep in step with this
-record. Taken anyway: prose cannot fail, and the invariant worth protecting —
-that no leaf is ever a bare value — is the one a hurried extractor will break
-first. One test now fails if the envelope drifts.
+dependency (`jsonschema`, a runtime one since IT-66) and a file to keep in step
+with this record. Taken anyway: prose cannot fail, and the invariant worth
+protecting — that no leaf is ever a bare value — is the one a hurried extractor
+will break first. One test now fails if the envelope drifts.
 
 This does **not** satisfy FR-15. That requirement's verification line is "output
 validates against agreed schema", and the agreed schema it means is the final
