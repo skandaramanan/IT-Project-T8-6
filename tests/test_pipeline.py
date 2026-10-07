@@ -15,8 +15,10 @@ import pytest
 from PIL import Image
 
 from survey import pipeline
+from survey.association import records as association_records
 from survey.extraction.base import ExtractionResult
-from survey.pipeline import MergeRefused, _merge, run
+from survey.extraction.card_fields import survey_front_label
+from survey.pipeline import MergeRefused, _merge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
@@ -49,6 +51,37 @@ class FakeExtractor:
         }
         raw = {**fields, "Garden": {"value": "1", "confidence": "high"}}
         return ExtractionResult(fields=fields, raw_text=json.dumps(raw))
+
+
+class UnnumberedFrontExtractor:
+    """Reads a front with an address but no dwelling number, so each coding
+    card is recorded on its own identity."""
+
+    name = "gemini-3.5-flash-lite-survey-front"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        fields = {"Address": f"{self.calls} Hall St."}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+class FrontExtractor(UnnumberedFrontExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        fields = {
+            "Dwelling Number (top-left corner)": "6",
+            "Address": "164 Hall St.",
+            survey_front_label("Relationship", 1): "Head",
+            survey_front_label("Relationship", 2): "Wife",
+        }
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def run(scan_dir: Path, **kwargs):
+    kwargs.setdefault("front_extractor", UnnumberedFrontExtractor())
+    return pipeline.run(scan_dir, **kwargs)
 
 
 class KilledExtractor(FakeExtractor):
@@ -153,6 +186,35 @@ def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
     ]
 
 
+def test_a_front_and_its_coding_card_become_one_dwelling_record(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+
+    (record,) = _read(tmp_path)
+    jsonschema.validate(record, SCHEMA)
+    dwelling = record["dwelling"]
+    assert dwelling["address"]["value"] == "164 Hall St."
+    assert dwelling["cards"] == [
+        {"role": "survey-front", "image": "unit.pdf", "page": 1, "confidence": None}
+    ]
+    household = dwelling["households"][0]
+    assert household["record_id"] == "27-0006-01"
+    assert [p["relationship"]["value"] for p in household["persons"]] == [
+        "Head",
+        "Wife",
+    ]
+    assert (raw_dir / FrontExtractor.name / "unit_p0001.json").exists()
+
+
 def test_an_unrecognised_page_is_skipped_and_the_rest_processed(tmp_path, caplog):
     pages = _fixture_pages("r01", "r02")
     pages.insert(3, _stray_page(tmp_path))  # after r01's coding card
@@ -229,9 +291,7 @@ def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
     assert [r["dwelling"]["households"][0]["record_id"] for r in _read(tmp_path)] == [
         "27-0006-02"
     ]
-    assert "unit.pdf p3: cannot build record_id without Number of Household" in (
-        caplog.text
-    )
+    assert "unit.pdf p3: missing_record_id, no_front" in caplog.text
 
 
 def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
@@ -247,11 +307,12 @@ def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
         )
 
     resumed = FakeExtractor()
+    resumed.calls = 1  # carry on numbering households; a repeat would be a duplicate
     summary = run(
         scan_dir, region="north", extractor=resumed, out_dir=tmp_path, raw_dir=raw_dir
     )
 
-    assert resumed.calls == 1
+    assert resumed.calls == 2
     assert summary.records == 2
 
 
@@ -353,7 +414,13 @@ def test_a_run_stops_after_three_failed_cards_and_keeps_earlier_records(
 
     down = DownExtractor()
     with caplog.at_level(logging.ERROR):
-        summary = run(scan_dir, region="north", extractor=down, out_dir=tmp_path)
+        summary = run(
+            scan_dir,
+            region="north",
+            extractor=down,
+            front_extractor=down,  # a daily cap fails fronts too
+            out_dir=tmp_path,
+        )
 
     assert down.calls == summary.failed_cards == 3
     assert summary.records == len(_read(tmp_path)) == 5
@@ -485,14 +552,14 @@ def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
 
 def _plant_bare_value(monkeypatch) -> None:
     """Make every built record break the envelope, as a buggy extractor would."""
-    build = pipeline.build_record
+    build = association_records.build_record
 
     def broken(*args, **kwargs):
         record = build(*args, **kwargs)
         record["dwelling"]["house"]["stray"] = "1"  # a field _score doesn't visit
         return record
 
-    monkeypatch.setattr(pipeline, "build_record", broken)
+    monkeypatch.setattr(association_records, "build_record", broken)
 
 
 def test_an_invalid_record_is_reported_and_not_written(tmp_path, monkeypatch, caplog):

@@ -133,14 +133,15 @@ the region's results file. In order, it:
 1. Splits every PDF into pages and sorts the pages into cards. A page that
    isn't a recognised card, or a PDF that can't be opened, is logged and
    skipped; the rest of the batch carries on.
-2. Has Gemini read each coding card and scores every field. Each reading is
-   cached in `data/runs/<region>/<extractor>/` (gitignored), so no card is paid
-   for twice.
+2. Has Gemini read each coding card and survey front, and scores every
+   coding-card field. Each reading is cached in
+   `data/runs/<region>/<extractor>/` (gitignored), so no card is paid for twice.
 3. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.
-4. Merges the records into `results/<region>.jsonl`, one D007 record per
-   coding card, in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+4. Groups the cards into dwellings and merges the records into
+   `results/<region>.jsonl`, one D007 record per dwelling, in scan order. Set
+   `SURVEY_OUTPUT_DIR` to write somewhere else.
 5. Logs a summary line: records written, pages skipped, cards unreadable, cards
    failed, PDFs failed, records invalid. The command exits 1 if any card, PDF
    or record failed, so a scheduled run can tell.
@@ -176,9 +177,6 @@ cached, so fixing the correction and rerunning costs nothing.
 measured (coding cards C1/C2). A batch on a different form would still run, but
 the field schema and the confidence numbers were calibrated on these forms
 only, so its output can't be trusted without a new benchmark.
-
-For now only the coding card is extracted, one record per card. Survey fronts
-and dwelling grouping (`survey.association.records`) aren't called yet.
 
 ## Contributing
 

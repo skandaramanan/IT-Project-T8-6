@@ -133,13 +133,24 @@ def build_dwelling_records(
     """Records, the dwellings they came from (with review flags), and the
     cards that could not be placed.
 
-    A dwelling with no usable coding card, coding cards from different
+    A coding card no front claims is a dwelling of its own, flagged
+    ``no_front``. A dwelling with no usable coding card, coding cards from different
     municipalities, or a record_id another dwelling also has yields no record:
     there is no one identity to record it under. It stays in the dwellings
     list with its flags.
     """
     results = {card: result for card, result in extracted if result is not None}
-    dwellings, unplaced = associate(_numbers(extracted))
+    numbers = _numbers(extracted)
+    dwellings, unplaced = associate(numbers)
+    # A coding card carries its own identity, so one no front claims still
+    # gets a record rather than being lost with its front.
+    number = dict(numbers)
+    for card in [c for c in unplaced if c.card_type is CardType.NUMERIC_CODING]:
+        if card in results:
+            unplaced.remove(card)
+            dwellings.append(
+                Dwelling(dwelling_key(number[card]), [card], {ReviewFlag.NO_FRONT})
+            )
     built = [(d, _record(d, results, region=region, batch=batch)) for d in dwellings]
     ids = Counter(
         h["record_id"] for _, r in built if r for h in r["dwelling"]["households"]

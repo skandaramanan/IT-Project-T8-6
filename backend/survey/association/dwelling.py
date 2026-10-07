@@ -25,6 +25,8 @@ class ReviewFlag(StrEnum):
     DUPLICATE_DWELLING_NO = "duplicate_dwelling_no"
     OUT_OF_ORDER = "out_of_order"
     NO_CODING_CARD = "no_coding_card"
+    # A coding card no front claims; recorded on its own identity.
+    NO_FRONT = "no_front"
     # More than one household, and the front does not say whose column is whose.
     PERSONS_UNASSIGNED = "persons_unassigned"
     # A coding card without municipality, dwelling or household number.

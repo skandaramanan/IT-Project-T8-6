@@ -189,6 +189,15 @@ def test_an_unnumbered_front_at_the_same_address_is_overflow():
     assert Flag.MISSING_DWELLING_NO in dwellings[1].flags
 
 
+def test_a_coding_card_no_front_claims_is_recorded_on_its_own():
+    records, dwellings, unplaced = _records((F, None), (R, None), (C, _coding("7")))
+    assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
+        "27-0007-01"
+    ]
+    assert dwellings[-1].flags == {Flag.NO_FRONT}
+    assert unplaced == []
+
+
 def test_coding_cards_from_two_municipalities_yield_no_record():
     records, dwellings, _ = _records(
         (F, _front("5")), (C, _coding("5")), (C, _coding("5", "2", municipality="28"))

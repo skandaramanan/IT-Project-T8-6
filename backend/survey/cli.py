@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             args.scan_dir,
             region=region,
             extractor=extractor,
+            front_extractor=GeminiExtractor(survey_front=True),
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
             raw_dir=Path("data/runs") / region,
             fresh=args.fresh,
