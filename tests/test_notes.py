@@ -1,7 +1,7 @@
 """FR-05: a survey back's notes, read verbatim and attached to its dwelling.
 
 Covers IT-89's ACs without a model: AC1's verbatim capture against a stub
-extractor (the live check is ``test_reverse_note_fixtures.py``), AC2's link
+extractor (the live check is ``test_reverse_note_extraction.py``), AC2's link
 through real segmentation and association on the fixture cards, AC3's explicit
 empty for a blank back, and AC4's provenance.
 """
