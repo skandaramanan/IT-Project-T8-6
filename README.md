@@ -136,11 +136,11 @@ Some tests skip on purpose, and pytest lists them as `s`:
 A skip is not a failure; CI has neither the key nor the data. A failing test
 prints the assertion and the values it compared. If you can't fix it in your
 own PR, raise a Linear issue with the `Bug` label, the test name and that
-output (Test Plan, bug process).
+output (see the bug process in the Test Plan).
 
 If `uv sync --locked` fails in CI, `pyproject.toml` and `uv.lock` have
 drifted: run `uv sync` and commit both. If gitleaks fails, a key reached a
-commit; rotate it, deleting it is not enough (D004).
+commit. Rotate the key, because deleting it from the branch is not enough (D004).
 
 ### Extracting a new batch of scans
 
