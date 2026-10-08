@@ -124,7 +124,8 @@ uv run pytest --cov=survey --cov-branch --cov-report=term-missing
 ```
 
 The coverage table lists, per module, the share of lines and branches the
-tests run and the line numbers they miss. It is reported, not enforced.
+tests run and the line numbers they miss. In CI it also appears on the
+run's Summary page. It is reported, not enforced.
 
 Some tests skip on purpose, and pytest lists them as `s`:
 
