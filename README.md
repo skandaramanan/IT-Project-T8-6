@@ -112,6 +112,37 @@ uv run ruff check .                            # lint
 uv run python benchmark/run_benchmark.py --help  # calibration harness
 ```
 
+### Running the tests
+
+CI runs gitleaks, `ruff check .`, `ruff format --check .` and pytest with
+coverage on every PR. To run the same checks locally:
+
+```bash
+uv run ruff format --check .
+uv run ruff check .
+uv run pytest --cov=survey --cov-branch --cov-report=term-missing
+```
+
+The coverage table lists, per module, the share of lines and branches the
+tests run and the line numbers they miss. In CI it also appears on the
+run's Summary page. It is reported, not enforced.
+
+Some tests skip on purpose, and pytest lists them as `s`:
+
+| Test | Skips unless |
+|---|---|
+| `test_survey_front_fixtures.py::test_extraction_matches_ground_truth` (one per fixture front) | `GEMINI_API_KEY` is set: it makes live Gemini calls |
+| the three calibration tests in `test_confidence.py`, and `test_benchmark_pages.py` | the benchmark set is synced to `data/benchmark/` from Drive |
+
+A skip is not a failure; CI has neither the key nor the data. A failing test
+prints the assertion and the values it compared. If you can't fix it in your
+own PR, raise a Linear issue with the `Bug` label, the test name and that
+output (see the bug process in the Test Plan).
+
+If `uv sync --locked` fails in CI, `pyproject.toml` and `uv.lock` have
+drifted: run `uv sync` and commit both. If gitleaks fails, a key reached a
+commit. Rotate the key, because deleting it from the branch is not enough (D004).
+
 ### Extracting a new batch of scans
 
 Each folder of the archive is one region (D027). Set `GEMINI_API_KEY` in
