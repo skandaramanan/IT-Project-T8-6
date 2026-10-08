@@ -41,8 +41,10 @@ nothing.
   previous line stays until a run rebuilds every household on it.
 - A record whose scan is removed from the folder stays until deleted by hand.
 - Without the reading cache (a rerun on another machine, or `--fresh`, which
-  sets it aside) every card is read again, so uncorrected values may change; corrected fields, and the
-  record_id they imply, are kept.
+  sets it aside) every card is read again, so uncorrected values may change;
+  corrected fields, and the record_id they imply, are kept. A front read
+  before but unusable now keeps its previous reading rather than blanking the
+  address and persons, as long as the dwelling has the same fronts.
 - PDF names must be unique within a region: two scans with the same name
   would share a merge key and a cache entry.
 - Card `image` and `page` must stay the PDF name and PDF page number when

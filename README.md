@@ -139,9 +139,12 @@ the region's results file. In order, it:
    (gitignored), so no card is paid for twice.
 3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
    A front with no number (blank, or its reading was unusable) takes the
-   dwelling number of the coding card after it. A dwelling with a coding card
-   or front whose request failed is not rebuilt, so its previous version (if
-   any) is kept; the card is read again next run.
+   dwelling number of the coding card after it; if an earlier run read that
+   front, its previous reading is kept. A dwelling with a card whose request
+   failed is not rebuilt, so its previous version (if any) is kept, and the
+   card is read again next run. The exception is an extra front with no coding
+   card after it: if its request fails, the dwelling before it is written
+   without it.
 4. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.
@@ -167,7 +170,8 @@ rerun on the branch holding the reviewed file.
 
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache by itself. A card Gemini couldn't read is cached too and
-not sent again; delete its file under `data/runs/` (or use `--fresh`) to retry
+not sent again, and fails every run; delete its file,
+`data/runs/<region>/<extractor>/<pdf>_pNNNN.json` (or use `--fresh`), to retry
 it.
 
 **When a run stops early.** After 3 cards fail in a row (the daily cap, or an

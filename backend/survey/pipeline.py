@@ -39,7 +39,7 @@ from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
 from survey.association.dwelling import ReviewFlag
-from survey.association.records import build_dwelling_records
+from survey.association.records import FRONT_SLOTS, build_dwelling_records
 from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
@@ -193,7 +193,9 @@ def _run_pdf(
             result = _reading(card.image_path, pdf, number, reader, raw_dir, summary)
             # An unusable front counts as a blank one, so its dwelling is
             # still written; an unusable coding card has no household to add.
-            if result and (result.fields or card.card_type is CardType.FRONT):
+            if result is not None and (
+                result.fields or card.card_type is CardType.FRONT
+            ):
                 readings[card] = result
 
     def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
@@ -406,10 +408,33 @@ def _merge(
     for old in previous:
         rebuilt = _coding_cards(old) & by_card.keys()
         if rebuilt:
+            _keep_front(old, by_card[min(rebuilt)])
             _keep_corrections(old, by_card[min(rebuilt)])
         else:
             merged.append(old)
     return sorted(merged, key=lambda record: min(_coding_cards(record)))
+
+
+def _front_read(dwelling: dict[str, Any]) -> bool:
+    fields = [dwelling[key] for key in FRONT_SLOTS if key in dwelling]
+    fields += dwelling.get("handwritten", {}).values()
+    return any(field["status"] != "omitted" for field in fields)
+
+
+def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
+    """A front read before but unusable now (say, on ``--fresh``) keeps what
+    was read before, rather than blanking the address and persons."""
+    before, now = old["dwelling"], new["dwelling"]
+    if _front_read(now) or not _front_read(before):
+        return
+    if before.get("cards") != now.get("cards"):  # different fronts: regrouped
+        return
+    for key in (*FRONT_SLOTS, "handwritten"):
+        now[key] = before[key]
+    if len(before["households"]) == len(now["households"]) == 1:
+        now["households"][0]["persons"] = before["households"][0].get("persons", [])
+    image, page = now["cards"][0]["image"], now["cards"][0]["page"]
+    log.warning("%s p%d: front unusable, previous reading kept", image, page)
 
 
 def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:

@@ -852,13 +852,14 @@ def test_an_unusable_front_still_writes_its_household_on_every_run(tmp_path):
     """The bad reading is cached, so dropping its dwelling would be for good."""
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     raw_dir = tmp_path / "raw"
+    front = UnusableFirstFrontExtractor()
 
     for _ in range(2):  # the second run replays the cached readings
         summary = run(
             scan_dir,
             region="north",
             extractor=DwellingPerCardExtractor(),
-            front_extractor=UnusableFirstFrontExtractor(),
+            front_extractor=front,
             out_dir=tmp_path,
             raw_dir=raw_dir,
         )
@@ -873,3 +874,40 @@ def test_an_unusable_front_still_writes_its_household_on_every_run(tmp_path):
         assert records[1]["dwelling"]["address"]["value"] == "7 Hall St."
         for record in records:
             jsonschema.validate(record, SCHEMA)
+        assert front.calls == 2  # the unusable reading is not paid for again
+
+
+class UnusableFrontExtractor(FrontExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        return ExtractionResult(raw_text="not json")
+
+
+def test_a_fresh_rerun_with_an_unusable_front_keeps_the_previous_reading(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+    coding = FakeExtractor()
+    run(
+        scan_dir,
+        region="north",
+        extractor=coding,
+        out_dir=tmp_path,
+        front_extractor=FrontExtractor(),
+        raw_dir=raw_dir,
+    )
+    [before] = _read(tmp_path)
+
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=UnusableFrontExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+    )
+
+    [after] = _read(tmp_path)
+    assert summary.failed_cards == 1
+    assert after["dwelling"]["address"]["value"] == "6 Hall St."
+    assert after == before

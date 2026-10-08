@@ -25,7 +25,7 @@ Locate = Callable[[SegmentedCard], tuple[str, int]]
 log = logging.getLogger(__name__)
 
 # Front fields D007 already has a dwelling slot for; the rest go in ``handwritten``.
-_SLOTS = ("address", "families_in_dwelling")
+FRONT_SLOTS = ("address", "families_in_dwelling")
 
 
 def extract(
@@ -110,7 +110,7 @@ def _record(
                 handwritten[key] = field
             elif handwritten[key]["value"] != field["value"]:
                 dwelling.flags.add(ReviewFlag.FRONTS_DISAGREE)
-    for key in _SLOTS:
+    for key in FRONT_SLOTS:
         out[key] = handwritten.pop(key)
     out["handwritten"] = handwritten
     out["cards"] = [_card(c, SURVEY_FRONT, locate) for c in fronts]
