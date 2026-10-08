@@ -37,4 +37,6 @@ jobs:
 
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest
+      # Coverage is reported, not enforced: a % gate would reward tests that
+      # execute lines without checking them. See the Test Plan in Linear.
+      - run: uv run pytest --cov=survey --cov-branch --cov-report=term-missing
