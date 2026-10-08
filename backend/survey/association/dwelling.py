@@ -3,8 +3,8 @@
 Takes a batch's cards in scan order, each paired with the dwelling number read
 off it (top-left of a front, "Number of Dwelling" on a coding card, none on a
 reverse). Proximity groups the cards; dwelling number cross-checks the group. A front
-with no number (blank, or not read) takes its coding card's, flagged, when no
-other front has that number. Anything else that does not check out is flagged
+with no number (blank, unusable reading, or not read) takes its coding card's,
+flagged, when no other front has that number. Anything else that does not check out is flagged
 or left unplaced, never guessed.
 
 A dwelling holds one coding card per household, matching D007's dwelling ->

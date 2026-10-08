@@ -191,7 +191,9 @@ def _run_pdf(
                 break
             number = page_numbers[card.page_index]
             result = _reading(card.image_path, pdf, number, reader, raw_dir, summary)
-            if result is not None:
+            # An unusable front counts as a blank one, so its dwelling is
+            # still written; an unusable coding card has no household to add.
+            if result and (result.fields or card.card_type is CardType.FRONT):
                 readings[card] = result
 
     def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
@@ -253,7 +255,11 @@ def _reading(
     raw_dir: Path | None,
     summary: RunSummary,
 ) -> ExtractionResult | None:
-    """The card's cached reading, or a new one; None if it has none usable."""
+    """The card's cached reading, or a new one; None if the extractor failed.
+
+    A reading with no usable fields is still returned (and stays cached, so it
+    is not paid for again), but counts as a failed card.
+    """
     where = f"{pdf.name} p{number}"
     cache = (
         raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
@@ -276,9 +282,9 @@ def _reading(
             cache.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(cache, json.dumps(asdict(result)))
     if not result.fields:
-        log.error("%s: no usable reading, skipped", where)
+        log.error("%s: no usable reading", where)
         summary.failed_cards += 1
-        return None
+        return result
     summary.failure_streak = 0
     return result
 

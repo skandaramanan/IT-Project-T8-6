@@ -825,3 +825,51 @@ def test_a_dwelling_rebuilt_in_part_does_not_replace_the_whole_one(tmp_path):
     del part["dwelling"]["households"][1]
 
     assert _merge([whole], [part]) == [whole]
+
+
+class DwellingPerCardExtractor(FakeExtractor):
+    """Reads r01's coding card as dwelling 6 and r02's as dwelling 7."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        fields = {**result.fields, "Number of Household": "1"}
+        fields["Number of Dwelling"] = str(5 + self.calls)
+        return ExtractionResult(fields=fields, raw_text=result.raw_text)
+
+
+class UnusableFirstFrontExtractor(FrontExtractor):
+    """r01's front comes back unparseable; r02's reads as dwelling 7."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        if self.calls == 1:
+            return ExtractionResult(raw_text="not json")
+        fields = {"Dwelling Number (top-left corner)": "7", "Address": "7 Hall St."}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def test_an_unusable_front_still_writes_its_household_on_every_run(tmp_path):
+    """The bad reading is cached, so dropping its dwelling would be for good."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+
+    for _ in range(2):  # the second run replays the cached readings
+        summary = run(
+            scan_dir,
+            region="north",
+            extractor=DwellingPerCardExtractor(),
+            front_extractor=UnusableFirstFrontExtractor(),
+            out_dir=tmp_path,
+            raw_dir=raw_dir,
+        )
+
+        records = _read(tmp_path)
+        assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
+            "27-0006-01",
+            "27-0007-01",
+        ]
+        assert summary.failed_cards == 1
+        assert records[0]["dwelling"]["address"]["status"] == "omitted"
+        assert records[1]["dwelling"]["address"]["value"] == "7 Hall St."
+        for record in records:
+            jsonschema.validate(record, SCHEMA)

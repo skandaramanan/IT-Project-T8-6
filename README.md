@@ -138,10 +138,10 @@ the region's results file. In order, it:
    reading is cached in `data/runs/<region>/<extractor>/`
    (gitignored), so no card is paid for twice.
 3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
-   A front with no number (blank, or its reading failed) takes the dwelling
-   number of the coding card after it. A
-   dwelling with a coding card that failed is not rebuilt, so its previous
-   version (if any) is kept.
+   A front with no number (blank, or its reading was unusable) takes the
+   dwelling number of the coding card after it. A dwelling with a coding card
+   or front whose request failed is not rebuilt, so its previous version (if
+   any) is kept; the card is read again next run.
 4. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.

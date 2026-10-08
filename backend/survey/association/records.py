@@ -136,8 +136,10 @@ def build_dwelling_records(
     municipalities, or a record_id another dwelling also has yields no record:
     there is no one identity to record it under. Nor does one with a coding
     card that has no reading, which would otherwise be recorded a household
-    short, or one with a survey front that has no reading: an unread front has
-    no dwelling number, so the grouping around it can't be trusted. It stays
+    short, or one with a survey front that has no reading this run (its request
+    failed, or the run stopped first): it is retried next run, and until then
+    the grouping around it can't be trusted. A front whose reading came back
+    unusable is passed in with empty fields and counts as a blank front. It stays
     in the dwellings list with its flags. ``fronts_read=False`` says the
     fronts were never read, so their missing readings are expected.
 
