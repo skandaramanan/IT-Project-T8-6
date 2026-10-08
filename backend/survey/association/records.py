@@ -6,9 +6,8 @@ survey front adds the address, the dwelling as written, and the person grid.
 
 from __future__ import annotations
 
-import logging
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from survey.association.dwelling import Dwelling, ReviewFlag, associate, dwelling_number
@@ -19,10 +18,6 @@ from survey.extraction.survey_front import build_survey_front
 from survey.segmentation.segmenter import CardType, SegmentedCard
 
 Extracted = list[tuple[SegmentedCard, ExtractionResult | None]]
-# Where a card sits in the scans, as a record names it: (image, page).
-Locate = Callable[[SegmentedCard], tuple[str, int]]
-
-log = logging.getLogger(__name__)
 
 # Front fields D007 already has a dwelling slot for; the rest go in ``handwritten``.
 _SLOTS = ("address", "families_in_dwelling")
@@ -41,12 +36,8 @@ def extract(
     ]
 
 
-def _image_page(card: SegmentedCard) -> tuple[str, int]:
-    return str(card.image_path), card.page_index + 1
-
-
-def _card(card: SegmentedCard, role: str, locate: Locate) -> dict[str, Any]:
-    image, page = locate(card)
+def _card(card: SegmentedCard, role: str) -> dict[str, Any]:
+    image, page = str(card.image_path), card.page_index + 1
     return {"role": role, "image": image, "page": page, "confidence": None}
 
 
@@ -56,31 +47,24 @@ def _record(
     *,
     region: str,
     batch: str | None,
-    locate: Locate,
 ) -> dict[str, Any] | None:
-    if ReviewFlag.UNREAD_CODING_CARD in dwelling.flags:
-        return None
     households = []
     for card in dwelling.cards:
         if card.card_type is not CardType.NUMERIC_CODING:
             continue
         result = results[card]
-        image, page = locate(card)
         try:
             households.append(
                 build_record(
                     result.fields,
                     region=region,
                     batch=batch,
-                    image=image,
-                    page=page,
+                    image=str(card.image_path),
+                    page=card.page_index + 1,
                     struck=result.struck,
                 )
             )
-        except (
-            ValueError
-        ) as error:  # no record_id without municipality, dwelling, household
-            log.warning("%s p%d: %s, skipped", image, page, error)
+        except ValueError:  # no record_id without municipality, dwelling, household
             dwelling.flags.add(ReviewFlag.MISSING_RECORD_ID)
     if not households:
         return None
@@ -92,10 +76,7 @@ def _record(
     out = record["dwelling"]
     out["households"] = [h["dwelling"]["households"][0] for h in households]
 
-    # A front not read (a run without them, or a failed reading) adds nothing.
-    fronts = [
-        c for c in dwelling.cards if c.card_type is CardType.FRONT and c in results
-    ]
+    fronts = [c for c in dwelling.cards if c.card_type is CardType.FRONT]
     if not fronts:
         return record
     readings = [build_survey_front(results[c].fields) for c in fronts]
@@ -113,7 +94,7 @@ def _record(
     for key in _SLOTS:
         out[key] = handwritten.pop(key)
     out["handwritten"] = handwritten
-    out["cards"] = [_card(c, SURVEY_FRONT, locate) for c in fronts]
+    out["cards"] = [_card(c, SURVEY_FRONT) for c in fronts]
     if len(out["households"]) == 1:
         out["households"][0]["persons"] = persons
     elif persons:
@@ -122,23 +103,15 @@ def _record(
 
 
 def build_dwelling_records(
-    extracted: Extracted,
-    *,
-    region: str,
-    batch: str | None = None,
-    locate: Locate = _image_page,
+    extracted: Extracted, *, region: str, batch: str | None = None
 ) -> tuple[list[dict[str, Any]], list[Dwelling], list[SegmentedCard]]:
     """Records, the dwellings they came from (with review flags), and the
     cards that could not be placed.
 
     A dwelling with no usable coding card, coding cards from different
     municipalities, or a record_id another dwelling also has yields no record:
-    there is no one identity to record it under. Nor does one with a coding
-    card that has no reading, which would otherwise be recorded a household
-    short. It stays in the dwellings list with its flags.
-
-    ``locate`` names each card's place in the scans (D026); the default, the
-    card's own image and position, suits cards that are their own scans.
+    there is no one identity to record it under. It stays in the dwellings
+    list with its flags.
     """
     results = {card: result for card, result in extracted if result is not None}
     dwellings, unplaced = associate(
@@ -147,17 +120,7 @@ def build_dwelling_records(
             for card, r in extracted
         ]
     )
-    # An unread coding card has no dwelling number, so it is never placed; it
-    # belongs to the last dwelling started before it.
-    for card in unplaced:
-        if card.card_type is CardType.NUMERIC_CODING and card not in results:
-            before = [d for d in dwellings if d.cards[0].page_index < card.page_index]
-            if before:
-                before[-1].flags.add(ReviewFlag.UNREAD_CODING_CARD)
-    built = [
-        (d, _record(d, results, region=region, batch=batch, locate=locate))
-        for d in dwellings
-    ]
+    built = [(d, _record(d, results, region=region, batch=batch)) for d in dwellings]
     ids = Counter(
         h["record_id"] for _, r in built if r for h in r["dwelling"]["households"]
     )

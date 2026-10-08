@@ -106,24 +106,6 @@ def test_unchecked_cards_are_flagged_or_unplaced_not_guessed():
     assert sorted(unplaced) == [0, 2, 6, 8]
 
 
-def test_a_front_with_no_number_takes_its_coding_cards_number():
-    """A run that does not read fronts still groups by scan order."""
-    missing, duplicate = Flag.MISSING_DWELLING_NO, Flag.DUPLICATE_DWELLING_NO
-    assert _run(
-        (F, None),
-        (R, None),
-        (C, "6"),
-        (C, "6"),  # second household
-        (F, None),
-        (C, "7"),
-        (C, "8"),  # the front is 7 now
-    ) == ([([0, 1, 2, 3], {missing}), ([4, 5], {missing})], [6])
-    assert _run((F, None), (C, "6"), (F, None), (C, "6")) == (
-        [([0, 1], {missing, duplicate}), ([2, 3], {missing, duplicate})],
-        [],
-    )
-
-
 def test_fixture_batch_from_extraction_to_records():
     numbers = {"r01": "6", "r02": "7", "r03": "12", "r04": "14", "r05": "23"}
     roles = ("survey-front", "survey-back", "coding-front", "coding-back")

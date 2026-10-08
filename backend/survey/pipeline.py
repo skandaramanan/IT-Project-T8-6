@@ -1,9 +1,8 @@
 """One run over a folder of scan PDFs, start to finish (FR-17, IT-120).
 
-Each PDF is split into page images and sorted into cards by the segmenter.
-Every numeric coding card is extracted (and every survey front, given a front
-extractor), the cards are grouped into dwellings (IT-105), and each dwelling is
-built into one D007 record and scored. A region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
+Each PDF is split into page images, sorted into cards by the segmenter, and
+every numeric coding card is extracted, built into a D007 record and scored.
+A region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
 another region's records is refused (FR-02). Reruns are safe (NFR-07,
 NFR-04, D026): cached readings are replayed, records are merged with the
 previous file by the coding cards they were read from, and a reviewer's
@@ -17,9 +16,9 @@ the extractor fails on are each logged and skipped; the run carries on unless
 
 Stopgaps until the work they stand in for lands:
 
-- Survey fronts are read only given a front extractor (``--fronts``), at one
-  more Gemini request each. Without one, cards are grouped by scan order and
-  each coding card's dwelling number, and the front's fields stay empty.
+- One record per coding card. Association (IT-105) groups households into
+  dwellings, and survey-front extraction is IT-117; until then the other
+  three cards of a record are not read.
 - Gemini alone, so every field scores as NO_SECOND_OPINION (D016), refined by
   its self-reported band when it gave one. The Qwen arm and merge are
   IT-124/IT-125. A field the extractor never returned scores 0.0.
@@ -41,21 +40,14 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
-from survey.association.dwelling import ReviewFlag
-from survey.association.records import build_dwelling_records
 from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_confidence_bands
-from survey.extraction.record import FIELD_MAP, build_record_id
+from survey.extraction.record import FIELD_MAP, build_record, build_record_id
 from survey.segmentation.pdf_pages import extract_image
-from survey.segmentation.segmenter import (
-    CardType,
-    SegmentedCard,
-    classify_page,
-    segment_pages,
-)
+from survey.segmentation.segmenter import CardType, classify_page, segment_pages
 
 log = logging.getLogger(__name__)
 
@@ -75,8 +67,7 @@ class MergeRefused(ValueError):
 class RunSummary:
     records: int = 0
     skipped_pages: int = 0  # not a card the segmenter recognises
-    unreadable_cards: int = 0  # no municipality or household number
-    unplaced_cards: int = 0  # read, but fits no dwelling
+    unreadable_cards: int = 0  # no municipality, dwelling or household number
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
     failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
@@ -91,33 +82,28 @@ def run(
     out_dir: Path,
     raw_dir: Path | None = None,
     fresh: bool = False,
-    front_extractor: Extractor | None = None,
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
 
-    ``front_extractor`` reads the survey fronts too; without it they are not
-    read. ``fresh`` sets the cached readings aside (``<extractor>.previous``)
-    and reads every card again; corrections are still kept. Set aside once, at
-    the start, so a fresh run cut short resumes with a plain rerun.
+    ``fresh`` sets the cached readings aside (``<extractor>.previous``) and
+    reads every card again; corrections are still kept. Set aside once, at the
+    start, so a fresh run cut short resumes with a plain rerun.
     """
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
     _read_records(out_path, region)  # fail fast: a damaged file must cost no quota
-    for reader in filter(None, (extractor, front_extractor)):
-        cache_dir = raw_dir / reader.name if raw_dir else None
-        if fresh and cache_dir and cache_dir.exists():
-            previous = cache_dir.with_name(cache_dir.name + ".previous")
-            shutil.rmtree(previous, ignore_errors=True)
-            cache_dir.rename(previous)
+    cache_dir = raw_dir / extractor.name if raw_dir else None
+    if fresh and cache_dir and cache_dir.exists():
+        previous = cache_dir.with_name(cache_dir.name + ".previous")
+        shutil.rmtree(previous, ignore_errors=True)
+        cache_dir.rename(previous)
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
             break
         log.info("%s: reading", pdf.name)
         try:
-            records += _run_pdf(
-                pdf, region, extractor, front_extractor, raw_dir, summary
-            )
+            records += _run_pdf(pdf, region, extractor, raw_dir, summary)
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
             summary.failed_pdfs += 1
@@ -145,10 +131,10 @@ def _run_pdf(
     pdf: Path,
     region: str,
     extractor: Extractor,
-    front_extractor: Extractor | None,
     raw_dir: Path | None,
     summary: RunSummary,
 ) -> list[dict[str, Any]]:
+    records = []
     with tempfile.TemporaryDirectory() as tmp:
         pages: list[Path] = []
         page_numbers: list[int] = []  # 1-based PDF page, parallel to `pages`
@@ -181,81 +167,29 @@ def _run_pdf(
                 )
                 summary.skipped_pages += 1
 
-        readers = {
-            CardType.NUMERIC_CODING: extractor,
-            CardType.FRONT: front_extractor,
-        }
-        readings: dict[SegmentedCard, ExtractionResult] = {}
         for card in cards:
-            reader = readers.get(card.card_type)
-            if reader is None:
-                continue
             if summary.failure_streak >= MAX_FAILURE_STREAK:
                 break
+            if card.card_type != CardType.NUMERIC_CODING:
+                continue
             number = page_numbers[card.page_index]
-            result = _reading(card.image_path, pdf, number, reader, raw_dir, summary)
-            if result is not None:
-                readings[card] = result
-
-    def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
-        return pdf.name, page_numbers[card.page_index]
-
-    records, dwellings, unplaced = build_dwelling_records(
-        [(card, readings.get(card)) for card in cards],
-        region=region,
-        batch=pdf.name,
-        locate=locate,
-    )
-    # Every front is unnumbered when none was read; flagging each is noise.
-    quiet = set() if front_extractor else {ReviewFlag.MISSING_DWELLING_NO}
-    for dwelling in dwellings:
-        if flags := dwelling.flags - quiet:
-            log.warning(
-                "%s p%d: dwelling %s flagged: %s",
-                *locate(dwelling.cards[0]),
-                dwelling.dwelling_no,
-                ", ".join(sorted(flags)),
+            record = _read_card(
+                card.image_path, pdf, number, region, extractor, raw_dir, summary
             )
-        summary.unreadable_cards += ReviewFlag.MISSING_RECORD_ID in dwelling.flags
-    for card in unplaced:
-        # An unread card is already counted as failed.
-        if card.card_type is CardType.NUMERIC_CODING and card in readings:
-            log.warning("%s p%d: coding card fits no dwelling, skipped", *locate(card))
-            summary.unplaced_cards += 1
-
-    by_place = {locate(card): result for card, result in readings.items()}
-    # The Gemini extractor's `name` carries -banded/-struck suffixes; the
-    # confidence tables are keyed by the bare model id.
-    model = getattr(extractor, "model_id", extractor.name)
-    valid = []
-    for record in records:
-        _score(record, by_place, model)
-        if errors := _schema_errors(record):
-            # Not written, so the merge keeps this dwelling's previous record.
-            image, page = min(_coding_cards(record))
-            ids = ", ".join(h["record_id"] for h in record["dwelling"]["households"])
-            log.error(
-                "%s p%d: %s fails the schema, not written: %s",
-                image,
-                page,
-                ids,
-                "; ".join(errors),
-            )
-            summary.invalid_records += 1
-        else:
-            valid.append(record)
-    return valid
+            if record is not None:
+                records.append(record)
+    return records
 
 
-def _reading(
+def _read_card(
     image: Path,
     pdf: Path,
     number: int,
+    region: str,
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
-) -> ExtractionResult | None:
-    """The card's cached reading, or a new one; None if it has none usable."""
+) -> dict[str, Any] | None:
     where = f"{pdf.name} p{number}"
     cache = (
         raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
@@ -282,7 +216,34 @@ def _reading(
         summary.failed_cards += 1
         return None
     summary.failure_streak = 0
-    return result
+    try:
+        record = build_record(
+            result.fields,
+            region=region,
+            batch=pdf.name,
+            image=pdf.name,
+            page=number,
+            struck=result.struck,
+        )
+    except ValueError as error:
+        log.warning("%s: %s, skipped", where, error)
+        summary.unreadable_cards += 1
+        return None
+    # The Gemini extractor's `name` carries -banded/-struck suffixes; the
+    # confidence tables are keyed by the bare model id.
+    _score(record, result, getattr(extractor, "model_id", extractor.name))
+    if errors := _schema_errors(record):
+        # Not written, so the merge keeps this card's previous record, if any.
+        record_id = record["dwelling"]["households"][0]["record_id"]
+        log.error(
+            "%s: %s fails the schema, not written: %s",
+            where,
+            record_id,
+            "; ".join(errors),
+        )
+        summary.invalid_records += 1
+        return None
+    return record
 
 
 def _schema_errors(record: dict[str, Any]) -> list[str]:
@@ -293,41 +254,29 @@ def _schema_errors(record: dict[str, Any]) -> list[str]:
     ]
 
 
-def _score(
-    record: dict[str, Any],
-    readings: dict[tuple[str, int], ExtractionResult],
-    model: str,
-) -> None:
-    """Fill in field and card confidence, which build_record leaves null.
-
-    Each household is scored from its own coding card's reading. The dwelling
-    took its fields from the first household's card, so only that card scores
-    them. Survey-front fields have no D016 calibration and stay null.
-    """
+def _score(record: dict[str, Any], result: ExtractionResult, model: str) -> None:
+    """Fill in field and card confidence, which build_record leaves null."""
+    bands = parse_confidence_bands(result.raw_text)
     dwelling = record["dwelling"]
-    for index, household in enumerate(dwelling["households"]):
-        card = household["cards"][0]
-        bands = parse_confidence_bands(readings[card["image"], card["page"]].raw_text)
-        groups = {
-            "household": household,
-            "head": household["head"],
-            "counts": household["counts"],
-            "coding": household["coding"],
-        }
-        if index == 0:
-            groups |= {"dwelling": dwelling, "house": dwelling["house"]}
-        scores = []
-        for label, (key, group) in FIELD_MAP.items():
-            if group not in groups:
-                continue
-            field = groups[group][key]
-            if field["status"] == "omitted":
-                score = 0.0
-            else:
-                score = confidence_for(NO_SECOND_OPINION, model, bands.get(label))
-            field["confidence"] = score
-            scores.append(score)
-        card["confidence"] = card_confidence(scores)
+    household = dwelling["households"][0]
+    groups = {
+        "dwelling": dwelling,
+        "household": household,
+        "house": dwelling["house"],
+        "head": household["head"],
+        "counts": household["counts"],
+        "coding": household["coding"],
+    }
+    scores = []
+    for label, (key, group) in FIELD_MAP.items():
+        field = groups[group][key]
+        if field["status"] == "omitted":
+            score = 0.0
+        else:
+            score = confidence_for(NO_SECOND_OPINION, model, bands.get(label))
+        field["confidence"] = score
+        scores.append(score)
+    household["cards"][0]["confidence"] = card_confidence(scores)
 
 
 def _read_records(path: Path, region: str) -> list[dict[str, Any]]:
