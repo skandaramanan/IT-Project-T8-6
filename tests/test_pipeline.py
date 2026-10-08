@@ -15,6 +15,7 @@ import pytest
 from PIL import Image
 
 from survey import pipeline
+from survey.association import records as association
 from survey.extraction.base import ExtractionResult
 from survey.pipeline import MergeRefused, _merge, run
 
@@ -49,6 +50,17 @@ class FakeExtractor:
         }
         raw = {**fields, "Garden": {"value": "1", "confidence": "high"}}
         return ExtractionResult(fields=fields, raw_text=json.dumps(raw))
+
+
+class FrontExtractor(FakeExtractor):
+    """Reads every survey front as dwelling 6, so r01 and r02 share it."""
+
+    name = "gemini-3.5-flash-lite-survey-front"
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        fields = {"Dwelling Number (top-left corner)": "6", "Address": "6 Hall St."}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
 
 
 class KilledExtractor(FakeExtractor):
@@ -132,6 +144,7 @@ def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
     records = _read(out_dir)
     assert summary.records == len(records) == 2
     assert summary.skipped_pages == summary.failed_cards == 0
+    assert summary.unplaced_cards == 0  # fronts not read; scan order groups
     for record in records:
         jsonschema.validate(record, SCHEMA)
         card = record["dwelling"]["households"][0]["cards"][0]
@@ -247,11 +260,12 @@ def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
         )
 
     resumed = FakeExtractor()
+    resumed.calls = 1  # number households on from the cached card's
     summary = run(
         scan_dir, region="north", extractor=resumed, out_dir=tmp_path, raw_dir=raw_dir
     )
 
-    assert resumed.calls == 1
+    assert resumed.calls == 2  # one card read
     assert summary.records == 2
 
 
@@ -485,14 +499,14 @@ def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
 
 def _plant_bare_value(monkeypatch) -> None:
     """Make every built record break the envelope, as a buggy extractor would."""
-    build = pipeline.build_record
+    build = association.build_record
 
     def broken(*args, **kwargs):
         record = build(*args, **kwargs)
         record["dwelling"]["house"]["stray"] = "1"  # a field _score doesn't visit
         return record
 
-    monkeypatch.setattr(pipeline, "build_record", broken)
+    monkeypatch.setattr(association, "build_record", broken)
 
 
 def test_an_invalid_record_is_reported_and_not_written(tmp_path, monkeypatch, caplog):
@@ -691,3 +705,209 @@ def test_a_region_with_no_coding_cards_still_writes_its_empty_file(tmp_path):
 
     assert summary.records == 0
     assert (tmp_path / "north.jsonl").read_text() == ""
+
+
+def test_with_fronts_two_households_of_a_dwelling_share_one_line(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+
+    [record] = _read(tmp_path)
+    jsonschema.validate(record, SCHEMA)
+    assert summary.records == 1
+    households = record["dwelling"]["households"]
+    assert [h["record_id"] for h in households] == ["27-0006-01", "27-0006-02"]
+    # D026: each card named by its PDF and PDF page, not a temporary image
+    cards = [h["cards"][0] for h in households]
+    assert [(c["image"], c["page"]) for c in cards] == [
+        ("unit.pdf", 3),
+        ("unit.pdf", 7),
+    ]
+    assert all(isinstance(c["confidence"], float) for c in cards)
+    fronts = record["dwelling"]["cards"]
+    assert [(c["image"], c["page"]) for c in fronts] == [
+        ("unit.pdf", 1),
+        ("unit.pdf", 5),
+    ]
+    assert record["dwelling"]["address"]["value"] == "6 Hall St."
+    assert sorted(p.name for p in raw_dir.iterdir()) == [
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite-survey-front",
+    ]
+
+
+def test_a_correction_on_a_second_household_survives_a_rerun(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    fronts = {"extractor": FakeExtractor(), "front_extractor": FrontExtractor()}
+    run(scan_dir, region="north", out_dir=tmp_path, **fronts)
+    records = _read(tmp_path)
+    head = records[0]["dwelling"]["households"][1]["head"]
+    key = next(iter(head))
+    corrected = {**head[key], **CORRECTED}
+    head[key] = corrected
+    _write(tmp_path, records)
+
+    fronts = {"extractor": FakeExtractor(), "front_extractor": FrontExtractor()}
+    run(scan_dir, region="north", out_dir=tmp_path, **fronts)
+
+    [record] = _read(tmp_path)
+    assert record["dwelling"]["households"][1]["head"][key] == corrected
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_a_dwelling_with_a_failed_card_keeps_its_previous_line(tmp_path):
+    """Rebuilt without the failed household, it would replace the full one."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+    )
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(fail_on=2),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+    )
+
+    assert summary.failed_cards == 1
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+class FailingFrontExtractor(FrontExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        raise RuntimeError("429 quota")
+
+
+def test_a_rerun_whose_fronts_fail_keeps_the_previous_line(tmp_path):
+    """Unread fronts have no dwelling number, so the dwelling would split."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+    )
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FailingFrontExtractor(),
+        out_dir=tmp_path,
+    )
+
+    assert summary.failed_cards == 2
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_dwelling_rebuilt_in_part_does_not_replace_the_whole_one(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    fronts = {"extractor": FakeExtractor(), "front_extractor": FrontExtractor()}
+    run(scan_dir, region="north", out_dir=tmp_path, **fronts)
+    [whole] = _read(tmp_path)
+    part = json.loads(json.dumps(whole))
+    del part["dwelling"]["households"][1]
+
+    assert _merge([whole], [part]) == [whole]
+
+
+class DwellingPerCardExtractor(FakeExtractor):
+    """Reads r01's coding card as dwelling 6 and r02's as dwelling 7."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        fields = {**result.fields, "Number of Household": "1"}
+        fields["Number of Dwelling"] = str(5 + self.calls)
+        return ExtractionResult(fields=fields, raw_text=result.raw_text)
+
+
+class UnusableFirstFrontExtractor(FrontExtractor):
+    """r01's front comes back unparseable; r02's reads as dwelling 7."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        if self.calls == 1:
+            return ExtractionResult(raw_text="not json")
+        fields = {"Dwelling Number (top-left corner)": "7", "Address": "7 Hall St."}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def test_an_unusable_front_still_writes_its_household_on_every_run(tmp_path):
+    """The bad reading is cached, so dropping its dwelling would be for good."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    front = UnusableFirstFrontExtractor()
+
+    for _ in range(2):  # the second run replays the cached readings
+        summary = run(
+            scan_dir,
+            region="north",
+            extractor=DwellingPerCardExtractor(),
+            front_extractor=front,
+            out_dir=tmp_path,
+            raw_dir=raw_dir,
+        )
+
+        records = _read(tmp_path)
+        assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
+            "27-0006-01",
+            "27-0007-01",
+        ]
+        assert summary.failed_cards == 1
+        assert records[0]["dwelling"]["address"]["status"] == "omitted"
+        assert records[1]["dwelling"]["address"]["value"] == "7 Hall St."
+        for record in records:
+            jsonschema.validate(record, SCHEMA)
+        assert front.calls == 2  # the unusable reading is not paid for again
+
+
+class UnusableFrontExtractor(FrontExtractor):
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        return ExtractionResult(raw_text="not json")
+
+
+def test_a_fresh_rerun_with_an_unusable_front_keeps_the_previous_reading(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+    coding = FakeExtractor()
+    run(
+        scan_dir,
+        region="north",
+        extractor=coding,
+        out_dir=tmp_path,
+        front_extractor=FrontExtractor(),
+        raw_dir=raw_dir,
+    )
+    [before] = _read(tmp_path)
+
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=UnusableFrontExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+    )
+
+    [after] = _read(tmp_path)
+    assert summary.failed_cards == 1
+    assert after["dwelling"]["address"]["value"] == "6 Hall St."
+    assert after == before

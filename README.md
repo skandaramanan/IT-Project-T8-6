@@ -133,24 +133,34 @@ the region's results file. In order, it:
 1. Splits every PDF into pages and sorts the pages into cards. A page that
    isn't a recognised card, or a PDF that can't be opened, is logged and
    skipped; the rest of the batch carries on.
-2. Has Gemini read each coding card and scores every field. Each reading is
-   cached in `data/runs/<region>/<extractor>/` (gitignored), so no card is paid
-   for twice.
-3. Checks every record against `schema/record-envelope.schema.json`. One that
+2. Has Gemini read each coding card and scores every field, and read each
+   survey front (address, persons), at one more request per front. Each
+   reading is cached in `data/runs/<region>/<extractor>/`
+   (gitignored), so no card is paid for twice.
+3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
+   A front with no number (blank, or its reading was unusable) takes the
+   dwelling number of the coding card after it; if an earlier run read that
+   front, its previous reading is kept. A dwelling with a card whose request
+   failed is not rebuilt, so its previous version (if any) is kept, and the
+   card is read again next run. The exception is an extra front with no coding
+   card after it: if its request fails, the dwelling before it is written
+   without it.
+4. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.
-4. Merges the records into `results/<region>.jsonl`, one D007 record per
-   coding card, in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
-5. Logs a summary line: records written, pages skipped, cards unreadable, cards
-   failed, PDFs failed, records invalid. The command exits 1 if any card, PDF
-   or record failed, so a scheduled run can tell.
+5. Merges the records into `results/<region>.jsonl`, one D007 record per
+   dwelling (its households nested inside), in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+6. Logs a summary line: records written, pages skipped, cards unreadable,
+   cards unplaced, cards failed, PDFs failed, records invalid. The command
+   exits 1 if any card, PDF or record failed, or a coding card fit no
+   dwelling, so a scheduled run can tell.
 
 `results/` is committed (D025): committing the file is how the client gets
 the data and how reviewers' corrections come back.
 
 **Rerunning is safe.** Records are matched to their previous version by scan
-and page (D026): no duplicates, a record the run didn't rebuild is kept, and a
-field a reviewer corrected is never overwritten. Once review has started,
+and page (D026): no duplicates, a record the run didn't rebuild (or rebuilt
+only in part) is kept, and a field a reviewer corrected is never overwritten. Once review has started,
 rerun on the branch holding the reviewed file.
 
 | Run | What it does |
@@ -160,7 +170,8 @@ rerun on the branch holding the reviewed file.
 
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache by itself. A card Gemini couldn't read is cached too and
-not sent again; delete its file under `data/runs/` (or use `--fresh`) to retry
+not sent again, and fails every run; delete its file,
+`data/runs/<region>/<extractor>/<pdf>_pNNNN.json` (or use `--fresh`), to retry
 it.
 
 **When a run stops early.** After 3 cards fail in a row (the daily cap, or an
@@ -177,8 +188,10 @@ measured (coding cards C1/C2). A batch on a different form would still run, but
 the field schema and the confidence numbers were calibrated on these forms
 only, so its output can't be trusted without a new benchmark.
 
-For now only the coding card is extracted, one record per card. Grouping cards
-into dwellings (IT-105) and reading survey fronts (IT-117) land separately.
+Reading survey fronts roughly doubles a run's requests (IT-123: about 2.6 to 5
+days on 5 keys). A rerun that reads a front differently (an overflow front
+joining two dwellings) regroups that dwelling, and a run that would move a
+reviewer's correction that way stops instead.
 
 ## Contributing
 

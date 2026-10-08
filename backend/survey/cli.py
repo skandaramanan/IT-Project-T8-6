@@ -6,9 +6,11 @@ A region is one archive unit folder (FR-02, D027): ``--region`` defaults to the
 folder's name, e.g. ``216412``. Reads every PDF in ``scan_dir`` and writes
 ``<SURVEY_OUTPUT_DIR>/<region>.jsonl`` (default ``./results``). Each card's
 reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun;
-``--fresh`` reads every card again.
+``--fresh`` reads every card again. Survey fronts are read too, at one more
+Gemini request each.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
-PDF failed or any record failed the schema, so a scheduled run can tell.
+PDF failed, any coding card fit no dwelling, or any record failed the schema,
+so a scheduled run can tell.
 """
 
 from __future__ import annotations
@@ -87,21 +89,28 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
             raw_dir=Path("data/runs") / region,
             fresh=args.fresh,
+            front_extractor=GeminiExtractor(survey_front=True),
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
         return 1
     log.info(
-        "%d records, %d pages skipped, %d cards unreadable, %d cards failed, "
-        "%d PDFs failed, %d records invalid",
+        "%d records, %d pages skipped, %d cards unreadable, %d cards unplaced, "
+        "%d cards failed, %d PDFs failed, %d records invalid",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
+        summary.unplaced_cards,
         summary.failed_cards,
         summary.failed_pdfs,
         summary.invalid_records,
     )
-    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
+    failed = (
+        summary.failed_cards
+        or summary.failed_pdfs
+        or summary.invalid_records
+        or summary.unplaced_cards  # a household that fits no dwelling isn't written
+    )
     return 1 if failed else 0
 
 
