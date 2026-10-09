@@ -179,6 +179,16 @@ def test_a_single_stray_line_is_not_mistaken_for_a_ruled_grid(tmp_path):
     assert classify_page(_single_thin_line_page(tmp_path)) != "front"
 
 
+def test_a_slightly_tilted_front_is_still_a_front(tmp_path):
+    """Half a degree of scan tilt spreads each rule over several pixel rows;
+    counted across the whole page, 216422 lost 61 fronts to it (IT-123)."""
+    for record in RECORDS:
+        tilted = tmp_path / f"{record}-tilted.png"
+        front = Image.open(_page(record, "survey-front")).convert("L")
+        front.rotate(0.5, fillcolor=255).save(tilted)
+        assert classify_page(tilted) == "front", record
+
+
 def test_segment_pages_keeps_every_record_in_a_multi_record_scan_in_order():
     source = Path("unit-batch.pdf")
     roles = ["survey-front", "survey-back", "coding-front", "coding-back"]
