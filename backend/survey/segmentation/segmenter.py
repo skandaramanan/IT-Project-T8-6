@@ -21,6 +21,7 @@ _DARK_THRESHOLD = 170  # grayscale cutoff for "ink" vs. paper
 _RULED_LINE_FRACTION = 0.6  # ink fraction for a row/col to count as ruled
 _MAX_RULED_RUN_LENGTH = 4  # thin printed rule vs. a solid dark region
 _MIN_RULED_LINE_COUNT = 3  # thin runs needed to call a page "front"
+_RULED_STRIPS = 4  # rules are counted per strip, so a tilted scan still shows them
 _BLANK_INK_MAX = 0.002  # below this, page is blank
 _REVERSE_CODING_SPLIT = 0.035  # reverse vs. numeric_coding, by ink fraction
 _REVERSE_OVERRIDE_MAX = 0.10  # ceiling for trusting position over content -- FR-21
@@ -31,8 +32,8 @@ _EDGE_TRIM_FRACTION = 0.03  # trims scan-bed borders before analysis
 @dataclass(frozen=True)
 class PageFeatures:
     ink_fraction: float
-    ruled_rows: int  # thin dark-row run count
-    ruled_cols: int  # thin dark-col run count
+    ruled_rows: int  # thin dark-row run count, in the best vertical strip
+    ruled_cols: int  # thin dark-col run count, in the best horizontal strip
 
 
 def _count_thin_runs(is_dark: np.ndarray) -> int:
@@ -63,8 +64,16 @@ def _page_features(image_path: Path) -> PageFeatures:
     trim_x = round(width * _EDGE_TRIM_FRACTION)
     trim_y = round(height * _EDGE_TRIM_FRACTION)
     dark = dark[trim_y : height - trim_y, trim_x : width - trim_x]
-    ruled_rows = _count_thin_runs(dark.mean(axis=1) > _RULED_LINE_FRACTION)
-    ruled_cols = _count_thin_runs(dark.mean(axis=0) > _RULED_LINE_FRACTION)
+    # Half a degree of tilt spreads a full-width rule over several pixel rows,
+    # so none is dark enough; across a quarter of the page it stays in one.
+    ruled_rows = max(
+        _count_thin_runs(strip.mean(axis=1) > _RULED_LINE_FRACTION)
+        for strip in np.array_split(dark, _RULED_STRIPS, axis=1)
+    )
+    ruled_cols = max(
+        _count_thin_runs(strip.mean(axis=0) > _RULED_LINE_FRACTION)
+        for strip in np.array_split(dark, _RULED_STRIPS, axis=0)
+    )
     return PageFeatures(
         ink_fraction=float(dark.mean()),
         ruled_rows=ruled_rows,
@@ -73,8 +82,8 @@ def _page_features(image_path: Path) -> PageFeatures:
 
 
 def _is_front(features: PageFeatures) -> bool:
-    """Summed across axes -- a real front cleared this only combined (2+1),
-    not on either axis alone."""
+    """Summed across axes. A front's table shows 14+ rules in a strip; a
+    coding card or reverse shows 0-1 (216422, IT-123)."""
     return (features.ruled_rows + features.ruled_cols) >= _MIN_RULED_LINE_COUNT
 
 
