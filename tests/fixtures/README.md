@@ -58,6 +58,12 @@ record, one with text and one with an explicit empty.
 Every expected note follows the verbatim rules in the test's docstring and was
 checked by a person against the scan.
 
+## Review queue (FR-11)
+
+`review_flags/` holds no scans: three hand-written D007 records in two region
+files, covering every routing case, and `expected.json`, which labels each
+field by hand as flagged for review or not.
+
 ## Provenance
 
 The `rNN` records and `reverse_notes/` come from
