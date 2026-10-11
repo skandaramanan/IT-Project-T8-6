@@ -1,6 +1,6 @@
 """Command line entry point for the extraction pipeline (FR-17, IT-120).
 
-    uv run survey extract <scan_dir> [--region <name>]
+    uv run survey extract <scan_dir> [--region <name>] [--model qwen2.5-vl-server]
 
 A region is one archive unit folder (FR-02, D027): ``--region`` defaults to the
 folder's name, e.g. ``216412``. Reads every PDF in ``scan_dir`` and writes
@@ -10,6 +10,12 @@ reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun
 Gemini request each. ``--notes`` reads each front's back for its interview notes
 (FR-05), at one more request per back; a run without it keeps the notes an
 earlier run read.
+``--model qwen2.5-vl-server`` reads the coding cards with the second extractor
+(IT-124) instead, through a local OpenAI-compatible server, into
+``<SURVEY_OUTPUT_DIR>/<extractor>/<region>.jsonl`` -- its own file, so the two
+arms never merge into one before IT-125 does it on purpose. Survey fronts,
+backs and identity re-reads are not made: only coding fields have a second
+opinion to agree with, and a Gemini re-read would mix the arms.
 Scan-verified region/PDF/page decisions default to the repository's
 ``docs/runs/it123-verified-coding.json``; ``--verified-coding`` overrides it.
 Settings come from ``.env`` in the working directory.
@@ -31,6 +37,7 @@ import tempfile
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
+from survey.extraction.qwen_server import QwenServerExtractor
 from survey.pipeline import MergeRefused, read_records, read_verified_coding, run
 from survey.review.flags import build_flags
 
@@ -71,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="read every card again instead of replaying cached readings; "
         "reviewer corrections are still kept",
+    )
+    extract.add_argument(
+        "--model",
+        choices=["gemini", "qwen2.5-vl-server"],
+        default="gemini",
+        help="extractor to read the cards with (default: %(default)s)",
     )
     extract.add_argument(
         "--verified-coding",
@@ -145,21 +158,39 @@ def main(argv: list[str] | None = None) -> int:
     if not any(args.scan_dir.glob("*.pdf")):
         parser.error(f"no scan PDFs in {args.scan_dir}")
 
-    extractor = GeminiExtractor()
-    if not extractor.is_available():
-        parser.error("GEMINI_API_KEY is not set; add it to .env")
+    out_dir = Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results")
+    if args.model == "gemini":
+        extractor, front_extractor, identity_extractor = (
+            GeminiExtractor(),
+            GeminiExtractor(survey_front=True),
+            GeminiExtractor(identity=True),
+        )
+        notes_extractor = GeminiExtractor(reverse_notes=True) if args.notes else None
+        if not extractor.is_available():
+            parser.error("GEMINI_API_KEY is not set; add it to .env")
+    else:
+        if args.notes:
+            parser.error("--notes reads survey backs, which only Gemini reads")
+        extractor, front_extractor = QwenServerExtractor(), None
+        notes_extractor = identity_extractor = None
+        if not extractor.is_available():
+            parser.error(
+                f"no model server at {extractor.base_url}, or QWEN_SERVER_MODEL "
+                "isn't loaded there (blank needs exactly one model loaded)"
+            )
+        out_dir /= extractor.name
 
     try:
         summary = run(
             args.scan_dir,
             region=region,
             extractor=extractor,
-            out_dir=Path(os.environ.get("SURVEY_OUTPUT_DIR") or "results"),
+            out_dir=out_dir,
             raw_dir=Path("data/runs") / region,
             fresh=args.fresh,
-            front_extractor=GeminiExtractor(survey_front=True),
-            notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
-            identity_extractor=GeminiExtractor(identity=True),
+            front_extractor=front_extractor,
+            notes_extractor=notes_extractor,
+            identity_extractor=identity_extractor,
             verified_coding=read_verified_coding(args.verified_coding, region),
         )
     except MergeRefused as error:
