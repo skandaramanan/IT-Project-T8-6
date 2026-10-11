@@ -35,6 +35,7 @@ def test_load_env_sets_values_but_never_blanks_or_overrides(tmp_path, monkeypatc
         ({"failed_cards": 1}, 1),
         ({"failed_pdfs": 1}, 1),
         ({"invalid_records": 1}, 1),
+        ({"unattached_notes": 1}, 0),  # logged; no household is lost
     ],
 )
 def test_extract_exits_1_only_when_something_failed(
@@ -56,9 +57,11 @@ def test_extract_exits_1_only_when_something_failed(
     assert calls["region"] == "north"
     assert calls["out_dir"].name == "results"
     assert calls["fresh"] is False
+    assert calls["notes_extractor"] is None  # opt-in: one more request per back
 
-    cli.main(["extract", str(tmp_path), "--region", "north", "--fresh"])
+    cli.main(["extract", str(tmp_path), "--region", "north", "--fresh", "--notes"])
     assert calls["fresh"] is True
+    assert calls["notes_extractor"].name.endswith("-reverse-notes")
 
 
 def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(

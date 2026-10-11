@@ -10,6 +10,7 @@ from collections.abc import Container
 
 from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
+    REVERSE_NOTES_LABEL,
     REVERSE_NOTES_SCHEMA,
     SURVEY_FRONT_SCHEMA,
     build_extraction_prompt_schema,
@@ -49,7 +50,7 @@ SURVEY_FRONT_PROMPT = (
     "null where nothing is written.\n\n" + _SURVEY_FRONT_BLOCK
 )
 
-# FR-05. Verbatim is the requirement: the notes matter to the client as
+# FR-05. Copying as written is the requirement: the notes matter to the client as
 # historical context, so a tidied, summarised or corrected reading loses the
 # thing being kept. Struck words are left out and their replacements kept,
 # because D020 counts a correction to back-of-card text as part of it.
@@ -68,6 +69,10 @@ REVERSE_NOTES_PROMPT = (
     "showing through from the other side of the card. Use null if nothing is "
     "handwritten on this side.\n\n"
     + build_extraction_prompt_schema(REVERSE_NOTES_SCHEMA)
+    # Without the literal shape, Flash-Lite answered a blank back with
+    # {"text": null} on all three tries, which the parser rightly rejects.
+    + f'\n\nAnswer {{"{REVERSE_NOTES_LABEL}": "<the notes>"}}, or '
+    f'{{"{REVERSE_NOTES_LABEL}": null}} if this side is blank.'
 )
 
 # The bands a model may self-report against a value. Categorical rather than a

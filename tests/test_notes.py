@@ -7,6 +7,7 @@ empty for a blank back, and AC4's provenance.
 """
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,26 +39,23 @@ F, R, C = CardType.FRONT, CardType.REVERSE, CardType.NUMERIC_CODING
 NOTES = "Interview Notes"
 
 
-class FakeExtractor:
-    """Answers by page file name; an Exception value is raised instead."""
+class FakeReader:
+    """Answers by page file name; None is a page with no reading (a failed
+    call), as the pipeline's reader gives it."""
 
-    name = "fake-reverse-notes"
-
-    def __init__(self, answers: dict[str, object] | None = None) -> None:
+    def __init__(self, answers: dict[str, str | None] | None = None) -> None:
         self.answers = answers or {}
         self.seen: list[str] = []
 
-    def is_available(self) -> bool:
-        return True
+    def __call__(self, slot: ReverseSlot) -> ExtractionResult | None:
+        self.seen.append(slot.image.name)
+        answer = self.answers.get(slot.image.name, "")
+        return None if answer is None else ExtractionResult(fields={NOTES: answer})
 
-    def extract(self, image_path: Path) -> ExtractionResult:
-        self.seen.append(image_path.name)
-        answer = self.answers.get(image_path.name, "")
-        if isinstance(answer, Exception):
-            raise answer
-        if isinstance(answer, ExtractionResult):
-            return answer
-        return ExtractionResult(fields={NOTES: answer})
+
+def _locate(card: SegmentedCard) -> tuple[str, int]:
+    """As the pipeline names a card (D026): its scan, and its page there."""
+    return card.source_scan.name, card.page_index + 1
 
 
 def _front(number: str) -> ExtractionResult:
@@ -104,10 +102,12 @@ def _run(*pages, answers=None, page_numbers=None):
         (card, readers[card.card_type](number) if card.card_type in readers else None)
         for card, number in cards
     ]
-    records, dwellings, _ = build_dwelling_records(extracted, region="williamstown")
+    records, dwellings, _ = build_dwelling_records(
+        extracted, region="williamstown", locate=_locate
+    )
     numbers = page_numbers or list(range(1, len(paths) + 1))
     slots = find_reverses(dwellings, [c for c, _ in cards], paths, numbers)
-    unattached = attach_notes(records, read_notes(slots, FakeExtractor(answers)))
+    unattached = attach_notes(records, read_notes(slots, FakeReader(answers)), _locate)
     return records, unattached
 
 
@@ -208,7 +208,7 @@ def test_a_failed_read_is_omitted_not_blank():
     slot = ReverseSlot(
         SegmentedCard(F, Path("p0.jpg"), Path("b.pdf"), 0), Path("p1.jpg"), 2
     )
-    (note,) = read_notes([slot], FakeExtractor({"p1.jpg": RuntimeError("503")}))
+    (note,) = read_notes([slot], FakeReader({"p1.jpg": None}))
     assert note.text["status"] == "omitted"
 
 
@@ -217,8 +217,8 @@ def test_text_on_a_dropped_page_is_kept_and_flagged():
     model invented. Either way a reviewer has to see it."""
     front = SegmentedCard(F, Path("p0.jpg"), Path("b.pdf"), 0)
     slot = ReverseSlot(front, Path("p1.jpg"), 2, from_blank_page=True)
-    (sparse,) = read_notes([slot], FakeExtractor({"p1.jpg": "Nil"}))
-    (blank,) = read_notes([slot], FakeExtractor({"p1.jpg": ""}))
+    (sparse,) = read_notes([slot], FakeReader({"p1.jpg": "Nil"}))
+    (blank,) = read_notes([slot], FakeReader({"p1.jpg": ""}))
     assert (sparse.text["value"], sparse.flags) == (
         "Nil",
         {NoteFlag.NOTE_ON_BLANK_PAGE},
@@ -229,9 +229,9 @@ def test_text_on_a_dropped_page_is_kept_and_flagged():
 def test_a_front_without_a_back_is_not_sent_to_the_model():
     front = SegmentedCard(F, Path("p0.jpg"), Path("b.pdf"), 0)
     slot = ReverseSlot(front, None, None, flags=frozenset({NoteFlag.NO_REVERSE_FOUND}))
-    extractor = FakeExtractor()
-    (note,) = read_notes([slot], extractor)
-    assert extractor.seen == []
+    reader = FakeReader()
+    (note,) = read_notes([slot], reader)
+    assert reader.seen == []
     assert note.text["status"] == "omitted" and "source" not in note.text
     assert note.flags == {NoteFlag.NO_REVERSE_FOUND}
 
@@ -255,9 +255,9 @@ def test_a_one_household_dwelling_gets_its_note_and_the_backs_card():
             "household_id": "27-0006-01",
         }
     ]
-    assert [(c["role"], c["image"]) for c in dwelling["cards"]] == [
-        ("survey-front", "p0.jpg"),
-        ("survey-back", "p1.jpg"),
+    assert [(c["role"], c["image"], c["page"]) for c in dwelling["cards"]] == [
+        ("survey-front", "b.pdf", 1),
+        ("survey-back", "b.pdf", 2),
     ]
     jsonschema.validate(record, SCHEMA)
 
@@ -311,11 +311,11 @@ def test_overflow_fronts_give_two_notes_in_order_never_one_joined():
         "Continued.",
     ]
     assert [n["page"] for n in dwelling["notes"]] == [2, 4]
-    assert [(c["role"], c["image"]) for c in dwelling["cards"]] == [
-        ("survey-front", "p0.jpg"),
-        ("survey-back", "p1.jpg"),
-        ("survey-front", "p2.jpg"),
-        ("survey-back", "p3.jpg"),
+    assert [(c["role"], c["page"]) for c in dwelling["cards"]] == [
+        ("survey-front", 1),
+        ("survey-back", 2),
+        ("survey-front", 3),
+        ("survey-back", 4),
     ]
     jsonschema.validate(record, SCHEMA)
 
@@ -351,24 +351,22 @@ def test_fixture_backs_reach_their_dwellings_through_segmentation_and_associatio
             for c in cards
         ]
     records, dwellings, unplaced = build_dwelling_records(
-        extracted, region="williamstown"
+        extracted, region="williamstown", locate=_locate
     )
     assert unplaced == []
 
-    extractor = FakeExtractor(
-        {f"{r}-survey-back.jpg": f"notes for {r}" for r in numbers}
-    )
+    reader = FakeReader({f"{r}-survey-back.jpg": f"notes for {r}" for r in numbers})
     for cards, pages in scans:
         slots = find_reverses(dwellings, cards, pages, [1, 2, 3, 4])
-        assert attach_notes(records, read_notes(slots, extractor)) == []
+        assert attach_notes(records, read_notes(slots, reader), _locate) == []
 
     for record, (name, number) in zip(records, numbers.items()):
         (note,) = record["dwelling"]["notes"]
         assert note["text"]["value"] == f"notes for {name}"
         assert note["household_id"] == f"27-{number.zfill(4)}-01"
         assert note["page"] == 2
-        assert str(FIXTURES / f"{name}-survey-back.jpg") in [
-            c["image"] for c in record["dwelling"]["cards"]
+        assert ("survey-back", f"{name}.pdf", 2) in [
+            (c["role"], c["image"], c["page"]) for c in record["dwelling"]["cards"]
         ]
         jsonschema.validate(record, SCHEMA)
 
@@ -407,6 +405,13 @@ def test_a_blank_answer_is_a_usable_answer():
         '{"Interview Notes": null}', REVERSE_NOTES_SCHEMA_BY_NAME
     ) == {NOTES: ""}
     assert parse_json_fields('{"Notes": "x"}', REVERSE_NOTES_SCHEMA_BY_NAME) is None
+
+
+def test_the_prompt_shows_the_blank_answer_the_parser_accepts():
+    """A blank back came back as {"text": null} until the prompt spelled out
+    the key; the shape it shows must be one the parser takes."""
+    blank = re.search(r'\{"[^"]+": null\}', REVERSE_NOTES_PROMPT).group(0)
+    assert parse_json_fields(blank, REVERSE_NOTES_SCHEMA_BY_NAME) == {NOTES: ""}
 
 
 def test_one_extractor_reads_one_side():

@@ -10,31 +10,28 @@ placed by the front scanned before it, never by its content:
 A blank back is read too, and comes back ``no_data``, FR-05's explicit empty.
 Notes sit on the dwelling, not a household, because the front is one per
 dwelling; see D007 for the schema and ``REVERSE_NOTES_PROMPT`` for what
-"verbatim" means.
+"as written" means.
 
-Not yet handled: printed reverse forms (R1), confidence (FR-10), and calling
-this from ``pipeline.py``.
+Not yet handled: printed reverse forms (R1) and confidence (FR-10).
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from survey.association.dwelling import Dwelling
-from survey.extraction.base import ExtractionResult, Extractor
+from survey.association.records import Locate
+from survey.extraction.base import ExtractionResult
 from survey.extraction.card_fields import (
     REVERSE_NOTES_LABEL,
     REVERSE_NOTES_SCHEMA_BY_NAME,
 )
 from survey.extraction.record import build_field, build_omitted_field
 from survey.segmentation.segmenter import CardType, SegmentedCard
-
-log = logging.getLogger(__name__)
 
 SOURCE = "survey-back"
 FRONT = "survey-front"
@@ -176,12 +173,17 @@ def build_note_text(result: ExtractionResult | None) -> dict[str, Any]:
     )
 
 
-def read_notes(slots: Iterable[ReverseSlot], extractor: Extractor) -> list[Note]:
-    """Each slot's page through ``extractor``, one note per slot.
+def read_notes(
+    slots: Iterable[ReverseSlot],
+    read: Callable[[ReverseSlot], ExtractionResult | None],
+) -> list[Note]:
+    """Each slot's page through ``read``, one note per slot.
 
-    A slot with no page is still a note: an ``omitted`` one carrying the flag
-    that says why, so the gap shows in the record instead of vanishing. It has
-    no ``source``, since there is no card for it to resolve to.
+    ``read`` returns None when it has no reading for the page (the call
+    failed, or the run is stopping); the note is then ``omitted``. A slot with
+    no page is still a note: an ``omitted`` one carrying the flag that says
+    why, so the gap shows in the record instead of vanishing. It has no
+    ``source``, since there is no card for it to resolve to.
     """
     notes = []
     for slot in slots:
@@ -189,14 +191,7 @@ def read_notes(slots: Iterable[ReverseSlot], extractor: Extractor) -> list[Note]
         if slot.image is None:
             notes.append(Note(slot, build_omitted_field(), flags))
             continue
-        try:
-            result = extractor.extract(slot.image)
-        except Exception:  # one bad back must not cost the batch its notes
-            log.exception(
-                "%s p%s: note extraction failed", slot.front.source_scan.name, slot.page
-            )
-            result = None
-        text = build_note_text(result)
+        text = build_note_text(read(slot))
         if slot.from_blank_page and text["status"] == "ok":
             flags.add(NoteFlag.NOTE_ON_BLANK_PAGE)
         notes.append(Note(slot, text, flags))
@@ -207,65 +202,71 @@ def read_notes(slots: Iterable[ReverseSlot], extractor: Extractor) -> list[Note]
 
 
 def attach_notes(
-    records: Iterable[dict[str, Any]], notes: Iterable[Note]
+    records: Iterable[dict[str, Any]], notes: Iterable[Note], locate: Locate
 ) -> list[Note]:
     """Adds ``dwelling.notes`` and the backs' card entries to ``records``, in
     place. Returns the notes with no record to go on.
 
     A note finds its record through its front's card entry, which
-    ``build_dwelling_records`` writes for every front. A dwelling that yielded
-    no record (no coding card, no single identity) cannot hold a note, and no
-    identity is invented for it.
+    ``build_dwelling_records`` writes for every front it read, so ``locate``
+    must be the one the records were built with (D026). A dwelling that
+    yielded no record (no coding card, no single identity) cannot hold a note,
+    and no identity is invented for it.
     """
-    by_front: dict[str, dict[str, Any]] = {}
+    by_front: dict[tuple[str, int], dict[str, Any]] = {}
     for record in records:
         for card in record["dwelling"].get("cards", []):
             if card["role"] == FRONT:
-                by_front[card["image"]] = record
+                by_front[card["image"], card["page"]] = record
 
     unattached = []
     for note in notes:
-        record = by_front.get(str(note.slot.front.image_path))
+        front = locate(note.slot.front)
+        record = by_front.get(front)
         if record is None:
             unattached.append(note)
             continue
         dwelling = record["dwelling"]
-        households = dwelling["households"]
-        flags = set(note.flags)
-        if len(households) == 1:
-            household_id = households[0]["record_id"]
-        else:
-            household_id = None
-            flags.add(NoteFlag.HOUSEHOLD_AMBIGUOUS)
         entry: dict[str, Any] = {
             "text": note.text,
             "page": note.slot.page,
-            "household_id": household_id,
+            "household_id": None,
+            "flags": sorted(note.flags),
         }
-        if flags:
-            entry["flags"] = sorted(flags)
+        assign_household(entry, dwelling["households"])
         dwelling.setdefault("notes", []).append(entry)
-        if note.slot.image is not None:
-            _add_card(dwelling, note.slot)
+        if note.slot.page is not None:
+            _add_card(dwelling, front, note.slot.page)
     return unattached
 
 
-def _add_card(dwelling: dict[str, Any], slot: ReverseSlot) -> None:
+def assign_household(entry: dict[str, Any], households: list[dict[str, Any]]) -> None:
+    """The note entry's ``household_id``, and its ``household_ambiguous`` flag,
+    from the dwelling's households as they are now. The merge calls it again,
+    since a correction or a joining household changes them after attaching."""
+    flags = set(entry.get("flags", [])) - {NoteFlag.HOUSEHOLD_AMBIGUOUS}
+    if len(households) == 1:
+        entry["household_id"] = households[0]["record_id"]
+    else:
+        entry["household_id"] = None
+        flags.add(NoteFlag.HOUSEHOLD_AMBIGUOUS)
+    if flags:
+        entry["flags"] = sorted(flags)
+    else:
+        entry.pop("flags", None)
+
+
+def _add_card(dwelling: dict[str, Any], front: tuple[str, int], page: int) -> None:
     """The back's card entry, straight after its front's, so the record lists
-    each sheet's two sides together."""
+    each sheet's two sides together. The back is in the front's scan."""
     cards = dwelling.setdefault("cards", [])
-    back = {
-        "role": SOURCE,
-        "image": str(slot.image),
-        "page": slot.page,
-        "confidence": None,
-    }
-    front = str(slot.front.image_path)
+    image, _ = front
+    back = {"role": SOURCE, "image": image, "page": page, "confidence": None}
     at = next(
         (
             i + 1
             for i, c in enumerate(cards)
-            if c["role"] == FRONT and c["image"] == front
+            if c["role"] == FRONT and (c["image"], c["page"]) == front
         ),
         len(cards),
     )

@@ -7,7 +7,9 @@ folder's name, e.g. ``216412``. Reads every PDF in ``scan_dir`` and writes
 ``<SURVEY_OUTPUT_DIR>/<region>.jsonl`` (default ``./results``). Each card's
 reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun;
 ``--fresh`` reads every card again. Survey fronts are read too, at one more
-Gemini request each.
+Gemini request each. ``--notes`` reads each front's back for its interview notes
+(FR-05), at one more request per back; a run without it keeps the notes an
+earlier run read.
 Settings come from ``.env`` in the working directory. Exits 1 if any card or
 PDF failed, any coding card fit no dwelling, or any record failed the schema,
 so a scheduled run can tell.
@@ -63,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         help="read every card again instead of replaying cached readings; "
         "reviewer corrections are still kept",
     )
+    extract.add_argument(
+        "--notes",
+        action="store_true",
+        help="also read each survey back's interview notes, at one more Gemini "
+        "request per back",
+    )
     args = parser.parse_args(argv)
     region = args.scan_dir.resolve().name if args.region is None else args.region
     if not REGION.fullmatch(region):
@@ -90,13 +98,15 @@ def main(argv: list[str] | None = None) -> int:
             raw_dir=Path("data/runs") / region,
             fresh=args.fresh,
             front_extractor=GeminiExtractor(survey_front=True),
+            notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
         return 1
     log.info(
         "%d records, %d pages skipped, %d cards unreadable, %d cards unplaced, "
-        "%d cards failed, %d PDFs failed, %d records invalid",
+        "%d cards failed, %d PDFs failed, %d records invalid, "
+        "%d notes with no record",
         summary.records,
         summary.skipped_pages,
         summary.unreadable_cards,
@@ -104,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         summary.failed_cards,
         summary.failed_pdfs,
         summary.invalid_records,
+        summary.unattached_notes,
     )
     failed = (
         summary.failed_cards

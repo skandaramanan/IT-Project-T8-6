@@ -198,6 +198,7 @@ rerun on the branch holding the reviewed file.
 |---|---|
 | the same command | Replays cards already read on this machine, so only new or unfinished ones cost a request. Use it after an interruption, the daily cap, or new scans landing in the folder. On another machine every card is read again. |
 | the same command with `--fresh` | Moves the cached readings aside to `data/runs/<region>/<extractor>.previous/` and reads every card again. Use it after changing a prompt or `GEMINI_MEDIA_RESOLUTION`, which a normal rerun would not pick up. If it is cut short, rerun **without** `--fresh` to carry on; repeating `--fresh` starts over. |
+| the same command with `--notes` | Also reads each survey back's interview notes (FR-05) into `dwelling.notes`, at one more request per back. Off by default; a run without it keeps the notes an earlier run read. |
 
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache by itself. A card Gemini couldn't read is cached too and

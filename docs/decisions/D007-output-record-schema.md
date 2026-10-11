@@ -166,6 +166,10 @@ Each entry has the text as a field object, the PDF `page` of the back, and a
 - A blank back is `no_data`, the explicit empty FR-05 asks for. A back that
   was not read, or not found, is `omitted`, with `flags` saying why. A
   missing reading must never pass for a blank card.
+- No `notes` key at all means the backs were never read: reading them is
+  opt-in (`survey extract --notes`), at one Gemini request per back. A run
+  without `--notes` keeps the notes an earlier run wrote, and a back that
+  fails on a rerun keeps the text read before.
 
 This replaces `household.notes`. That slot held a bare string, which could not
 tell a blank back from an unread one, and it sat at the wrong level.

@@ -3,7 +3,9 @@
 Each PDF is split into page images and sorted into cards by the segmenter.
 Every numeric coding card is extracted (and every survey front, given a front
 extractor), the cards are grouped into dwellings (IT-105), and each dwelling is
-built into one D007 record and scored. A region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
+built into one D007 record and scored. Given a notes extractor, each front's
+back is read too and its notes attached to the dwelling (FR-05, IT-89). A
+region's records go to ``<out_dir>/<region>.jsonl``, and a file holding
 another region's records is refused (FR-02). Reruns are safe (NFR-07,
 NFR-04, D026): cached readings are replayed, records are merged with the
 previous file by the coding cards they were read from, and a reviewer's
@@ -39,7 +41,15 @@ from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
 from survey.association.dwelling import ReviewFlag
-from survey.association.records import FRONT_SLOTS, build_dwelling_records
+from survey.association.notes import SOURCE as SURVEY_BACK
+from survey.association.notes import (
+    ReverseSlot,
+    assign_household,
+    attach_notes,
+    find_reverses,
+    read_notes,
+)
+from survey.association.records import FRONT_SLOTS, Locate, build_dwelling_records
 from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
@@ -78,6 +88,7 @@ class RunSummary:
     failed_pdfs: int = 0  # could not be opened or split into pages
     failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
     invalid_records: int = 0  # failed the envelope, not written
+    unattached_notes: int = 0  # notes read whose dwelling has no record
 
 
 def run(
@@ -89,18 +100,25 @@ def run(
     raw_dir: Path | None = None,
     fresh: bool = False,
     front_extractor: Extractor | None = None,
+    notes_extractor: Extractor | None = None,
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
 
     ``front_extractor`` reads the survey fronts too; without it they are not
-    read. ``fresh`` sets the cached readings aside (``<extractor>.previous``)
-    and reads every card again; corrections are still kept. Set aside once, at
+    read. ``notes_extractor`` reads each front's back; without it a record
+    keeps the notes a previous run read. ``fresh`` sets the cached readings
+    aside (``<extractor>.previous``) and reads every card again; corrections
+    are still kept. Set aside once, at
     the start, so a fresh run cut short resumes with a plain rerun.
     """
+    if notes_extractor and not front_extractor:
+        # A note finds its record through its front's card entry, which only
+        # a read front gets.
+        raise ValueError("reading notes needs front_extractor too")
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
     _read_records(out_path, region)  # fail fast: a damaged file must cost no quota
-    for reader in filter(None, (extractor, front_extractor)):
+    for reader in filter(None, (extractor, front_extractor, notes_extractor)):
         cache_dir = raw_dir / reader.name if raw_dir else None
         if fresh and cache_dir and cache_dir.exists():
             previous = cache_dir.with_name(cache_dir.name + ".previous")
@@ -113,7 +131,13 @@ def run(
         log.info("%s: reading", pdf.name)
         try:
             records += _run_pdf(
-                pdf, region, extractor, front_extractor, raw_dir, summary
+                pdf,
+                region,
+                extractor,
+                front_extractor,
+                notes_extractor,
+                raw_dir,
+                summary,
             )
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
@@ -143,6 +167,7 @@ def _run_pdf(
     region: str,
     extractor: Extractor,
     front_extractor: Extractor | None,
+    notes_extractor: Extractor | None,
     raw_dir: Path | None,
     summary: RunSummary,
 ) -> list[dict[str, Any]]:
@@ -198,16 +223,20 @@ def _run_pdf(
             ):
                 readings[card] = result
 
-    def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
-        return pdf.name, page_numbers[card.page_index]
+        def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
+            return pdf.name, page_numbers[card.page_index]
 
-    records, dwellings, unplaced = build_dwelling_records(
-        [(card, readings.get(card)) for card in cards],
-        region=region,
-        batch=pdf.name,
-        locate=locate,
-        fronts_read=front_extractor is not None,
-    )
+        records, dwellings, unplaced = build_dwelling_records(
+            [(card, readings.get(card)) for card in cards],
+            region=region,
+            batch=pdf.name,
+            locate=locate,
+            fronts_read=front_extractor is not None,
+        )
+        # Inside the block: a back is read off the page images, which go with it.
+        if notes_extractor:
+            notes = find_reverses(dwellings, cards, pages, page_numbers)
+            _add_notes(records, notes, locate, pdf, notes_extractor, raw_dir, summary)
     # Every front is unnumbered when none was read; flagging each is noise.
     quiet = set() if front_extractor else {ReviewFlag.MISSING_DWELLING_NO}
     for dwelling in dwellings:
@@ -247,6 +276,33 @@ def _run_pdf(
         else:
             valid.append(record)
     return valid
+
+
+def _add_notes(
+    records: list[dict[str, Any]],
+    slots: list[ReverseSlot],
+    locate: Locate,
+    pdf: Path,
+    extractor: Extractor,
+    raw_dir: Path | None,
+    summary: RunSummary,
+) -> None:
+    """Each back read through the card cache, its note attached to its
+    dwelling's record (FR-05)."""
+
+    def read(slot: ReverseSlot) -> ExtractionResult | None:
+        if summary.failure_streak >= MAX_FAILURE_STREAK:
+            return None  # omitted, so the merge keeps any earlier reading
+        return _reading(slot.image, pdf, slot.page, extractor, raw_dir, summary)
+
+    for note in attach_notes(records, read_notes(slots, read), locate):
+        # A dwelling with no record is logged already; only lost text is news.
+        if note.text["status"] == "ok":
+            log.warning(
+                "%s p%d: notes read but the dwelling has no record, not written",
+                *locate(note.slot.front),
+            )
+            summary.unattached_notes += 1
 
 
 def _reading(
@@ -408,8 +464,13 @@ def _merge(
     for old in previous:
         rebuilt = _coding_cards(old) & by_card.keys()
         if rebuilt:
-            _keep_front(old, by_card[min(rebuilt)])
-            _keep_corrections(old, by_card[min(rebuilt)])
+            new = by_card[min(rebuilt)]
+            _keep_front(old, new)
+            _keep_notes(old, new)
+            _keep_corrections(old, new)
+            # Last: kept notes and a corrected identity both outdate household_id.
+            for note in new["dwelling"].get("notes", []):
+                assign_household(note, new["dwelling"]["households"])
         else:
             merged.append(old)
     return sorted(merged, key=lambda record: min(_coding_cards(record)))
@@ -421,13 +482,19 @@ def _front_read(dwelling: dict[str, Any]) -> bool:
     return any(field["status"] != "omitted" for field in fields)
 
 
+def _fronts(dwelling: dict[str, Any]) -> list[dict[str, Any]]:
+    """The dwelling's front card entries. A run with or without notes adds or
+    leaves out the backs', so those don't say whether it was regrouped."""
+    return [card for card in dwelling.get("cards", []) if card["role"] != SURVEY_BACK]
+
+
 def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
     """A front read before but unusable now (say, on ``--fresh``) keeps what
     was read before, rather than blanking the address and persons."""
     before, now = old["dwelling"], new["dwelling"]
     if _front_read(now) or not _front_read(before):
         return
-    if before.get("cards") != now.get("cards"):  # different fronts: regrouped
+    if _fronts(before) != _fronts(now):  # different fronts: regrouped
         return
     for key in (*FRONT_SLOTS, "handwritten"):
         now[key] = before[key]
@@ -435,6 +502,32 @@ def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
         now["households"][0]["persons"] = before["households"][0].get("persons", [])
     image, page = now["cards"][0]["image"], now["cards"][0]["page"]
     log.warning("%s p%d: front unusable, previous reading kept", image, page)
+
+
+def _keep_notes(old: dict[str, Any], new: dict[str, Any]) -> None:
+    """Notes read before outlive a run that didn't read backs, and a back read
+    before but unread now (a failed call, or the run stopping) keeps its text."""
+    before, now = old["dwelling"], new["dwelling"]
+    if "notes" not in before or _fronts(before) != _fronts(now):
+        return
+    if "notes" not in now:
+        now["notes"] = before["notes"]
+        now["cards"] = before["cards"]  # the same fronts, with their backs
+        return
+    kept = {note["page"]: note for note in before["notes"] if note["page"] is not None}
+    for index, note in enumerate(now["notes"]):
+        previous = kept.get(note["page"])
+        if (
+            previous
+            and note["text"]["status"] == "omitted"
+            and previous["text"]["status"] != "omitted"
+        ):
+            now["notes"][index] = previous
+            log.warning(
+                "%s p%d: back unread, previous notes kept",
+                now["cards"][0]["image"],
+                note["page"],
+            )
 
 
 def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
@@ -445,8 +538,8 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
     if _household_cards(new) != _household_cards(old):
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     for path, field in corrections:
-        *parents, last = path
         try:
+            *parents, last = _note_by_page(path, old, new)
             reduce(getitem, parents, new)[last] = field
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
@@ -470,6 +563,22 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             f"{image} p{page}: reviewed record fails the schema once its "
             f"corrections are applied: {'; '.join(errors)}"
         )
+
+
+def _note_by_page(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tuple:
+    """A corrected note goes back on the note for the same back: a gained or
+    lost front shifts the list. KeyError when that back is gone."""
+    if path[:2] != ("dwelling", "notes"):
+        return path
+    page = old["dwelling"]["notes"][path[2]]["page"]
+    if page is None and _fronts(old["dwelling"]) == _fronts(new["dwelling"]):
+        return path  # no back to follow, and nothing moved
+    index = {
+        note["page"]: i
+        for i, note in enumerate(new["dwelling"]["notes"])
+        if note["page"] is not None
+    }[page]
+    return (*path[:2], index, *path[3:])
 
 
 def _corrected_fields(
