@@ -263,6 +263,11 @@ def _run_pdf(
             CardType.NUMERIC_CODING: extractor,
             CardType.FRONT: front_extractor,
         }
+        log.info(
+            "%s: %d cards to read",
+            pdf.name,
+            sum(readers.get(card.card_type) is not None for card in cards),
+        )
         readings: dict[SegmentedCard, ExtractionResult] = {}
         for card in cards:
             reader = readers.get(card.card_type)
@@ -546,6 +551,7 @@ def _reading(
         except (ValueError, TypeError):  # truncated, or saved before a format change
             log.warning("%s: unreadable cached reading, reading again", where)
     if result is None:
+        log.info("%s: reading with %s", where, extractor.name)
         try:
             result = extractor.extract(image)
         except Exception:  # one bad card must not end a run of hundreds
