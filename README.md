@@ -225,6 +225,17 @@ days on 5 keys). A rerun that reads a front differently (an overflow front
 joining two dwellings) regroups that dwelling, and a run that would move a
 reviewer's correction that way stops instead.
 
+### Building the review queue
+
+```bash
+uv run survey flags results/*.jsonl > flags.jsonl
+```
+
+One line per field that needs review (D022), least sure card first, in the
+format `survey review --flags` reads. Accepted and corrected fields are left
+out. Each file must be named after its region (`216412.jsonl`), as
+`survey extract` writes it.
+
 ## Contributing
 
 One branch per Linear issue, one PR per branch, reviewed by someone else.
