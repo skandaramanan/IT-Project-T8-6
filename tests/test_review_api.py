@@ -1,0 +1,327 @@
+from dataclasses import replace
+
+import pytest
+from fastapi.testclient import TestClient
+from review_support import git, setup_review
+
+from survey import cli, records
+from survey.review.api import create_app
+from survey.review.launch import open_when_ready
+
+BASE = "http://127.0.0.1:8765"
+
+
+def setup_client(tmp_path):
+    _, settings = setup_review(tmp_path, with_git=True)
+    return settings, TestClient(create_app(settings), base_url=BASE)
+
+
+def test_api_decision_restart_and_undo(tmp_path):
+    settings, client = setup_client(tmp_path)
+    with client:
+        assert client.get("/api/health").json()["ready"]
+        assert client.get("/").status_code == 200
+        assert client.get("/app.js").status_code == 200
+        assert client.get("/docs").status_code == 200
+        assert client.get("/openapi.json").json()["paths"]["/api/queue"]
+        queue = client.get("/api/queue?region=demo").json()
+        item = queue["items"][1]
+        assert client.get(item["scan_url"]).headers["content-type"] == "image/png"
+        body = {
+            "action": "correct",
+            "value": "009",
+            "expected_version": item["version"],
+            "request_id": "api-correction",
+        }
+        assert (
+            client.post(
+                f"/api/review-items/{item['id']}/decisions", json=body
+            ).status_code
+            == 401
+        )
+        assert (
+            client.post("/api/session", json={"name": "  Reviewer  "}).json()[
+                "reviewer"
+            ]
+            == "Reviewer"
+        )
+        response = client.post(f"/api/review-items/{item['id']}/decisions", json=body)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["saved_locally"] and result["item"]["field"]["value"] == "009"
+        assert result["decision"]["reviewer"] == "Reviewer"
+        assert (
+            client.get(f"/api/review-items/{item['id']}/history").json()["history"][0][
+                "id"
+            ]
+            == result["decision"]["id"]
+        )
+        assert client.post("/api/sync", json={}).json()["state"] == "uploaded"
+    with TestClient(create_app(settings), base_url=BASE) as reopened:
+        item = reopened.get("/api/queue").json()["items"][1]
+        assert item["field"]["value"] == "009" and item["review_state"] == "corrected"
+        reopened.post("/api/session", json={"name": "Reviewer"})
+        undo = reopened.post(
+            f"/api/decisions/{result['decision']['id']}/undo",
+            json={"expected_version": item["version"], "request_id": "api-undo"},
+        )
+        assert undo.status_code == 200 and undo.json()["item"]["field"]["value"] == "12"
+        assert undo.json()["item"]["review_state"] == "pending"
+
+
+def test_mutation_security_and_validation(tmp_path):
+    _, client = setup_client(tmp_path)
+    with client:
+        assert client.post("/api/session", json={"name": " "}).status_code == 422
+        assert (
+            client.post(
+                "/api/session",
+                json={"name": "Reviewer"},
+                headers={"origin": "https://evil.example"},
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/api/session",
+                json={"name": "Reviewer"},
+                headers={"host": "evil.example"},
+            ).status_code
+            == 403
+        )
+        assert client.post("/api/session", content="name=Reviewer").status_code == 422
+        assert (
+            client.post(
+                "/api/session", json={"name": "Reviewer"}, headers={"origin": BASE}
+            ).status_code
+            == 200
+        )
+        item = client.get("/api/queue").json()["items"][1]
+        path = f"/api/review-items/{item['id']}/decisions"
+        body = {
+            "action": "correct",
+            "value": "09",
+            "expected_version": item["version"],
+            "request_id": "change",
+        }
+        assert client.post(path, json={**body, "reviewer": "Forged"}).status_code == 422
+        assert client.post(path, json={**body, "value": 9}).status_code == 422
+        assert (
+            client.post(path, json={**body, "action": "crossed_out"}).status_code == 422
+        )
+        assert client.post(path, json=body).status_code == 200
+        assert (
+            client.post(path, json={**body, "request_id": "stale"}).status_code == 409
+        )
+        assert client.get("/api/review-items/missing").status_code == 404
+        assert client.get("/api/scans/missing").status_code == 404
+
+
+def test_save_failure_no_success_and_no_advance(tmp_path, monkeypatch):
+    _, client = setup_client(tmp_path)
+    with client:
+        client.post("/api/session", json={"name": "Reviewer"})
+        item = client.get("/api/queue").json()["items"][1]
+
+        def fail(*args):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(records, "write_atomic", fail)
+        response = client.post(
+            f"/api/review-items/{item['id']}/decisions",
+            json={
+                "action": "accept",
+                "expected_version": item["version"],
+                "request_id": "failed",
+            },
+        )
+        assert (
+            response.status_code == 500
+            and response.json()["error"]["code"] == "save_failed"
+        )
+        assert (
+            client.get(f"/api/review-items/{item['id']}").json()["review_state"]
+            == "pending"
+        )
+
+
+def test_startup_diagnostics_and_second_application(tmp_path):
+    settings, client = setup_client(tmp_path)
+    with client, TestClient(create_app(settings), base_url=BASE) as second:
+        assert (
+            second.get("/api/health").json()["diagnostics"][0]["code"] == "writer_busy"
+        )
+        assert second.post("/api/session", json={"name": "Reviewer"}).status_code == 503
+    missing = replace(settings, flags=tmp_path / "not-present.jsonl")
+    with TestClient(create_app(missing), base_url=BASE) as client:
+        assert (
+            client.get("/api/health").json()["diagnostics"][0]["code"]
+            == "missing_flags"
+        )
+
+
+def test_batch_completion_sync_and_periodic_worker(tmp_path):
+    settings, _ = setup_client(tmp_path)
+    settings.flags.write_text(settings.flags.read_text().splitlines()[1] + "\n")
+    with TestClient(create_app(settings), base_url=BASE) as client:
+        client.post("/api/session", json={"name": "Reviewer"})
+        item = client.get("/api/queue").json()["items"][0]
+        result = client.post(
+            f"/api/review-items/{item['id']}/decisions",
+            json={
+                "action": "accept",
+                "expected_version": item["version"],
+                "request_id": "complete",
+            },
+        )
+        assert result.json()["sync"]["state"] == "uploaded"
+        assert client.get("/api/queue").json()["complete"]
+        assert git(settings.data_checkout, "rev-parse", "HEAD") == git(
+            tmp_path / "remote.git", "rev-parse", "review-data"
+        )
+
+
+def test_review_cli_and_validation_do_not_require_model_key(tmp_path, monkeypatch):
+    _, settings = setup_review(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert cli.main(["validate-results", str(settings.data_checkout / "results")]) == 0
+    assert cli.main(["validate-results", str(tmp_path / "absent")]) == 1
+    with pytest.raises(SystemExit):
+        cli.main(["review"])
+    import socket
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    import uvicorn
+
+    monkeypatch.setattr(
+        socket,
+        "socket",
+        lambda: nullcontext(SimpleNamespace(bind=lambda address: None)),
+    )
+
+    calls = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: calls.update(kwargs))
+    assert (
+        cli.main(
+            [
+                "review",
+                "--scan-root",
+                str(settings.scan_root),
+                "--data-checkout",
+                str(settings.data_checkout),
+                "--flags",
+                str(settings.flags),
+                "--cache",
+                str(settings.cache),
+            ]
+        )
+        == 0
+    )
+    assert calls["host"] == "127.0.0.1" and calls["workers"] == 1
+
+
+def test_launch_reports_configuration_failure_without_opening_browser(monkeypatch):
+    import urllib.request
+    import webbrowser
+    from io import BytesIO
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: BytesIO(
+            b'{"ready":false,"diagnostics":["missing data"]}'
+        ),
+    )
+    monkeypatch.setattr(
+        webbrowser, "open", lambda *args: pytest.fail("Browser should not open")
+    )
+    assert open_when_ready(8765) == 1
+
+
+def test_periodic_sync_uploads_without_explicit_request(tmp_path, monkeypatch):
+    from threading import Event
+
+    from review_support import decide
+
+    settings, _ = setup_client(tmp_path)
+    app = create_app(replace(settings, sync_interval=0.1))
+    uploaded = Event()
+    with TestClient(app, base_url=BASE):
+        original = app.state.sync.git
+
+        def observed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if args[0] == "push":
+                uploaded.set()
+            return result
+
+        monkeypatch.setattr(app.state.sync, "git", observed)
+        decide(app.state.service)
+        assert uploaded.wait(5)
+    assert git(settings.data_checkout, "rev-parse", "HEAD") == git(
+        tmp_path / "remote.git", "rev-parse", "review-data"
+    )
+
+
+def test_review_cli_port_collision_leaves_existing_backend_alone(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import socket
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    import uvicorn
+
+    _, settings = setup_review(tmp_path)
+
+    def busy(*args):
+        raise OSError("Address already in use")
+
+    monkeypatch.setattr(
+        socket, "socket", lambda: nullcontext(SimpleNamespace(bind=busy))
+    )
+    monkeypatch.setattr(
+        uvicorn,
+        "run",
+        lambda *args, **kwargs: pytest.fail("Should not launch on an occupied port"),
+    )
+    assert (
+        cli.main(
+            [
+                "review",
+                "--scan-root",
+                str(settings.scan_root),
+                "--data-checkout",
+                str(settings.data_checkout),
+                "--flags",
+                str(settings.flags),
+                "--cache",
+                str(settings.cache),
+            ]
+        )
+        == 1
+    )
+
+
+def test_missing_region_and_malformed_flags_remain_browsable(tmp_path):
+    import json
+
+    settings, _ = setup_client(tmp_path)
+    extra = {
+        "region": "missing",
+        "pdf": "missing.pdf",
+        "page": 1,
+        "field_path": "/dwelling/municipality",
+    }
+    invalid = {**extra, "region": "../bad"}
+    with settings.flags.open("a") as stream:
+        stream.write(json.dumps(extra) + "\n" + json.dumps(invalid) + "\n")
+    with TestClient(create_app(settings), base_url=BASE) as client:
+        regions = client.get("/api/regions").json()["regions"]
+        missing = next(r for r in regions if r["region"] == "missing")
+        assert not missing["has_records"] and missing["batches"] == ["missing.pdf"]
+        queue = client.get("/api/queue?region=demo&batch=synthetic.pdf").json()
+        assert any(d["code"] == "invalid_reference" for d in queue["diagnostics"])
+        assert not queue["complete"]
+        assert client.get("/api/queue?region=missing").json()["unresolved"] >= 1

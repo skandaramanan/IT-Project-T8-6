@@ -42,3 +42,14 @@ jobs:
       - run: uv run pytest --cov=survey --cov-branch --cov-report=term-missing
       # Same table on the run's Summary page, so nobody digs through the log.
       - run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+  review-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # Synthetic scans and a local bare Git remote, including Windows file locks.
+      - run: uv run pytest tests/test_review_records.py tests/test_review_service.py tests/test_review_scans.py tests/test_review_rerun.py tests/test_review_sync.py tests/test_review_api.py tests/test_cli.py tests/test_record.py tests/test_output_schema.py

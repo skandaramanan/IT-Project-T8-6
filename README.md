@@ -274,3 +274,23 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
 ## Project management
 
 Work is tracked in Linear: https://linear.app/um-it-project
+
+### Reviewing flagged C1/C2 fields (IT-113)
+
+The local review backend reads teammate-supplied flagged JSONL, saves decisions
+and undo history in the region records, and shares them through a separate
+`review-data` checkout. It does not require Gemini credentials. A small browser
+page proves the API integration; production React remains a separate ticket.
+
+```sh
+uv run python scripts/review_demo.py "/tmp/survey-review-demo"
+# Run the launch command printed by the synthetic demo.
+uv run survey validate-results "/path/to/review-data/results"
+```
+
+The demo uses synthetic cards and a local Git remote. For production paths,
+Windows shortcut setup, frontend API examples, rerun semantics and rollout gates,
+see [docs/review-backend.md](docs/review-backend.md) and
+[D029](docs/decisions/D029-review-persistence.md). Live use requires matching
+extracted records/flags, branch provisioning/rules/credentials, and Windows
+acceptance. Use one dataset writer; stop extraction while reviewing.

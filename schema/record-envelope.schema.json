@@ -10,6 +10,7 @@
     "schema_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "enum": ["0.1.0", "0.2.0", "0.3.0"],
       "description": "Envelope version. The field set moves independently of this."
     },
     "region": {
@@ -29,6 +30,7 @@
       "required": ["value", "status", "confidence"],
       "additionalProperties": false,
       "properties": {
+        "review": { "$ref": "#/$defs/review" },
         "value": {
           "type": ["string", "null"],
           "description": "As read, kept as text so leading zeros on codes like '04' survive. Null only when status is not 'ok'."
@@ -215,6 +217,310 @@
           "description": "To the head -- the only person field the grid always carries."
         }
       }
+    },
+
+    "field_snapshot": {
+      "type": "object",
+      "description": "Field payload snapshot; never includes nested review history.",
+      "required": [
+        "value",
+        "status",
+        "confidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "As read, kept as text so leading zeros on codes like '04' survive. Null only when status is not 'ok'."
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The code book code, where one applies."
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Code book meaning of `code` (FR-07). Sentinels carry their meaning here -- '999' is labelled, not treated as missing (FR-08)."
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "no_data",
+            "illegible",
+            "damaged",
+            "omitted"
+          ],
+          "description": "FR-09. ok: The field was read successfully and contains a usable value. no_data: The source field is present but contains no value to extract. illegible: The source field contains markings that cannot be read reliably. damaged: The source field cannot be read because its source area is damaged or obscured. omitted: The expected field was not returned by the extractor."
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FR-10. Nullable: raw-OCR engines have no per-field score, and null says so rather than claiming certainty (NFR-01)."
+        },
+        "negated": {
+          "type": "boolean",
+          "description": "FR-06 -- crossed out, read as implicit negation of the option."
+        },
+        "origin": {
+          "enum": [
+            "extracted",
+            "corrected"
+          ],
+          "default": "extracted",
+          "description": "NFR-05. A human correction stays distinguishable from the machine value."
+        },
+        "original_value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The machine value this replaced. Required when origin is 'corrected'."
+        },
+        "source": {
+          "$ref": "#/$defs/card_role",
+          "description": "NFR-06 / D006 -- which card this value came from, on traceability-relevant values."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "origin": {
+                "const": "corrected"
+              }
+            },
+            "required": [
+              "origin"
+            ]
+          },
+          "then": {
+            "required": [
+              "original_value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "state",
+        "history"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "accepted",
+            "corrected"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/review_event"
+          }
+        }
+      }
+    },
+    "review_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "request_id",
+        "item_id",
+        "reviewer",
+        "timestamp",
+        "action",
+        "before",
+        "after",
+        "before_state",
+        "after_state",
+        "request"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "action": {
+          "enum": [
+            "accept",
+            "correct",
+            "no_data",
+            "illegible",
+            "undo"
+          ]
+        },
+        "before": {
+          "$ref": "#/$defs/field_snapshot"
+        },
+        "after": {
+          "$ref": "#/$defs/field_snapshot"
+        },
+        "before_state": {
+          "enum": [
+            "pending",
+            "accepted",
+            "corrected"
+          ]
+        },
+        "after_state": {
+          "enum": [
+            "pending",
+            "accepted",
+            "corrected"
+          ]
+        },
+        "undo_target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request": {
+          "type": "object",
+          "required": [
+            "action",
+            "value",
+            "expected_version",
+            "undo_target"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "accept",
+                "correct",
+                "no_data",
+                "illegible",
+                "undo"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "expected_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "undo_target": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "undo"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "undo_target"
+            ]
+          }
+        }
+      ]
+    },
+    "legacy_tree": {
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "not": {
+          "required": [
+            "review"
+          ]
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/legacy_tree"
+        }
+      },
+      "else": {
+        "if": {
+          "type": "array"
+        },
+        "then": {
+          "items": {
+            "$ref": "#/$defs/legacy_tree"
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "enum": [
+              "0.1.0",
+              "0.2.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/legacy_tree"
+      }
+    }
+  ]
 }
