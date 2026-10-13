@@ -31,6 +31,9 @@ class FakeExtractor:
     """Reads every coding card as municipality 27, dwelling 6, next household."""
 
     name = model_id = "gemini-3.5-flash-lite"
+    # A survey front (page 1 or 5 of a two-record batch) read with the coding
+    # prompt spells no record_id, as on the real cards.
+    reads_fronts = False
 
     def __init__(self, fail_on: int | None = None) -> None:
         self.calls = 0
@@ -40,6 +43,8 @@ class FakeExtractor:
         return True
 
     def extract(self, image_path: Path) -> ExtractionResult:
+        if not self.reads_fronts and image_path.name in ("p0001.png", "p0005.png"):
+            return ExtractionResult(raw_text="{}")
         self.calls += 1
         if self.calls == self.fail_on:
             raise RuntimeError("503 from the API")
@@ -282,6 +287,40 @@ def test_a_second_reading_fills_a_blank_identity_part_flagged(tmp_path):
     assert "missing_record_id" not in first["dwelling"]["flags"]
     assert second["dwelling"]["households"][0]["record_id"] == "27-0006-02"
     assert "identity_reread" not in second["dwelling"]["flags"]
+
+
+class EmptySecondFrontExtractor(FrontExtractor):
+    """Reads r02's "front" as nothing: it is a coding card taken for one."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        return ExtractionResult(raw_text="{}") if self.calls == 2 else result
+
+
+class CardOnFrontExtractor(FakeExtractor):
+    reads_fronts = True
+
+
+def test_a_coding_card_taken_for_a_front_is_read_as_one(tmp_path, caplog):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+
+    with caplog.at_level(logging.WARNING):
+        run(
+            scan_dir,
+            region="north",
+            extractor=CardOnFrontExtractor(),
+            front_extractor=EmptySecondFrontExtractor(),
+            out_dir=tmp_path,
+        )
+
+    assert "unit.pdf p5: a coding card, not a front" in caplog.text
+    pages = [
+        card["page"]
+        for record in _read(tmp_path)
+        for household in record["dwelling"]["households"]
+        for card in household["cards"]
+    ]
+    assert 5 in pages
 
 
 class SameHouseholdExtractor(FakeExtractor):

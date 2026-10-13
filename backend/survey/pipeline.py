@@ -234,6 +234,10 @@ def _run_pdf(
                 result.fields or card.card_type is CardType.FRONT
             ):
                 readings[card] = result
+        if front_extractor:
+            cards = recover_coding_cards(
+                cards, readings, page_numbers, pdf, extractor, raw_dir
+            )
 
         def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
             return pdf.name, page_numbers[card.page_index]
@@ -301,6 +305,46 @@ def _run_pdf(
         else:
             valid.append(record)
     return valid
+
+
+def recover_coding_cards(
+    cards: list[SegmentedCard],
+    readings: dict[SegmentedCard, ExtractionResult],
+    page_numbers: list[int],
+    pdf: Path,
+    extractor: Extractor,
+    raw_dir: Path | None,
+) -> list[SegmentedCard]:
+    """``cards``, with a coding card the segmenter took for a front put back.
+
+    A coding card whose ruled lines sit on the front threshold (216414 p194)
+    reads with the front prompt as nothing, or as its codes in front fields,
+    but never with an address. Each front with no address is read with the
+    coding prompt, and is a coding card if that reading spells a record_id; a
+    blank front, a back or a narrative sheet does not. The probe's failures
+    aren't the run's: a page that stays a front is not one.
+    """
+    out = []
+    for card in cards:
+        result = readings.get(card)
+        if card.card_type is CardType.FRONT and (
+            result is not None and not normalise(result.fields.get("Address"))
+        ):
+            number = page_numbers[card.page_index]
+            coding = _reading(
+                card.image_path, pdf, number, extractor, raw_dir, RunSummary()
+            )
+            try:
+                identity_of(coding.fields if coding else {})
+            except ValueError:
+                pass
+            else:
+                log.warning("%s p%d: a coding card, not a front", pdf.name, number)
+                del readings[card]
+                card = replace(card, card_type=CardType.NUMERIC_CODING)
+                readings[card] = coding
+        out.append(card)
+    return out
 
 
 def reread_identities(

@@ -165,10 +165,12 @@ the region's results file. In order, it:
    isn't a recognised card, or a PDF that can't be opened, is logged and
    skipped; the rest of the batch carries on.
 2. Has Gemini read each coding card and scores every field, and read each
-   survey front (address, persons), at one more request per front. A coding
-   card whose reading gives no usable record_id has its identity block read
-   again from a crop, at one more request. Each reading is cached in
-   `data/runs/<region>/<extractor>/`
+   survey front (address, persons), at one more request per front. A front
+   read with no address is read as a coding card too, and is one if that
+   reading spells a record_id (a coding card the segmenter took for a front).
+   A coding card whose reading gives no usable record_id has its identity
+   block read again from a crop, at one more request. Each reading is cached
+   in `data/runs/<region>/<extractor>/`
    (gitignored), so no card is paid for twice.
 3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
    A front with no number (blank, or its reading was unusable) takes the
