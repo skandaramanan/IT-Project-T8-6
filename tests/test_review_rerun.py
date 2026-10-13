@@ -37,7 +37,7 @@ def test_pending_undo_history_survives_but_new_reading_can_change(tmp_path):
     assert (
         field["value"] == "25" and field["review"] == undone["item"]["field"]["review"]
     )
-    assert merged["schema_version"] == "0.3.0"
+    assert merged["schema_version"] == "0.4.0"
     validate_records([merged], "demo")
     write_record(service.store.directory / "demo.jsonl", merged)
     service.store.reload()

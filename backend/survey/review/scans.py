@@ -48,6 +48,14 @@ class LocalScanSource:
         )
         return pdf, fingerprint
 
+    def revision(self, region: str, pdf: str):
+        """Cheap invalidation token for cached batch availability."""
+        try:
+            _, fingerprint = self.source(Reference(region, pdf, 1, "/"))
+        except ReviewError:
+            fingerprint = None
+        return fingerprint, len(self.render_errors)
+
     @staticmethod
     def has_image(container, reader, seen=None):
         """Inspect resources/content without decoding compressed image pixels."""

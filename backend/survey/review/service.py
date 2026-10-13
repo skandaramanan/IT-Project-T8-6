@@ -12,7 +12,6 @@ from survey.records import (
     RecordStore,
     Reference,
     ReviewError,
-    audit_index,
     resolve_field,
 )
 from survey.review.scans import ScanSource
@@ -50,9 +49,7 @@ class ReviewService:
     ):
         self.store, self.scans = store, scans
         self.replace_queue(references, diagnostics)
-        self.requests = {}
-        self.decisions = {}
-        self.reindex_history()
+        self.requests, self.decisions = self.store.requests, self.store.decisions
 
     def replace_queue(
         self, references: list[Reference], diagnostics: list[dict]
@@ -82,12 +79,82 @@ class ReviewService:
                 else:
                     valid[ref.item_id] = ref
             self.references, self.diagnostics = valid, errors
+            self.region_references = {}
+            for ref in valid.values():
+                self.region_references.setdefault(ref.region, []).append(ref)
+            self.diagnostic_counts = {}
+            for diagnostic in errors:
+                key = diagnostic.get("region"), diagnostic.get("batch")
+                self.diagnostic_counts[key] = self.diagnostic_counts.get(key, 0) + 1
+            self.rebuild_progress()
 
-    def reindex_history(self):
-        requests, decisions = audit_index(
-            {region: records for region, (records, _) in self.store.regions.items()}
-        )
-        self.requests, self.decisions = requests, decisions
+    def reindex_history(self, regions=None):
+        self.requests, self.decisions = self.store.requests, self.store.decisions
+        if regions is None:
+            self.rebuild_progress()
+        else:
+            self.rebuild_progress(regions)
+
+    def rebuild_progress(self, regions=None):
+        if regions is None:
+            self.progress = {}
+            self.item_resolved = {}
+            self.batch_revisions = {}
+            selected = self.references.values()
+        else:
+            selected = (
+                ref
+                for region in regions
+                for ref in self.region_references.get(region, [])
+            )
+            for key in list(self.progress):
+                if key[0] in regions:
+                    del self.progress[key]
+        for ref in selected:
+            key = ref.region, ref.pdf
+            counts = self.progress.setdefault(key, [0, 0])
+            counts[0] += 1
+            try:
+                resolved, _ = self.store.current(ref)
+                # Probe only decided fields: pending entries cannot complete a batch.
+                done = state(resolved.field) != "pending"
+                if done:
+                    self.scans.probe(ref)
+            except ReviewError:
+                done = False
+            self.item_resolved[ref.item_id] = done
+            counts[1] += int(done)
+        revision = getattr(self.scans, "revision", None)
+        if revision:
+            for region, batch in self.progress:
+                if regions is None or region in regions:
+                    self.batch_revisions[(region, batch)] = revision(region, batch)
+
+    def update_progress(self, item):
+        previous = self.item_resolved.get(item["id"], False)
+        self.item_resolved[item["id"]] = item["resolved"]
+        key = item["region"], item["batch"]
+        self.progress[key][1] += int(item["resolved"]) - int(previous)
+
+    def batch_complete(self, region, batch):
+        """Constant-time completion check; diagnostics always block completion."""
+        with self.store.lock:
+            revision = getattr(self.scans, "revision", None)
+            if revision and revision(region, batch) != self.batch_revisions.get(
+                (region, batch)
+            ):
+                self.rebuild_progress({region})
+            total, resolved = self.progress.get((region, batch), (0, 0))
+            errors = sum(
+                self.diagnostic_counts.get(key, 0)
+                for key in (
+                    (None, None),
+                    (region, None),
+                    (None, batch),
+                    (region, batch),
+                )
+            )
+            return total > 0 and total == resolved and not errors
 
     def reference(self, item_id: str) -> Reference:
         try:
@@ -167,7 +234,9 @@ class ReviewService:
                 if (region and region != ref.region) or (batch and batch != ref.pdf):
                     continue
                 try:
-                    items.append(self.item(item_id))
+                    item = self.item(item_id)
+                    self.update_progress(item)
+                    items.append(item)
                 except ReviewError as error:
                     diagnostics.append(
                         {
@@ -248,8 +317,13 @@ class ReviewService:
             # A metadata probe cannot prove that compressed image pixels decode.
             # Recheck/render the selected original before committing a decision.
             self.scans.get_scan(ref)
-            records = deepcopy(self.store.regions[ref.region][0])
-            resolved = resolve_field(records, ref)
+            current, _ = self.store.current(ref)
+            record = deepcopy(current.record)
+            locations = self.store.cards[ref.region][(ref.pdf, ref.page)]
+            local_locations = {
+                (ref.pdf, ref.page): [(0, h, primary) for _, h, primary in locations]
+            }
+            resolved = resolve_field([record], ref, local_locations)
             field = resolved.field
             before, before_state = snapshot(field), state(field)
             history = deepcopy(field.get("review", {}).get("history", []))
@@ -323,11 +397,15 @@ class ReviewService:
             field.clear()
             field.update(after, review={"state": after_state, "history": history})
             resolved.record["schema_version"] = SCHEMA_VERSION
-            self.store.save(ref.region, expected_version, records)
+            self.store.save_record(
+                ref.region, expected_version, current.record_index, record
+            )
             self.requests[request_id] = event
             self.decisions[event["id"]] = event
+            saved_item = self.item(item_id)
+            self.update_progress(saved_item)
             return {
-                "item": self.item(item_id),
+                "item": saved_item,
                 "decision": deepcopy(event),
                 "replayed": False,
                 "saved_locally": True,

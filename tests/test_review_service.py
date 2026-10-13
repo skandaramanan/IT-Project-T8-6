@@ -264,3 +264,46 @@ def test_non_null_confidence_is_preserved_through_review(tmp_path):
     write_record(service.store.directory / "demo.jsonl", record)
     service.store.reload()
     assert decide(service)["item"]["field"]["confidence"] == 0.41
+
+
+def test_batch_counter_tracks_decisions_undo_and_queue_replacement(tmp_path):
+    service, _ = setup_review(tmp_path)
+    service.replace_queue([refs()[0], refs()[1]], [])
+    assert not service.batch_complete("demo", "synthetic.pdf")
+    decide(service, refs()[0], action="accept", request_id="first")
+    last = decide(service, refs()[1], action="accept", request_id="second")
+    assert service.batch_complete("demo", "synthetic.pdf")
+    service.undo_latest(
+        last["decision"]["id"], "Test Reviewer", last["item"]["version"], "undo-counter"
+    )
+    assert not service.batch_complete("demo", "synthetic.pdf")
+    service.replace_queue([refs()[0]], [])
+    assert service.batch_complete("demo", "synthetic.pdf")
+    service.replace_queue(
+        [refs()[0]],
+        [
+            {
+                "code": "invalid_reference",
+                "message": "Bad row",
+                "region": None,
+                "batch": None,
+            }
+        ],
+    )
+    assert not service.batch_complete("demo", "synthetic.pdf")
+
+
+def test_batch_counter_invalidates_when_previously_reviewed_page_disappears(tmp_path):
+    from PIL import Image
+    from review_support import synthetic_pdf
+
+    service, settings = setup_review(tmp_path)
+    service.replace_queue([refs()[0], refs()[1]], [])
+    decide(service, refs()[0], action="accept", request_id="first")
+    decide(service, refs()[1], action="accept", request_id="second")
+    assert service.batch_complete("demo", "synthetic.pdf")
+    path = settings.scan_root / "demo/synthetic.pdf"
+    Image.new("RGB", (100, 100), "white").save(path)
+    assert not service.batch_complete("demo", "synthetic.pdf")
+    synthetic_pdf(path)
+    assert service.batch_complete("demo", "synthetic.pdf")

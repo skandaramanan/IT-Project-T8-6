@@ -382,3 +382,260 @@ def test_duplicate_across_local_regions_is_not_committed_or_uploaded(tmp_path):
     assert "other.jsonl" in status["error"]["message"]
     assert git(settings.data_checkout, "rev-parse", "HEAD") == head
     assert git(tmp_path / "remote.git", "rev-parse", "review-data") == head
+
+
+def region_reviewers(tmp_path):
+    """Two independent validated checkouts of a two-region data branch."""
+    from dataclasses import replace
+
+    from review_support import synthetic_record, write_record
+
+    from survey.review.scans import LocalScanSource
+    from survey.review.service import ReviewService
+
+    first, settings, first_sync = make_sync(tmp_path)
+    record = synthetic_record()
+    record["region"] = "other"
+    write_record(first.store.directory / "other.jsonl", record)
+    git(settings.data_checkout, "add", "results/other.jsonl")
+    git(settings.data_checkout, "commit", "-m", "Seed another region")
+    git(settings.data_checkout, "push", "origin", "review-data")
+    first.store.reload()
+    first.reindex_history()
+    checkout = tmp_path / "second"
+    git(
+        tmp_path,
+        "clone",
+        "--branch",
+        "review-data",
+        str(tmp_path / "remote.git"),
+        str(checkout),
+    )
+    git(checkout, "config", "user.name", "Second reviewer")
+    git(checkout, "config", "user.email", "second@example.invalid")
+    scans = tmp_path / "second-scans"
+    from review_support import synthetic_pdf
+
+    synthetic_pdf(scans / "other/synthetic.pdf")
+    second_refs = [replace(ref, region="other") for ref in refs()]
+    second = ReviewService(
+        RecordStore(checkout / "results"),
+        second_refs,
+        [],
+        LocalScanSource(scans, tmp_path / "second-cache"),
+    )
+    return first, first_sync, second, GitSync(checkout, second.store), second_refs[1]
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_two_clones_share_different_regions_without_losing_history(tmp_path, committed):
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    a = decide(first, value="11")
+    b = decide(second, ref=second_ref, value="22", request_id="second-reviewer")
+    if committed:
+        git(second_sync.checkout, "add", "results/other.jsonl")
+        git(second_sync.checkout, "commit", "-m", "Unpushed regional review")
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    assert second_sync.sync(second.reindex_history)["state"] == "uploaded"
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    for service in (first, second):
+        assert service.store.current(refs()[1])[0].field["value"] == "11"
+        assert service.store.current(second_ref)[0].field["value"] == "22"
+        assert a["decision"]["id"] in service.decisions
+        assert b["decision"]["id"] in service.decisions
+    assert git(first_sync.checkout, "rev-parse", "HEAD") == git(
+        second_sync.checkout, "rev-parse", "HEAD"
+    )
+
+
+def test_push_race_retries_once_and_retains_decisions_saved_during_push(
+    tmp_path, monkeypatch
+):
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    decide(first, value="11")
+    decide(second, ref=second_ref, value="22", request_id="second-reviewer")
+    original = second_sync.git
+    pushes = []
+
+    def raced(*args, **kwargs):
+        if args[0] == "push":
+            pushes.append(args)
+            if len(pushes) == 1:
+                assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+                decide(second, ref=second_ref, value="33", request_id="during-push")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(second_sync, "git", raced)
+    assert second_sync.sync(second.reindex_history)["state"] == "uploaded"
+    assert len(pushes) == 2
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    assert first.store.current(second_ref)[0].field["value"] == "33"
+    assert len(first.store.current(second_ref)[0].field["review"]["history"]) == 2
+
+
+def test_repeated_push_race_stops_after_one_retry(tmp_path, monkeypatch):
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    decide(second, ref=second_ref, value="22", request_id="second-reviewer")
+    original = second_sync.git
+    attempts = []
+
+    def raced(*args, **kwargs):
+        if args[0] == "push":
+            attempts.append(args)
+            decide(
+                first, value=str(len(attempts) + 10), request_id=f"race-{len(attempts)}"
+            )
+            assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(second_sync, "git", raced)
+    status = second_sync.sync(second.reindex_history)
+    assert status["error"]["code"] == "push_rejected" and status["pending"]
+    assert len(attempts) == 2
+    assert second.item(second_ref.item_id)["field"]["value"] == "22"
+
+
+def test_incoming_validation_does_not_block_local_saves(tmp_path, monkeypatch):
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    decide(first, value="11")
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    validating, release = Event(), Event()
+    original = second_sync.validate_snapshot
+
+    def delayed(*args):
+        validating.set()
+        assert release.wait(10)
+        return original(*args)
+
+    monkeypatch.setattr(second_sync, "validate_snapshot", delayed)
+    with ThreadPoolExecutor() as executor:
+        future = executor.submit(second_sync.sync, second.reindex_history)
+        assert validating.wait(10)
+        try:
+            save = executor.submit(
+                decide, second, second_ref, value="33", request_id="during-validation"
+            )
+            assert save.result(5)["saved_locally"]
+        finally:
+            release.set()
+        assert future.result(10)["state"] == "uploaded"
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    assert first.store.current(second_ref)[0].field["value"] == "33"
+
+
+def test_sync_validates_only_changed_incoming_regions(tmp_path, monkeypatch):
+    from survey.review import sync as module
+
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    decide(first, value="11")
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    original = module.parse_records
+    regions = []
+
+    def observed(raw, region, name):
+        regions.append(region)
+        return original(raw, region, name)
+
+    monkeypatch.setattr(module, "parse_records", observed)
+    assert second_sync.sync(second.reindex_history)["state"] == "uploaded"
+    assert regions == ["demo"]
+    regions.clear()
+    decide(second, ref=second_ref, value="22", request_id="second-reviewer")
+    assert second_sync.sync(second.reindex_history)["state"] == "uploaded"
+    assert regions == []
+
+
+def test_same_region_different_fields_still_require_manual_reconciliation(tmp_path):
+    from review_support import synthetic_pdf
+
+    first, first_sync, second, second_sync, _ = region_reviewers(tmp_path)
+    synthetic_pdf(second.scans.root / "demo/synthetic.pdf")
+    second.replace_queue(refs(), [])
+    decide(first, value="11")
+    decide(second, ref=refs()[2], action="accept", request_id="garden-review")
+    before = (second.store.directory / "demo.jsonl").read_bytes()
+    head = git(second_sync.checkout, "rev-parse", "HEAD")
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    status = second_sync.sync(second.reindex_history)
+    assert status["error"]["code"] == "remote_ahead"
+    assert (second.store.directory / "demo.jsonl").read_bytes() == before
+    assert git(second_sync.checkout, "rev-parse", "HEAD") == head
+
+
+def test_new_audit_collision_during_incoming_validation_is_rechecked(
+    tmp_path, monkeypatch
+):
+    from survey.review import service as module
+
+    first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
+    remote_decision = decide(first, value="11")["decision"]
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    original = second_sync.validate_snapshot
+
+    def raced(*args):
+        candidate = original(*args)
+        monkeypatch.setattr(module, "uuid4", lambda: remote_decision["id"])
+        decide(second, ref=second_ref, value="22", request_id="colliding-event")
+        return candidate
+
+    monkeypatch.setattr(second_sync, "validate_snapshot", raced)
+    head = git(second_sync.checkout, "rev-parse", "HEAD")
+    status = second_sync.sync(second.reindex_history)
+    assert status["error"]["code"] == "invalid_history"
+    assert git(second_sync.checkout, "rev-parse", "HEAD") == head
+    assert second.store.current(second_ref)[0].field["value"] == "22"
+    assert second.store.current(refs()[1])[0].field["value"] == "12"
+
+
+def test_same_region_save_during_validation_stops_before_git_changes(
+    tmp_path, monkeypatch
+):
+    from review_support import synthetic_pdf
+
+    first, first_sync, second, second_sync, _ = region_reviewers(tmp_path)
+    synthetic_pdf(second.scans.root / "demo/synthetic.pdf")
+    second.replace_queue(refs(), [])
+    decide(first, value="11")
+    assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+    original = second_sync.validate_snapshot
+
+    def raced(*args):
+        candidate = original(*args)
+        decide(second, ref=refs()[2], action="accept", request_id="during-validation")
+        return candidate
+
+    monkeypatch.setattr(second_sync, "validate_snapshot", raced)
+    head = git(second_sync.checkout, "rev-parse", "HEAD")
+    status = second_sync.sync(second.reindex_history)
+    assert status["error"]["code"] == "remote_ahead"
+    assert git(second_sync.checkout, "rev-parse", "HEAD") == head
+    assert second.item(refs()[2].item_id)["review_state"] == "accepted"
+    assert second.item(refs()[1].item_id)["field"]["value"] == "12"
+
+
+def test_same_region_push_race_preserves_both_reviewers_commits(tmp_path, monkeypatch):
+    from review_support import synthetic_pdf
+
+    first, first_sync, second, second_sync, _ = region_reviewers(tmp_path)
+    synthetic_pdf(second.scans.root / "demo/synthetic.pdf")
+    second.replace_queue(refs(), [])
+    decide(second, value="22", request_id="second-reviewer")
+    original = second_sync.git
+    pushes = []
+
+    def raced(*args, **kwargs):
+        if args[0] == "push":
+            pushes.append(args)
+            decide(first, ref=refs()[2], action="accept", request_id="racing-reviewer")
+            assert first_sync.sync(first.reindex_history)["state"] == "uploaded"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(second_sync, "git", raced)
+    status = second_sync.sync(second.reindex_history)
+    assert status["error"]["code"] == "diverged" and status["pending"]
+    assert len(pushes) == 1
+    assert second.item(refs()[1].item_id)["field"]["value"] == "22"
+    assert first.item(refs()[2].item_id)["review_state"] == "accepted"
+    assert git(first_sync.checkout, "rev-parse", "HEAD") != git(
+        second_sync.checkout, "rev-parse", "HEAD"
+    )

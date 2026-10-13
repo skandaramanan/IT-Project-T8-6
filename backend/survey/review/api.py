@@ -105,7 +105,7 @@ def create_app(settings: Settings) -> FastAPI:
         nonlocal service, sync, worker, startup_error
         try:
             settings.validate()
-            store = RecordStore(settings.data_checkout / "results")
+            store = RecordStore(settings.data_checkout / "results", load=False)
             sync = GitSync(settings.data_checkout, store, settings.data_branch)
             sync.writer_lock.acquire()
             store.reload()
@@ -149,7 +149,7 @@ def create_app(settings: Settings) -> FastAPI:
             if sync:
                 sync.writer_lock.release()
 
-    app = FastAPI(title="Survey review backend", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="Survey review backend", version="0.4.0", lifespan=lifespan)
 
     @app.exception_handler(ReviewError)
     async def domain_error(request, error):
@@ -221,7 +221,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {
             "ready": startup_error is None and service is not None,
             "diagnostics": [startup_error] if startup_error else [],
-            "scope": "C1/C2 numeric flagged fields; one active writer",
+            "scope": "C1/C2 numeric flagged fields; one backend writer per checkout",
             "data_branch": settings.data_branch,
         }
 
@@ -302,7 +302,7 @@ def create_app(settings: Settings) -> FastAPI:
         return FileResponse(review.scans.get_scan(ref), media_type="image/png")
 
     def completion_sync(item):
-        if service.queue(item["region"], item["batch"])["complete"]:
+        if service.batch_complete(item["region"], item["batch"]):
             sync.sync(service.reindex_history)
 
     @app.post("/api/review-items/{item_id}/decisions")

@@ -10,7 +10,7 @@
     "schema_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "enum": ["0.1.0", "0.2.0", "0.3.0"],
+      "enum": ["0.1.0", "0.2.0", "0.3.0", "0.4.0"],
       "description": "Envelope version. The field set moves independently of this."
     },
     "region": {
@@ -131,15 +131,11 @@
           "$ref": "#/$defs/field_map",
           "description": "The survey front's dwelling fields as the investigator wrote them. `house` holds the coding card's coded values for the same building."
         },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/note" }, "description": "IT-89: verbatim reverse notes at dwelling scope (schema 0.3.0)." },
         "households": {
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/household" }
-        },
-        "notes": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/note" },
-          "description": "FR-05 -- one per survey front's back, in scan order. On the dwelling because the front is one per dwelling, not per household."
         },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
       }
@@ -147,7 +143,12 @@
 
     "note": {
       "type": "object",
-      "required": ["text", "page", "front_page", "household_id"],
+      "required": [
+        "text",
+        "page",
+        "front_page",
+        "household_id"
+      ],
       "additionalProperties": false,
       "properties": {
         "text": {
@@ -155,7 +156,10 @@
           "description": "The interviewer's notes, verbatim. no_data is a blank back; omitted is a back that was not read or not found, with `flags` saying why."
         },
         "page": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "description": "PDF page of the back, null when none was found. Tells apart the backs of two overflow fronts, which share a role."
         },
         "front_page": {
@@ -163,13 +167,18 @@
           "description": "PDF page of the survey front this note belongs to. Every note has one, so a rerun pairs notes by it."
         },
         "household_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^\\d{2}-\\d{4}-\\d{2}$",
           "description": "The household's record_id when the dwelling has exactly one; null otherwise, since the card does not say whose note it is."
         },
         "flags": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Review signals on this note, e.g. note_on_blank_page, household_ambiguous."
         }
       }
@@ -202,6 +211,16 @@
           "type": "array",
           "items": { "$ref": "#/$defs/person" },
           "description": "From the survey front's column grid. The coding card contributes none of these."
+        },
+        "notes": {
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "properties": {
+            "text": { "type": ["string", "null"], "description": "FR-05 -- reverse-side interview notes, verbatim." },
+            "source": { "$ref": "#/$defs/card_role" },
+            "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+          }
         },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
       }
@@ -479,48 +498,6 @@
           }
         }
       ]
-    },
-    "legacy_tree": {
-      "if": {
-        "type": "object"
-      },
-      "then": {
-        "not": {
-          "required": [
-            "review"
-          ]
-        },
-        "additionalProperties": {
-          "$ref": "#/$defs/legacy_tree"
-        }
-      },
-      "else": {
-        "if": {
-          "type": "array"
-        },
-        "then": {
-          "items": {
-            "$ref": "#/$defs/legacy_tree"
-          }
-        }
-      }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "schema_version": {
-            "enum": [
-              "0.1.0",
-              "0.2.0"
-            ]
-          }
-        }
-      },
-      "then": {
-        "$ref": "#/$defs/legacy_tree"
-      }
-    }
-  ]
+  }
 }

@@ -406,3 +406,47 @@ def test_posix_port_probe_rejects_live_listener_but_allows_immediate_restart(
             assert client.recv(1) == b""
     assert cli.main(argv) == 0
     assert calls[0]["port"] == port
+
+
+def test_startup_loads_dataset_once_after_writer_lock(tmp_path, monkeypatch):
+    from survey import records
+    from survey.review.sync import WriterLock
+
+    _settings, client = setup_client(tmp_path)
+    original_read = records.read_dataset
+    original_acquire = WriterLock.acquire
+    events = []
+
+    def acquired(lock):
+        original_acquire(lock)
+        events.append("lock")
+
+    def read(paths):
+        events.append("read")
+        return original_read(paths)
+
+    monkeypatch.setattr(WriterLock, "acquire", acquired)
+    monkeypatch.setattr(records, "read_dataset", read)
+    with client:
+        assert client.get("/api/health").json()["ready"]
+    assert events == ["lock", "read"]
+
+
+def test_decision_completion_does_not_rebuild_queue(tmp_path, monkeypatch):
+    _settings, client = setup_client(tmp_path)
+    with client:
+        service = client.app.state.service
+        item = service.item(next(iter(service.references)))
+        client.post("/api/session", json={"name": "Counter reviewer"})
+        monkeypatch.setattr(
+            service, "queue", lambda *args: pytest.fail("Completion rebuilt the queue")
+        )
+        response = client.post(
+            "/api/review-items/" + item["id"] + "/decisions",
+            json={
+                "action": "accept",
+                "expected_version": item["version"],
+                "request_id": "counter-api",
+            },
+        )
+        assert response.status_code == 200

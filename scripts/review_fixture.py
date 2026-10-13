@@ -23,7 +23,7 @@ ROLES = ["survey-front", "survey-back", "coding-front", "coding-back"]
 
 def adapt_record(example):
     record = deepcopy(example)
-    record.update(schema_version="0.3.0", region=REGION, batch=PDF)
+    record.update(schema_version="0.4.0", region=REGION, batch=PDF)
     for card in record["dwelling"]["households"][0]["cards"]:
         card["image"] = PDF
 

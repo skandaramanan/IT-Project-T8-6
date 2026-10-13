@@ -24,7 +24,7 @@ def test_old_and_new_schema_records_are_readable(tmp_path):
     write_record(path, record)
     loaded, version = read_records(path, "demo")
     assert loaded == [record] and version
-    record["schema_version"] = "0.3.0"
+    record["schema_version"] = "0.4.0"
     assert not schema_errors(record)
 
 
@@ -261,3 +261,76 @@ def test_dataset_duplicate_is_rejected_by_cli_reload_and_save(
     assert (
         RecordStore(settings.data_checkout / "results").regions == service.store.regions
     )
+
+
+def test_decision_validates_only_changed_dwelling_and_does_not_copy_others(
+    tmp_path, monkeypatch
+):
+    service, _ = setup_review(tmp_path)
+    extra = synthetic_record()
+    for household in extra["dwelling"]["households"]:
+        household["cards"][0]["page"] += 2
+    store = service.store
+    store.save("demo", store.regions["demo"][1], [store.regions["demo"][0][0], extra])
+    untouched = store.regions["demo"][0][1]
+    original = records.schema_errors
+    calls = []
+
+    def observed(record):
+        calls.append(record)
+        return original(record)
+
+    monkeypatch.setattr(records, "schema_errors", observed)
+    decide(service)
+    assert len(calls) == 1
+    assert store.regions["demo"][0][1] is untouched
+
+
+def test_current_uses_card_index_without_scanning_region(tmp_path):
+    service, _ = setup_review(tmp_path)
+
+    class IndexedOnly(list):
+        def __iter__(self):
+            pytest.fail("Physical lookup scanned the whole region")
+
+    rows, version = service.store.regions["demo"]
+    service.store.regions["demo"] = IndexedOnly(rows), version
+    assert service.store.current(refs()[1])[0].household["record_id"] == "27-0006-02"
+
+
+@pytest.mark.parametrize("version", ["0.1.0", "0.2.0", "0.3.0"])
+def test_legacy_versions_reject_review_metadata_in_python(tmp_path, version):
+    service, _ = setup_review(tmp_path)
+    decide(service)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["schema_version"] = version
+    with pytest.raises(ReviewError, match="requires schema 0.4.0"):
+        validate_records([record], "demo")
+
+
+def test_it89_notes_and_review_metadata_coexist(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["schema_version"] = "0.3.0"
+    record["dwelling"]["notes"] = [
+        {
+            "text": {
+                "value": "Verbatim notes",
+                "status": "ok",
+                "confidence": None,
+                "source": "survey-back",
+            },
+            "page": 3,
+            "front_page": 2,
+            "household_id": None,
+        }
+    ]
+    validate_records([record], "demo")
+    service.store.save("demo", service.store.regions["demo"][1], [record])
+    decide(service)
+    assert service.store.regions["demo"][0][0]["schema_version"] == "0.4.0"
+    assert (
+        service.store.regions["demo"][0][0]["dwelling"]["notes"]
+        == record["dwelling"]["notes"]
+    )
+    validate_records(service.store.regions["demo"][0], "demo")

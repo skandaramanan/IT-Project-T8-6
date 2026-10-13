@@ -65,7 +65,9 @@ a shortcut to `scripts\review.cmd`. The launcher uses the already installed
 not update dependencies at ordinary launch. Paths with spaces are quoted. Errors
 stay in the console. Stop with Ctrl+C; close the console after the application
 stops. If the port is occupied, stop the existing backend or choose another port.
-Use one backend process, one reviewer, and one data writer at a time.
+Use one backend process per data checkout. Reviewers in different regions may
+run separate checkouts concurrently; avoid assigning the same region to two
+reviewers.
 
 ## Synthetic demonstration
 
@@ -100,7 +102,7 @@ uv run python scripts/review_fixture.py "/tmp/survey-r01-review-test" \
 ```
 
 Choose a new empty directory. The helper verifies that original PDF pages 1-4
-match the committed r01 JPEG streams byte-for-byte, adapts a copy to schema 0.3.0
+match the committed r01 JPEG streams byte-for-byte, adapts a copy to schema 0.4.0
 and original region/PDF provenance, and marks illustrative confidence scores as
 unknown. It retains the example's values/annotations and legacy correction; it
 does not certify them as a new extraction or ground truth. Weekly Rent, Age of
@@ -258,10 +260,18 @@ an identical decision displays an informational message and adds no audit event.
 
 ## Durable data and reruns
 
-New builders use schema `0.3.0`. Existing `0.1.0` illustrative records and `0.2.0`
-records remain readable; old versions cannot carry review metadata. Only records
-changed by review acquire `0.3.0`; startup does not rewrite files. Downstream
-consumers must accept the optional `review` property before live rollout.
+New builders use schema `0.4.0`. IT-89 lands first and owns `0.3.0` for
+`dwelling.notes`. Existing `0.1.0`, `0.2.0`, and IT-89 `0.3.0` records remain
+readable. Review upgrades only the changed record; startup does not rewrite files.
+Old versions cannot carry review metadata: the shared Python validator checks this
+during its field traversal, without the expensive recursive JSON Schema legacy
+check. Use `survey validate-results` for the complete validation contract.
+Downstream consumers must accept optional `review` metadata before live rollout.
+
+Earlier disposable demos from this PR used `0.3.0` for review metadata. Preserve
+those directories and create a fresh test with the updated helper, or explicitly
+upgrade a backed-up copy of reviewed records to `0.4.0` and run `validate-results`.
+Do not relabel IT-89 records or overwrite an existing test checkout.
 
 `review.state` is pending/accepted/corrected and independent of extraction status.
 History records decision/request IDs, reviewer, backend UTC time, action,
@@ -271,7 +281,10 @@ Validation checks request/value consistency, empty or illegible decision payload
 preserved provenance, continuous active snapshots, undo targets, and duplicate
 audit IDs across the dataset. CLI validation, startup and synchronization share
 the same audit index, with both conflicting locations reported. Incoming Git
-snapshots are validated before fast-forwarding or replacing the active index.
+snapshots are validated before advancing Git or replacing the affected indexes.
+Full validation runs on initial load and external imports. Normal review saves
+validate only the changed dwelling and check new audit IDs against cached indexes;
+they still serialize and atomically replace the regional file.
 A pending field may change after re-extraction;
 its next decision snapshots the new payload rather than altering old history.
 Corrections preserve original machine value across repeated edits, confidence,
@@ -298,16 +311,29 @@ the merge. Existing partial-rebuild protection and failed-front fallback remain.
 Code runs in its code checkout; data writes use `results/<region>.jsonl` in a
 separate checkout on `review-data`. An OS file lock in that checkout's Git
 directory refuses a second app writer and releases on process exit/crash.
-Extraction and external tools must not write concurrently. This is not a
-collaborative merge system; separate regions still share the Git branch.
+Extraction and external tools must not write concurrently. Separate reviewer
+checkouts may share different regions on the same branch. The lock is local to
+the checkout; it does not reserve regions across machines. Assign region owners
+to reduce accidental overlapping work.
 
-Synchronization validates all JSONL, detects external edits, refuses unexpected
-staged/working-tree paths and unpushed application commits, stages explicit region
-paths, then commits. Fetch/push happen outside the record-write lock. Clean remote
-advances fast-forward safely; remote-ahead dirty work and diverged histories stop
-for manual reconciliation. There is no force push, reset, auto-merge, or discard.
-Uncommitted and committed-unpushed work remains pending after restart. Changes
-saved during push remain pending for the next attempt. Empty commits are avoided.
+Synchronization compares incoming region paths with all local dirty and unpushed
+region paths, using their common Git ancestor. Disjoint changes are safe to share:
+the backend commits local edits, rebases only unpushed commits onto the fetched
+remote, installs the changed regions, and pushes normally. Same-region overlap
+stops even when reviewers changed different fields. Both local and remote work
+are retained for manual reconciliation; there is no force push or automatic
+same-region merge. A non-fast-forward push retries once after a fresh fetch and
+repeating all checks. Authentication/network errors retain pending work.
+
+Only incoming changed JSONL blobs and newly added external region files need
+full validation during sync. Validation uses immutable Git blobs outside the save
+lock. Under a short lock, sharing rechecks local changes and audit collisions,
+commits/rebases the checkout, and installs only affected region/card/audit indexes.
+Existing validated local files receive digest checks instead of full schema
+validation. Saves during incoming validation are included when safe; saves during
+push remain pending for the next attempt unless included in a rejection retry.
+Unexpected, deleted, renamed, conflicted paths or unrelated unpushed commits are
+refused. Empty commits are avoided.
 Git errors do not return raw stderr or credential-bearing remote URLs to browsers.
 
 Admin/client rollout checklist:
@@ -344,8 +370,9 @@ leave the previous region file intact and never return local-save success.
 `uv run pytest --cov=survey --cov-branch --cov-report=term-missing` follow existing
 CI practice. New review tests use synthetic builders/PDFs and local bare remotes:
 record validation/ownership, all actions and restrictions, versions/idempotency,
-atomic failures, undo, reruns, scans, API sessions/security, Git failures/divergence,
-and saves during push. No automated test added here calls a live model.
+atomic failures, undo, reruns, scans, API sessions/security, two-clone disjoint
+sharing, same-region conflicts, bounded push retries, and saves during incoming
+validation or push. No automated test added here calls a live model.
 
 The baseline on 11 October 2026 was 399 passed, 7 skipped, 2 failed. Both failures
 are local benchmark-data checks in `tests/test_confidence.py`:
@@ -378,3 +405,59 @@ amending accepted no-data/illegible fields. Browser checks confirm correction,
 undo, local Git sharing, and no-data-to-numeric amendment. This supports a draft
 implementation PR; it does not replace remote CI, team schema/queue contract
 sign-off, production-data acceptance, or Windows desktop verification.
+
+## Concurrent-region and performance follow-up
+
+The review schema is now `0.4.0`, reserving `0.3.0` for IT-89 (#50), which must
+land first. Compatibility includes #50's dwelling notes and required `front_page`
+provenance (checked against PR head `ef722fa`). The legacy household-note shape
+remains readable. The review changes do not replace IT-89's extraction work.
+
+A local before/after benchmark used unchanged copies of #51's results at
+`c1a7ffe`, with 44 populated regions, 3,590 dwellings and 222,780 manually supplied
+coding-field flags. The empty `216461.jsonl` was excluded only from the disposable
+benchmark; normal dataset validation still rejects empty region files. Region
+216418 contains 79 dwellings. Baseline code was this branch at `f1de190`; both
+runs used stubbed scans and a local bare Git remote, with fresh copies and caches.
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Application startup, including full validation and queue indexing | 217.860 s | 33.862 s |
+| First Accept in 216418 | 3.032 s | 0.175 s |
+| Two subsequent corrections | 2.987–3.006 s | 0.126–0.130 s |
+| Local sharing after those decisions | 101.632 s | 0.586 s |
+| Longest continuous save-lock hold during sharing | 101.365 s | 0.177 s |
+| Resolve all 222,780 field references | 7.336 s | 0.733 s |
+
+These are local API measurements, excluding Python imports, browser rendering,
+scan decoding and GitHub network latency. Regional JSONL serialization/replacement
+still happens per save. Sharing can briefly block saves during commit/rebase/index
+installation, but full incoming schema validation happens outside that lock.
+
+To repeat the updated implementation benchmark on existing compatible results:
+
+```sh
+uv run python scripts/review_benchmark.py /path/to/results --region 216418
+```
+
+The helper reads the originals, copies nonempty JSONL to a temporary checkout,
+generates a load-test flag for each supported coding field, stubs scan access,
+and accepts three pending Weekly Rent fields. It reports startup, Accept, sharing,
+lock-hold and lookup timings, then removes the disposable checkout and local Git
+remote. It does not contact GitHub, change source data, or choose production review
+flags. `--iterations` changes the number of pending rent fields needed.
+
+Regression coverage includes two clones with dirty or committed disjoint-region
+changes, same-region different-field conflicts, a real rejected push followed by
+one retry, stopping after a second rejection, saves during validation/push,
+audit-ID collisions introduced during validation, single-dwelling validation,
+indexed lookup, startup loading once after writer-lock acquisition, batch counters
+through undo/queue replacement, and scan-change invalidation.
+
+Final follow-up verification: **533 passed, 7 skipped, 2 failed** in the full
+suite. The failures are the same two pre-existing local benchmark-data checks in
+`tests/test_confidence.py`, documented above. Ruff lint/format and whitespace
+checks pass. A disposable r01 test also verified original-PDF PNG serving, all
+three durable decisions, completion counters, schema `0.4.0`, and sharing to a
+local bare remote. Original scans and the existing user test checkout were not
+modified. Remote CI and Windows desktop acceptance remain pending.

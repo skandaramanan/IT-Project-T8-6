@@ -51,10 +51,15 @@ def digest(data: bytes) -> str:
 
 
 def schema_errors(record: dict) -> list[str]:
-    return [
+    errors = [
         f"{'/'.join(map(str, e.absolute_path)) or '<record>'}: {e.message}"
         for e in VALIDATOR.iter_errors(record)
     ]
+    if record.get("schema_version") in {"0.1.0", "0.2.0", "0.3.0"} and any(
+        "review" in field for _, field in current_fields(record)
+    ):
+        errors.append("Review metadata requires schema 0.4.0")
+    return errors
 
 
 def validate_records(records: list[dict], region: str) -> None:
@@ -328,25 +333,37 @@ class Resolved:
     label: str
     group: str
     household: dict
+    record_index: int
 
 
-def resolve_field(records: list[dict], ref: Reference) -> Resolved:
-    matches = []
-    for record in records:
+def card_index(records: list[dict]) -> dict:
+    """Physical card locations; duplicate owners remain detectable."""
+    matches = {}
+    for record_index, record in enumerate(records):
         for index, household in enumerate(record["dwelling"]["households"]):
             cards = [
                 c for c in household.get("cards", []) if c["role"] == "coding-front"
             ]
             for card in cards:
-                if (card["image"], card.get("page")) == (ref.pdf, ref.page):
-                    matches.append((record, index, household, cards[0] == card))
+                key = card["image"], card.get("page")
+                matches.setdefault(key, []).append(
+                    (record_index, index, cards[0] == card)
+                )
+    return matches
+
+
+def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolved:
+    locations = card_index(records) if locations is None else locations
+    matches = locations.get((ref.pdf, ref.page), [])
     if len(matches) != 1:
         raise ReviewError(
             "ambiguous_card" if matches else "missing_card",
             "Physical coding card does not resolve uniquely",
             422 if matches else 404,
         )
-    record, index, household, primary = matches[0]
+    record_index, index, primary = matches[0]
+    record = records[record_index]
+    household = record["dwelling"]["households"][index]
     if not primary:
         raise ReviewError(
             "unsupported_source",
@@ -379,30 +396,98 @@ def resolve_field(records: list[dict], ref: Reference) -> Resolved:
             raise ReviewError(
                 "unsupported_source", "Only C1/C2 numeric coding fields are supported"
             )
-        return Resolved(record, node, label, group, household)
+        return Resolved(record, node, label, group, household, record_index)
     raise ReviewError(
         "unsupported_field",
         "Unknown field, unsupported front field, or stale household pointer",
     )
 
 
+@dataclass
+class PreparedRegions:
+    """Validated immutable candidates, prepared before acquiring the save lock."""
+
+    regions: dict
+    cards: dict
+    audits: dict
+
+
+def prepare_regions(regions: dict) -> PreparedRegions:
+    # Each region has already passed parse_records/validate_records.
+    validate_dataset(regions)
+    return PreparedRegions(
+        regions,
+        {region: card_index(records) for region, (records, _) in regions.items()},
+        {
+            region: audit_index({region: records})
+            for region, (records, _) in regions.items()
+        },
+    )
+
+
 class RecordStore:
-    """In-memory region index; JSONL is the sole durable source of truth.
+    """JSONL is authoritative; validated records and lookup/audit indexes are cached."""
 
-    Lookups never reread a batch. Mutations check its digest before replacing it.
-    External writers are unsupported and require a restart/reload.
-    """
-
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, *, load=True):
         self.directory = directory.resolve()
         self.lock = RLock()
         self.regions: dict[str, tuple[list[dict], str]] = {}
-        self.reload()
+        self.cards = {}
+        self.requests, self.decisions = {}, {}
+        self.event_regions = {"request_id": {}, "id": {}}
+        self.region_audits = {}
+        if load:
+            self.reload()
 
     def reload(self):
+        candidate = prepare_regions(
+            read_dataset(sorted(self.directory.glob("*.jsonl")))
+        )
         with self.lock:
-            regions = read_dataset(sorted(self.directory.glob("*.jsonl")))
-            self.regions = regions
+            self.regions.clear()
+            self.cards.clear()
+            self.requests.clear()
+            self.decisions.clear()
+            self.region_audits.clear()
+            for owners in self.event_regions.values():
+                owners.clear()
+            self.install(candidate)
+
+    def check_audits(self, candidate: PreparedRegions):
+        for region, indexes in candidate.audits.items():
+            for key, incoming, existing in zip(
+                ("request_id", "id"), indexes, (self.requests, self.decisions)
+            ):
+                for identity in incoming:
+                    owner = self.event_regions[key].get(identity)
+                    if identity in existing and owner not in candidate.regions:
+                        raise ReviewError(
+                            "invalid_history",
+                            f"Duplicate audit {key}: {owner}.jsonl and {region}.jsonl",
+                        )
+
+    def install(self, candidate: PreparedRegions):
+        """Install checked regions atomically; unchanged regions/indexes are retained."""
+        self.check_audits(candidate)
+        # Remove all replaced ownership before installing any new ownership.
+        for region in candidate.regions:
+            for key, old, existing in zip(
+                ("request_id", "id"),
+                self.region_audits.get(region, ({}, {})),
+                (self.requests, self.decisions),
+            ):
+                for identity in old:
+                    existing.pop(identity, None)
+                    self.event_regions[key].pop(identity, None)
+        for region, indexes in candidate.audits.items():
+            for key, new, existing in zip(
+                ("request_id", "id"), indexes, (self.requests, self.decisions)
+            ):
+                existing.update(new)
+                self.event_regions[key].update(dict.fromkeys(new, region))
+            self.region_audits[region] = indexes
+        self.regions.update(candidate.regions)
+        self.cards.update(candidate.cards)
 
     def current(self, ref: Reference) -> tuple[Resolved, str]:
         try:
@@ -411,7 +496,7 @@ class RecordStore:
             raise ReviewError(
                 "missing_region", f"No extracted records for {ref.region}", 404
             ) from error
-        return resolve_field(records, ref), version
+        return resolve_field(records, ref, self.cards[ref.region]), version
 
     def check_version(self, region: str, expected: str) -> None:
         _, version = self.regions[region]
@@ -432,22 +517,71 @@ class RecordStore:
                 409,
             )
 
-    def save(self, region: str, expected: str, records: list[dict]) -> str:
+    def write(self, region: str, records: list[dict]) -> str:
+        text = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
+        try:
+            write_atomic(self.directory / f"{region}.jsonl", text)
+        except OSError as error:
+            raise ReviewError(
+                "save_failed",
+                "Could not replace region file; previous local data retained",
+                500,
+            ) from error
+        return digest(text.encode("utf-8"))
+
+    def save_record(self, region: str, expected: str, index: int, record: dict) -> str:
+        """Validate one changed dwelling, retaining all other validated records."""
         with self.lock:
-            validate_records(records, region)
-            validate_dataset({**self.regions, region: (records, expected)})
             self.check_version(region, expected)
-            text = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
-            try:
-                write_atomic(self.directory / f"{region}.jsonl", text)
-            except OSError as error:
+            validate_records([record], region)
+            records = list(self.regions[region][0])
+            old = records[index]
+            # Review cannot change card ownership; reruns/imports use full validation.
+            if card_index([old]) != card_index([record]):
                 raise ReviewError(
-                    "save_failed",
-                    "Could not replace region file; previous local data retained",
-                    500,
-                ) from error
-            version = digest(text.encode("utf-8"))
-            self.regions[region] = deepcopy(records), version
+                    "wrong_owner", "Review cannot change physical card ownership"
+                )
+            incoming = audit_index({region: [record]})
+            previous = audit_index({region: [old]})
+            for key, new, old_index, existing in zip(
+                ("request_id", "id"),
+                incoming,
+                previous,
+                (self.requests, self.decisions),
+            ):
+                for identity in new:
+                    if identity in existing and identity not in old_index:
+                        raise ReviewError("invalid_history", f"Duplicate audit {key}")
+            records[index] = record
+            version = self.write(region, records)
+            # Publish indexes only after the durable replacement succeeds.
+            for key, new, old_index, existing, regional in zip(
+                ("request_id", "id"),
+                incoming,
+                previous,
+                (self.requests, self.decisions),
+                self.region_audits[region],
+            ):
+                for identity in old_index:
+                    existing.pop(identity, None)
+                    regional.pop(identity, None)
+                    self.event_regions[key].pop(identity, None)
+                existing.update(new)
+                regional.update(new)
+                self.event_regions[key].update(dict.fromkeys(new, region))
+            self.regions[region] = records, version
+            return version
+
+    def save(self, region: str, expected: str, records: list[dict]) -> str:
+        """Full replacement/import path; ordinary decisions use save_record."""
+        with self.lock:
+            self.check_version(region, expected)
+            validate_records(records, region)
+            candidate = prepare_regions({region: (deepcopy(records), expected)})
+            self.check_audits(candidate)
+            version = self.write(region, candidate.regions[region][0])
+            candidate.regions[region] = candidate.regions[region][0], version
+            self.install(candidate)
             return version
 
 
