@@ -86,9 +86,15 @@ PRICE_PER_MTOK = {
 # Free tier is ~10-15 RPM; --workers above 2 mostly spends time in backoff.
 RATE_LIMIT_BACKOFF_SECONDS = 30
 
-# 429/503/500 are worth retrying with different waits (quota clears on the
-# minute, capacity clears in seconds); anything else is our problem, not transient.
+# A request that never answers would otherwise hang the run (IT-123); a card
+# takes seconds, so this only cuts off a stalled connection.
+REQUEST_TIMEOUT_SECONDS = 120
+
+# 429/503/500 and a timeout are worth retrying with different waits (quota
+# clears on the minute, capacity clears in seconds); anything else is our
+# problem, not transient.
 RETRYABLE = {
+    "timed out": 5,
     "429": RATE_LIMIT_BACKOFF_SECONDS,
     "RESOURCE_EXHAUSTED": RATE_LIMIT_BACKOFF_SECONDS,
     "503": 5,
@@ -96,6 +102,15 @@ RETRYABLE = {
     "500": 5,
     "INTERNAL": 5,
 }
+
+
+def _client():
+    """A Gemini client (reads GEMINI_API_KEY) that gives up on a stalled request."""
+    from google import genai
+    from google.genai import types
+
+    timeout = types.HttpOptions(timeout=REQUEST_TIMEOUT_SECONDS * 1000)
+    return genai.Client(http_options=timeout)
 
 
 def _retry_wait(error: Exception, attempt: int) -> float | None:
@@ -290,14 +305,13 @@ class GeminiExtractor:
         Ignores ``self.struck_detection``: every result's ``struck`` stays None
         regardless of ``GEMINI_STRUCK_DETECTION`` (see the module docstring).
         """
-        from google import genai
 
         prompt = banded_batch_prompt if self.banded else batch_prompt
         contents: list = [prompt(len(image_paths))]
         for index, path in enumerate(image_paths, start=1):
             contents += [f"CARD {index}:", self._part(path)]
 
-        client = genai.Client()
+        client = _client()
         # Retry an unusable answer (same as _generate) so a bad first response
         # doesn't cost the whole batch.
         outer: dict = {}
@@ -329,7 +343,6 @@ class GeminiExtractor:
         return results
 
     def extract(self, image_path: Path) -> ExtractionResult:
-        from google import genai
 
         model = self.model_id
         if self.survey_front:
@@ -350,7 +363,7 @@ class GeminiExtractor:
         contents = [part or self._part(image_path), prompt]
         config = self._config()
 
-        client = genai.Client()  # reads GEMINI_API_KEY
+        client = _client()
         response = self._generate(client, model, contents, config, self.field_names)
         raw_output = response.text or ""
         return ExtractionResult(
