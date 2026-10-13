@@ -6,6 +6,26 @@ on:
     branches: [main]
 
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewer-frontend
+          path: frontend/dist
+
   check:
     runs-on: ubuntu-latest
     steps:
@@ -52,4 +72,4 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       # Synthetic scans and a local bare Git remote, including Windows file locks.
-      - run: uv run pytest tests/test_review_records.py tests/test_review_service.py tests/test_review_scans.py tests/test_review_rerun.py tests/test_review_sync.py tests/test_review_api.py tests/test_review_frontend.py tests/test_review_benchmark.py tests/test_cli.py tests/test_record.py tests/test_output_schema.py
+      - run: uv run pytest tests/test_review_records.py tests/test_review_service.py tests/test_review_scans.py tests/test_review_rerun.py tests/test_review_sync.py tests/test_review_api.py tests/test_review_assets.py tests/test_review_frontend.py tests/test_review_benchmark.py tests/test_cli.py tests/test_record.py tests/test_output_schema.py

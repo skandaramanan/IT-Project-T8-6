@@ -21,7 +21,6 @@ def test_api_decision_restart_and_undo(tmp_path):
     with client:
         assert client.get("/api/health").json()["ready"]
         assert client.get("/").status_code == 200
-        assert client.get("/app.js").status_code == 200
         assert client.get("/docs").status_code == 200
         assert client.get("/openapi.json").json()["paths"]["/api/queue"]
         queue = client.get("/api/queue?region=demo").json()

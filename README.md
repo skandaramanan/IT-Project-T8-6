@@ -290,8 +290,10 @@ Work is tracked in Linear: https://linear.app/um-it-project
 
 The local review backend reads teammate-supplied flagged JSONL, saves decisions
 and undo history in the region records, and shares them through a separate
-`review-data` checkout. It does not require Gemini credentials. A small browser
-page proves the API integration; production React remains a separate ticket.
+`review-data` checkout. It does not require Gemini credentials. The React reviewer
+in `frontend/` opens when its build is present; otherwise the small API integration
+page remains available. See [docs/reviewer-ui.md](docs/reviewer-ui.md) for building
+the UI, the IT-115 PR split, and testing against disposable copies.
 
 ```sh
 uv run python scripts/review_demo.py "/tmp/survey-review-demo"

@@ -228,3 +228,7 @@ __marimo__/
 
 # Unique atomic region-write temp files; cache remains outside the checkouts.
 results/.*.tmp
+
+# Reviewer UI dependencies and generated assets
+frontend/node_modules/
+frontend/dist/
