@@ -149,6 +149,34 @@ makes FR-10 checkable today without pretending the field list is settled.
 The dwelling has two field maps for the building: `house`, the coding card's
 coded values, and `handwritten`, the survey front's dwelling fields as written.
 
+### Interview notes sit on the dwelling (0.3.0, IT-89)
+
+FR-05's notes are written on the back of the survey front, and the front is one
+per dwelling. So `dwelling.notes` is a list with one entry per front's back.
+Each entry has the text as a field object, the PDF `page` of the back, the
+PDF `front_page` of its front, and a `household_id`.
+
+- `household_id` is the household's `record_id` only when the dwelling has
+  exactly one household. When there are several, nothing on the card says
+  whose note it is, so it is null and the entry is flagged
+  `household_ambiguous`. This is the same call the person grid makes.
+- No note is linked to an individual. The back has no columns to link by.
+- Two overflow fronts give two entries, in card order, never one joined text.
+  `page` tells them apart, since both backs share the `survey-back` role.
+- A blank back is `no_data`, the explicit empty FR-05 asks for. A back that
+  was not read, or not found, is `omitted`, with `flags` saying why. A
+  missing reading must never pass for a blank card.
+- No `notes` key at all means the backs were never read: reading them is
+  opt-in (`survey extract --notes`), at one Gemini request per back. A run
+  without `--notes` keeps the notes an earlier run wrote, and a back that
+  fails or is not found on a rerun keeps the text read before.
+- A rerun pairs each note with the one before by `front_page`, not `page`:
+  every note has a front, but its back can go unfound. A corrected note
+  follows its front, and is refused only when that front left the dwelling.
+
+This replaces `household.notes`. That slot held a bare string, which could not
+tell a blank back from an unread one, and it sat at the wrong level.
+
 ## Alternatives considered
 
 **XML.** Stronger schema validation via XSD, and the better answer if a legacy
@@ -219,6 +247,8 @@ validates every record against the envelope before writing it.
 - `jsonschema` was added to the dev group only, consistent with D001 keeping
   runtime dependencies out until code needs them. IT-66 moved it to runtime:
   the pipeline validates each record before it is written.
+- Every note routes to review under D022, because its `confidence` is null
+  until an engine can score free text. Blank backs (`no_data`) route too.
 
 ## Open questions
 

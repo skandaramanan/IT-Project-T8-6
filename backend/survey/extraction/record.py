@@ -32,8 +32,9 @@ Deliberately not done here:
   envelope asks for and what the reviewer needs to see.
 - ``negated`` resolution rule is in ``build_field``, decided in
   ``docs/decisions/D023-resolving-struck-options.md``.
-- ``persons`` and ``notes`` stay empty. Both come off the survey front and
-  reverse; the coding card carries neither.
+- ``persons`` stay empty. They come off the survey front, and the coding card
+  carries none; ``association/records.py`` adds them. The dwelling's
+  ``notes`` come off the survey back, in ``association/notes.py``.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ from typing import Any
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = "0.3.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)

@@ -10,6 +10,8 @@ from collections.abc import Container
 
 from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
+    REVERSE_NOTES_LABEL,
+    REVERSE_NOTES_SCHEMA,
     SURVEY_FRONT_SCHEMA,
     build_extraction_prompt_schema,
 )
@@ -46,6 +48,31 @@ SURVEY_FRONT_PROMPT = (
     "fences, no commentary). Give every value as a JSON string, copied exactly "
     "as written. Columns are the person grid's, numbered left to right. Use "
     "null where nothing is written.\n\n" + _SURVEY_FRONT_BLOCK
+)
+
+# FR-05. Copying as written is the requirement: the notes matter to the client as
+# historical context, so a tidied, summarised or corrected reading loses the
+# thing being kept. Struck words are left out and their replacements kept,
+# because D020 counts a correction to back-of-card text as part of it.
+# "[illegible]" gives an unreadable word a stated place instead of a guess;
+# FR-09 status for handwriting is not this prompt's job.
+REVERSE_NOTES_PROMPT = (
+    "This is the back of a household card from a 1941-43 social survey. Any "
+    "handwriting on it is the interviewer's notes. Return ONLY a JSON object "
+    "with exactly this key (no markdown fences, no commentary), its value a "
+    "JSON string.\n\n"
+    "Copy the handwriting exactly as written: keep the interviewer's spelling, "
+    "abbreviations, punctuation and word order, and do not correct, summarise, "
+    "reorder or explain anything. Leave out words that are struck through, and "
+    "keep any word written to replace them. Write [illegible] for a word you "
+    "cannot read rather than guessing. Ignore printed text, stamps, and writing "
+    "showing through from the other side of the card. Use null if nothing is "
+    "handwritten on this side.\n\n"
+    + build_extraction_prompt_schema(REVERSE_NOTES_SCHEMA)
+    # Without the literal shape, Flash-Lite answered a blank back with
+    # {"text": null} on all three tries, which the parser rightly rejects.
+    + f'\n\nAnswer {{"{REVERSE_NOTES_LABEL}": "<the notes>"}}, or '
+    f'{{"{REVERSE_NOTES_LABEL}": null}} if this side is blank.'
 )
 
 # The bands a model may self-report against a value. Categorical rather than a

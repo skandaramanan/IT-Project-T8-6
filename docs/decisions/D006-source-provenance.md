@@ -96,7 +96,7 @@ than one card:
 | `municipality`, `dwelling_no`, `address`, `families_in_dwelling` | Dwelling identity appears on both the survey front and the coding card, and the two can disagree |
 | `household_no` | Same, and it is half of `record_id` |
 | `persons[].*` | From the survey front's column grid, but the head's attributes also appear on the coding card |
-| `notes.source` | FR-05 notes are on the survey back, but the back is also where overflow from the front lands |
+| `notes[].text.source` | FR-05 notes are on the survey back, but the back is also where overflow from the front lands. Each note's `page` picks out which back, since overflow fronts' backs share the role |
 
 Everything under `house`, `head`, `counts` and `coding` omits it. Those
 branches are defined by D007 as coding-card content; a `source` on each would

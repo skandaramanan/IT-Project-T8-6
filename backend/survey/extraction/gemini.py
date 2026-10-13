@@ -52,6 +52,7 @@ from pathlib import Path
 from survey.extraction.base import ExtractionResult
 from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
+    REVERSE_NOTES_SCHEMA_BY_NAME,
     SURVEY_FRONT_SCHEMA_BY_NAME,
     build_extraction_prompt_schema,
 )
@@ -59,6 +60,7 @@ from survey.extraction.json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     BANDED_STRUCK_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
+    REVERSE_NOTES_PROMPT,
     STRUCK_EXTRACTION_PROMPT,
     SURVEY_FRONT_PROMPT,
     parse_json_fields,
@@ -187,7 +189,13 @@ def _call_with_retry(call, attempts: int = 3):
 
 
 class GeminiExtractor:
-    def __init__(self, *, survey_front: bool = False) -> None:
+    def __init__(
+        self, *, survey_front: bool = False, reverse_notes: bool = False
+    ) -> None:
+        if survey_front and reverse_notes:
+            raise ValueError(
+                "one card side per extractor: survey_front or reverse_notes"
+            )
         # name is the results directory; must carry the model id since every
         # Gemini model shares one CLI key, or 3.5-flash overwrites 3.6-flash's output.
         self.model_id = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
@@ -209,6 +217,12 @@ class GeminiExtractor:
         )
         if survey_front:
             self.name = f"{self.model_id}-survey-front"
+            self.banded = self.struck_detection = False
+        # FR-05: the survey back's notes, same reasoning as the front.
+        self.reverse_notes = reverse_notes
+        if reverse_notes:
+            self.field_names = REVERSE_NOTES_SCHEMA_BY_NAME
+            self.name = f"{self.model_id}-reverse-notes"
             self.banded = self.struck_detection = False
 
     def is_available(self) -> bool:
@@ -293,6 +307,8 @@ class GeminiExtractor:
         model = self.model_id
         if self.survey_front:
             prompt = SURVEY_FRONT_PROMPT
+        elif self.reverse_notes:
+            prompt = REVERSE_NOTES_PROMPT
         elif self.struck_detection and self.banded:
             prompt = BANDED_STRUCK_EXTRACTION_PROMPT
         elif self.struck_detection:

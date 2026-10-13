@@ -17,7 +17,8 @@ from PIL import Image
 from survey import pipeline
 from survey.association import records as association
 from survey.extraction.base import ExtractionResult
-from survey.pipeline import MergeRefused, _merge, run
+from survey.extraction.record import build_omitted_field
+from survey.pipeline import MAX_FAILURE_STREAK, MergeRefused, _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
@@ -632,6 +633,22 @@ def test_merge_refuses_to_move_a_correction_onto_a_regrouped_record():
         _merge([_stub(3, garden=CORRECTED)], [_stub(3, 7)])
 
 
+def test_merge_refuses_a_corrected_note_whose_front_left_the_dwelling():
+    """The main front read as this dwelling before and as another now: the
+    coding card stays, but notes[0] is now the overflow sheet's back."""
+
+    def front(page: int) -> dict:
+        return {"role": "survey-front", "image": "unit.pdf", "page": page}
+
+    other = {"page": 4, "front_page": 3, "text": {"value": "x", "status": "ok"}}
+    main = {"page": 2, "front_page": 1, "text": CORRECTED}
+    old = _stub(5, cards=[front(1), front(3)], notes=[main, other])
+    new = _stub(5, cards=[front(3)], notes=[other])
+
+    with pytest.raises(MergeRefused, match="dwelling/notes/0/text has no place"):
+        _merge([old], [new])
+
+
 def test_merge_refuses_a_correction_with_no_place_in_the_rebuilt_record():
     with pytest.raises(MergeRefused, match="dwelling/gone/x"):
         _merge([_stub(3, gone={"x": CORRECTED})], [_stub(3)])
@@ -883,6 +900,302 @@ class UnusableFrontExtractor(FrontExtractor):
         return ExtractionResult(raw_text="not json")
 
 
+class NotesExtractor(FakeExtractor):
+    """Reads every survey back as ``notes``; ``fail`` raises instead."""
+
+    name = "gemini-3.5-flash-lite-reverse-notes"
+
+    def __init__(self, notes: str = "Very big house.", fail: bool = False) -> None:
+        super().__init__()
+        self.notes, self.fail = notes, fail
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("429 quota")
+        fields = {"Interview Notes": self.notes}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def _with_notes(notes: FakeExtractor | None = None) -> dict:
+    return {
+        "region": "north",
+        "extractor": FakeExtractor(),
+        "front_extractor": FrontExtractor(),
+        "notes_extractor": notes or NotesExtractor(),
+    }
+
+
+def test_each_back_is_read_and_its_notes_written_on_the_dwelling(tmp_path):
+    """FR-05 end to end: AC1's text, AC2's household, AC4's scan and page."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+
+    summary = run(scan_dir, out_dir=tmp_path, raw_dir=raw_dir, **_with_notes())
+
+    [record] = _read(tmp_path)
+    jsonschema.validate(record, SCHEMA)
+    [note] = record["dwelling"]["notes"]
+    assert (note["text"]["value"], note["text"]["status"]) == ("Very big house.", "ok")
+    assert (note["page"], note["household_id"]) == (2, "27-0006-01")
+    assert [
+        (c["role"], c["image"], c["page"]) for c in record["dwelling"]["cards"]
+    ] == [
+        ("survey-front", "unit.pdf", 1),
+        ("survey-back", "unit.pdf", 2),
+    ]
+    assert summary.failed_cards == summary.unattached_notes == 0
+    notes_cache = raw_dir / "gemini-3.5-flash-lite-reverse-notes"
+    assert [p.name for p in notes_cache.iterdir()] == ["unit_p0002.json"]
+
+
+def test_a_blank_back_is_an_explicit_empty_and_not_a_failure(tmp_path):
+    """AC3."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+
+    summary = run(scan_dir, out_dir=tmp_path, **_with_notes(NotesExtractor(notes="")))
+
+    [record] = _read(tmp_path)
+    [note] = record["dwelling"]["notes"]
+    assert (note["text"]["status"], note["text"]["value"]) == ("no_data", None)
+    assert summary.failed_cards == 0
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_without_fronts_notes_cannot_be_placed():
+    with pytest.raises(ValueError, match="front_extractor"):
+        run(
+            Path("unused"),
+            region="north",
+            extractor=FakeExtractor(),
+            out_dir=Path("unused"),
+            notes_extractor=NotesExtractor(),
+        )
+
+
+def test_a_rerun_replays_cached_notes_and_changes_nothing(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+    run(scan_dir, out_dir=tmp_path, raw_dir=raw_dir, **_with_notes())
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    again = NotesExtractor()
+    run(scan_dir, out_dir=tmp_path, raw_dir=raw_dir, **_with_notes(again))
+
+    assert again.calls == 0
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_rerun_without_notes_keeps_the_notes_read_before(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=FrontExtractor(),
+        out_dir=tmp_path,
+    )
+
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_back_that_fails_now_keeps_the_notes_read_before(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    summary = run(scan_dir, out_dir=tmp_path, **_with_notes(NotesExtractor(fail=True)))
+
+    assert summary.failed_cards == 1
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_corrected_note_survives_a_rerun_that_rereads_it(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    records = _read(tmp_path)
+    text = records[0]["dwelling"]["notes"][0]["text"]
+    corrected = {
+        **text,
+        "value": "Very big house!",
+        "origin": "corrected",
+        "original_value": text["value"],
+    }
+    records[0]["dwelling"]["notes"][0]["text"] = corrected
+    _write(tmp_path, records)
+
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+
+    [record] = _read(tmp_path)
+    assert record["dwelling"]["notes"][0]["text"] == corrected
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_a_corrected_note_follows_its_front_when_a_front_is_gained(tmp_path):
+    """An overflow front joining the dwelling (IT-128) puts its back's note
+    first, so the correction has to follow its front, not stay at index 0."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    text = old["dwelling"]["notes"][0]["text"]
+    corrected = {**text, "origin": "corrected", "original_value": text["value"]}
+    old["dwelling"]["notes"][0]["text"] = corrected
+    dwelling = new["dwelling"]
+    dwelling["cards"].append({**dwelling["cards"][0], "page": 3})
+    dwelling["notes"].insert(0, {**dwelling["notes"][0], "page": 4, "front_page": 3})
+
+    [merged] = _merge([old], [new])
+
+    assert [
+        (n["page"], n["text"] == corrected) for n in merged["dwelling"]["notes"]
+    ] == [
+        (4, False),
+        (2, True),
+    ]
+
+
+def test_a_corrected_household_number_moves_its_note_too(tmp_path):
+    """The correction rebuilds record_id; the note must name the new one."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    records = _read(tmp_path)
+    household = records[0]["dwelling"]["households"][0]
+    number = household["household_no"]
+    household["household_no"] = {
+        **number,
+        "value": "02",
+        "origin": "corrected",
+        "original_value": number["value"],
+    }
+    _write(tmp_path, records)
+
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+
+    [record] = _read(tmp_path)
+    [note] = record["dwelling"]["notes"]
+    assert note["household_id"] == record["dwelling"]["households"][0]["record_id"]
+    assert note["household_id"] == "27-0006-02"
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_notes_kept_from_before_name_no_household_once_a_second_joins():
+    front = {"role": "survey-front", "image": "unit.pdf", "page": 1}
+    note = {
+        "page": 2,
+        "front_page": 1,
+        "text": {"value": "x", "status": "ok"},
+        "household_id": "A",
+    }
+    old = _stub(3, cards=[front], notes=[note])
+    new = _stub(3, 7, cards=[front])
+    for record in (old, new):
+        for household, record_id in zip(record["dwelling"]["households"], "AB"):
+            household["record_id"] = record_id
+
+    [merged] = _merge([old], [new])
+
+    [kept] = merged["dwelling"]["notes"]
+    assert (kept["household_id"], kept["flags"]) == (None, ["household_ambiguous"])
+
+
+def _back_not_found(record: dict) -> dict:
+    """The same record as a rerun that found no back behind its front."""
+    rerun = json.loads(json.dumps(record))
+    dwelling = rerun["dwelling"]
+    dwelling["cards"] = [c for c in dwelling["cards"] if c["role"] != "survey-back"]
+    for note in dwelling["notes"]:
+        note.update(page=None, text=build_omitted_field(), flags=["no_reverse_found"])
+    return rerun
+
+
+def test_a_back_not_found_now_keeps_the_notes_read_before(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old] = _read(tmp_path)
+
+    [merged] = _merge([old], [_back_not_found(old)])
+
+    assert merged == old
+
+
+def test_a_corrected_note_survives_a_rerun_that_finds_no_back(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old] = _read(tmp_path)
+    text = old["dwelling"]["notes"][0]["text"]
+    corrected = {**text, "origin": "corrected", "original_value": text["value"]}
+    old["dwelling"]["notes"][0]["text"] = corrected
+
+    [merged] = _merge([old], [_back_not_found(old)])
+
+    [note] = merged["dwelling"]["notes"]
+    assert (note["page"], note["text"]) == (2, corrected)
+    jsonschema.validate(merged, SCHEMA)
+
+
+def test_a_rerun_without_notes_keeps_notes_when_a_front_is_gained(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    del dwelling["notes"]
+    front = dwelling["cards"][0]
+    dwelling["cards"] = [front, {**front, "page": 3}]
+
+    [merged] = _merge([old], [new])
+
+    assert merged["dwelling"]["notes"] == old["dwelling"]["notes"]
+    assert [(c["role"], c["page"]) for c in merged["dwelling"]["cards"]] == [
+        ("survey-front", 1),
+        ("survey-back", 2),
+        ("survey-front", 3),
+    ]
+
+
+def test_a_different_back_now_does_not_take_the_old_notes(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    dwelling["cards"][1]["page"] = 4
+    dwelling["notes"][0].update(page=4, text=build_omitted_field(source="survey-back"))
+
+    [merged] = _merge([old], [new])
+
+    [note] = merged["dwelling"]["notes"]
+    assert (note["page"], note["text"]["status"]) == (4, "omitted")
+
+
+def test_notes_whose_front_left_the_dwelling_are_logged_not_kept(tmp_path, caplog):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    del dwelling["notes"]
+    dwelling["cards"] = [{**dwelling["cards"][0], "page": 3}]
+
+    [merged] = _merge([old], [new])
+
+    assert "notes" not in merged["dwelling"]
+    assert "unit.pdf p1: front left the dwelling" in caplog.text
+
+
+def test_three_failed_backs_stop_the_run(tmp_path):
+    """Four fronts all read as dwelling 6, so one dwelling with four backs."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02", "r03", "r04"))
+    notes = NotesExtractor(fail=True)
+
+    summary = run(scan_dir, out_dir=tmp_path, **_with_notes(notes))
+
+    assert notes.calls == MAX_FAILURE_STREAK == 3
+    assert summary.failed_cards == 3
+    [record] = _read(tmp_path)
+    assert [n["text"]["status"] for n in record["dwelling"]["notes"]] == ["omitted"] * 4
+
+
 def test_a_fresh_rerun_with_an_unusable_front_keeps_the_previous_reading(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01"))
     raw_dir = tmp_path / "raw"
@@ -910,4 +1223,27 @@ def test_a_fresh_rerun_with_an_unusable_front_keeps_the_previous_reading(tmp_pat
     [after] = _read(tmp_path)
     assert summary.failed_cards == 1
     assert after["dwelling"]["address"]["value"] == "6 Hall St."
+    assert after == before
+
+
+def test_a_fresh_rerun_without_notes_and_an_unusable_front_keeps_both(tmp_path):
+    """The backs' card entries, there before and not now, are not a regrouping."""
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    raw_dir = tmp_path / "raw"
+    run(scan_dir, out_dir=tmp_path, raw_dir=raw_dir, **_with_notes())
+    [before] = _read(tmp_path)
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        front_extractor=UnusableFrontExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+    )
+
+    [after] = _read(tmp_path)
+    assert after["dwelling"]["address"]["value"] == "6 Hall St."
+    assert after["dwelling"]["notes"] == before["dwelling"]["notes"]
     assert after == before
