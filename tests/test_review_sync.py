@@ -170,7 +170,9 @@ def test_windows_writer_lock_does_not_read_locked_byte_and_closes_failed_handle(
 
         def read(self, *args):
             if held:
-                raise PermissionError(errno.EACCES, "Windows denied reading locked byte")
+                raise PermissionError(
+                    errno.EACCES, "Windows denied reading locked byte"
+                )
             return b"0"
 
         def write(self, *args):
