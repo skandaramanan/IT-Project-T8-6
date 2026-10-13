@@ -165,6 +165,13 @@ _DIGIT_LOOKALIKES = str.maketrans(
 )
 
 
+def _is_null_word(value: str) -> bool:
+    """The prompt asks for every value as a JSON string and for null on a blank
+    cell, so Flash-Lite sometimes sends the string "null" (319 of 5,771 coding
+    cards in the IT-123 run). Read as a code it folds to "nu11"."""
+    return value.strip().lower() == "null"
+
+
 def normalise(value: str | None) -> str:
     """Strip print/OCR artefacts. Leading zeros are left alone.
 
@@ -181,7 +188,7 @@ def normalise(value: str | None) -> str:
     definitions of "the same value" would let a pair of readings count as
     agreeing while scoring as a mismatch.
     """
-    if value is None:
+    if value is None or _is_null_word(value):
         return ""
     stripped = value.strip().translate(_PUNCTUATION)
     # all-void-marks (or empty) means no code, however it was written. Checked
@@ -193,9 +200,9 @@ def normalise(value: str | None) -> str:
 
 def clean_text(value: str | None) -> str:
     """Handwriting is kept as written. A cell holding only dashes, dots,
-    underscores or spaces is blank."""
+    underscores or spaces, or the word "null", is blank."""
     text = (value or "").strip()
-    return "" if set(text) <= set("-–—_ .") else text
+    return "" if set(text) <= set("-–—_ .") or _is_null_word(text) else text
 
 
 # --- 3. one field -----------------------------------------------------------

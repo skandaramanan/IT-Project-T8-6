@@ -13,7 +13,13 @@ import jsonschema
 import pytest
 
 from survey.extraction.card_fields import FIELD_SCHEMA
-from survey.extraction.record import FIELD_MAP, build_record, build_record_id, normalise
+from survey.extraction.record import (
+    FIELD_MAP,
+    build_record,
+    build_record_id,
+    clean_text,
+    normalise,
+)
 
 SCHEMA = json.loads(
     (
@@ -99,10 +105,17 @@ def test_returned_empty_field_is_no_data_not_omitted():
         ("-", ""),  # transcriber's void mark
         ("BB", ""),  # coder voided the cell, one B per column
         (None, ""),
+        ("null", ""),  # the model quoted its null; folded, it was "nu11"
+        (" NULL ", ""),
     ],
 )
 def test_normalise(raw, expected):
     assert normalise(raw) == expected
+
+
+def test_quoted_null_is_blank_text():
+    assert clean_text("null") == ""
+    assert clean_text("Nullarbor St") == "Nullarbor St"
 
 
 def test_leading_zeros_are_kept():
