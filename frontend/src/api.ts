@@ -29,7 +29,15 @@ export interface Item {
   id: string;
   region: string;
   batch: string;
-  record_id: string;
+  record_id: string | null;
+  dwelling_id: string;
+  address: string | null;
+  region_title: string | null;
+  card_score: number | null;
+  field_kind: string;
+  code_list: { value: string; label: string }[];
+  card_fields?: CardField[];
+  cards?: Card[];
   field_path: string;
   label: string;
   field: Field;
@@ -44,6 +52,58 @@ export interface Item {
   resolved: boolean;
   undo_decision_id: string | null;
 }
+export interface CardField {
+  id: string | null;
+  label: string;
+  field_path: string;
+  field: Field;
+  review_state: ReviewState;
+}
+export interface Card {
+  card_id: string;
+  household_index: number;
+  household_no: string | null;
+  page?: number;
+  record_id: string | null;
+  next_item_id: string | null;
+  first_item_id: string | null;
+}
+export interface Dwelling {
+  id: string;
+  region: string;
+  record_id: string | null;
+  address: string | null;
+  score: number | null;
+  card_count: number;
+  total: number;
+  resolved: number;
+  unresolved: number;
+  status: 'pending' | 'in_progress' | 'complete' | 'blocked';
+  diagnostics: Diagnostic[];
+  next_item_id: string | null;
+  first_item_id: string | null;
+  last_reviewer: string | null;
+  last_reviewed_at: string | null;
+}
+export interface Summary {
+  dwellings: number;
+  queued_dwellings: number;
+  completed_dwellings: number;
+  average_card_score: number | null;
+  scored_cards: number;
+  unscored_cards: number;
+}
+export interface DwellingQueue {
+  dwellings: Dwelling[];
+  diagnostics: Diagnostic[];
+  total: number;
+  resolved: number;
+  unresolved: number;
+  complete: boolean;
+  summary: Summary;
+  all_regions: Summary;
+  region_title: string | null;
+}
 export interface Queue {
   items: Item[];
   diagnostics: Diagnostic[];
@@ -54,6 +114,7 @@ export interface Queue {
 }
 export interface Region {
   region: string;
+  title?: string | null;
   has_records: boolean;
   has_scan_folder: boolean;
 }
@@ -111,16 +172,45 @@ export async function api<T>(path: string, body?: object): Promise<T> {
     );
   return data as T;
 }
-// PR 1 has no durable dwelling ID: grouping is for display only. Saves use item.id.
+// A dwelling's physical identity comes from the backend, never its read number.
 export function dwellingKey(item: Item): string {
-  return JSON.stringify([item.region, item.batch, item.record_id.slice(0, -3)]);
+  return item.dwelling_id;
 }
-export function groupDwellings(items: Item[]): Item[][] {
-  const groups = new Map<string, Item[]>();
-  for (const item of items) {
-    const key = dwellingKey(item);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(item);
-  }
-  return [...groups.values()];
+
+// A progress summary, not a replacement for the authoritative JSONL dataset.
+export function reviewSummaryCsv(queue: DwellingQueue): string {
+  const rows: unknown[][] = [
+    [
+      'Region',
+      'Dwelling',
+      'Address',
+      'Coding cards',
+      'Confidence',
+      'Flagged fields',
+      'Decided',
+      'To review',
+      'Status',
+      'Last reviewed by',
+      'Last reviewed at',
+    ],
+    ...queue.dwellings.map((d) => [
+      d.region,
+      d.record_id,
+      d.address,
+      d.card_count,
+      d.score,
+      d.total,
+      d.resolved,
+      d.unresolved,
+      {pending:'Not started',in_progress:'In progress',complete:'Done',blocked:'Needs the team’s attention'}[d.status],
+      d.last_reviewer,
+      d.last_reviewed_at,
+    ]),
+  ];
+  const cell = (value: unknown) => {
+    const text = value == null ? '' : String(value);
+    const literal = /^[=+\-@\t\r\n]/.test(text) ? "'" + text : text;
+    return '"' + literal.replaceAll('"', '""') + '"';
+  };
+  return '\ufeff' + rows.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }

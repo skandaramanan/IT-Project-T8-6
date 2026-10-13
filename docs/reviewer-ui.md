@@ -1,4 +1,4 @@
-# IT-115 reviewer UI: PR 1
+# IT-115 reviewer UI: PRs 1 and 2
 
 React + TypeScript in `frontend/`, built with Vite and served by the local
 FastAPI backend at `http://127.0.0.1:8765`. The browser and API share an origin.
@@ -63,8 +63,8 @@ Keep the proposed three-PR split:
 - `216461.jsonl` is empty in #51; backend dataset validation rejects empty
   region files. Exclude that file from a **disposable copy**, never delete it
   from the source dataset. A region with no supported items is shown honestly.
-- No dwelling ID, card score, address, region title, field kind or printed order
-  comes from this API. PR 1 groups by `(region, PDF, municipality-dwelling)` for
+- PR 1 had no dwelling ID, card score, address, region title, field kind or printed order
+  from the API. PR 2 now supplies these. PR 1 groups by `(region, PDF, municipality-dwelling)` for
   display only, preserving first occurrence and every field's original order.
   Duplicate displayed IDs can be grouped together; every save still uses the
   opaque physical-card item ID. PR 2 must provide actual dwelling identity.
@@ -188,3 +188,118 @@ Windows acceptance remain follow-up work.
   survived reload with original `04` retained, reviewer attribution and undo;
   the copied results passed `survey validate-results`.
 - Original results and scans were unchanged. Test servers were stopped.
+
+## PR 2: dwelling queue and review context
+
+This local change is stacked on PR 1 (`cdd9c08`, GitHub #56), on
+`skandar/it-115-reviewer-queue-pr-2`. The PR 1 branch remains unchanged.
+No project commits, remote pushes or external posts are made during implementation.
+
+The queue requests `/api/dwellings?region=...`, one small summary per JSONL
+dwelling. Opening one row loads only that dwelling's flagged items via
+`/api/dwellings/{id}/items?region=...`; opening a field loads its detailed context.
+The browser no longer downloads the region's full field/history queue to group it.
+Rows preserve the first occurrence in the supplied flags, including after a save.
+Continue opens the first unfinished row in that order. The mockup's promotion of
+in-progress rows is deliberately omitted because the supplied queue owns ranking.
+
+IDs hash the region and sorted physical coding-card locations, independent of
+read record numbers, JSONL row order and household order. Separate dwellings with
+the same read number remain separate. Changing a dwelling's actual card membership
+changes its ID; stale pointers remain visible diagnostics rather than disappearing.
+Nullable record numbers display “Number not identified”. This is display support,
+not acceptance of an upstream schema version before it has been integrated.
+
+The row score is its weakest stored household coding-card score; if any card is
+unscored, the dwelling is shown as not scored. Region/all-region averages use each
+available coding-card score once, including cards outside the supplied queue.
+Unknown scores are excluded from the mean and counted separately. Neither human
+acceptance nor correction invents a new machine score. Counts come from loaded data;
+no fixed corpus counts from the old boards are used.
+
+Progress is decided supplied flags, grouped into queued dwellings. Loaded dwelling
+counts and queued dwelling counts are separate API values. A dwelling absent from
+regenerated flags is not claimed as reviewed or automatically completed. Unsupported,
+stale and missing-source diagnostics remain unresolved and prevent completion. Last
+reviewer/date comes from the dwelling's latest stored decision, including undo and
+fields no longer present in regenerated flags. Refresh queue or return from review
+to retrieve current progress. An explicit stale-field reload refreshes the dwelling's
+other decisions while preserving the correction draft.
+
+Address is read-only survey-front context. Catalogue titles come from `metadata.csv`
+at the configured scan root (`Node ID`/`Node Title`, including UTF-8 BOM); missing
+metadata falls back to the region ID. Region IDs are never replaced by guessed suburbs.
+Coding fields follow `FIELD_SCHEMA` printed order, not `FIELD_MAP` domain grouping.
+Other stored fields are visible but only supplied flags can be opened for decisions.
+Shared building fields appear on household 0 only. The active field scrolls into view.
+Card tabs show scan page and remaining flags. Code meanings use the existing closed
+and sentinel maps; ordinary amounts remain valid and unknown digit codes can still
+be saved with the backend's warning. No new validation policy is introduced.
+
+Review summary (.csv) downloads the current region's full dwelling summary, including
+rows beyond the visible page. It is progress information, not a corrected-dataset
+export; authoritative records remain JSONL. CSV cells are quoted and formula-like
+text is kept literal when opened in spreadsheet software.
+
+### Upstream integration boundaries
+
+- #52 is merged and provides the store/save/sync implementation. Linear's IT-111/112/113
+  database wording/status remains older than D029 and the implementation.
+- #53 (IT-109) still needs its review fixes/rebase and coding-only flags. #54 (IT-110)
+  is stacked on it. Unsupported supplied flags are surfaced; the frontend does not
+  silently discard them or rebuild routing.
+- #51 (IT-123) is open. Its published data count changed from 3,590 to 3,717; read
+  counts from data. The other agent's local schema 0.5 follow-up allows null/lettered
+  IDs and dwelling flags. Its schema predates review metadata: it must be integrated
+  with 0.4 review validation/history before loading that rebuilt dataset. #53's sorting
+  also needs a deterministic nullable-ID tie-break and dwelling-flag handling.
+  PR 2 does not copy, edit, commit or rebase that agent's work.
+- IT-124/#55 and IT-125 are not prerequisites for this UI. Single-reader scores route
+  to review now; merged scores can clear fields later without frontend routing changes.
+- IT-116 and independent Windows/manual acceptance remain rollout work. PR 3 retains
+  detailed magnifier/history/help/finish, column folding/locator polish and laptop polish.
+  Front/person/damaged/negation edits remain outside the backend's v1 action contract.
+
+### PR 2 verification and safe local run
+
+Use the same build commands and disposable fixture/sample workflow above. A fresh
+real-scan fixture example (never the project's results checkout):
+
+```sh
+uv run python scripts/review_fixture.py /tmp/it-115-pr2-test \
+  --scan-root /path/to/Wilfred_Prest_Survey_Data
+```
+
+Run the launch command printed by the helper from this code worktree. Every review
+write targets the copied `/tmp/.../data checkout`; sharing targets a local bare
+`remote.git`. Tests likewise use temporary synthetic datasets/local remotes, never
+GitHub. Keep the real source scans read-only. Choose a fresh directory each time.
+
+Independent reviews covered data/client contracts, backend correctness and frontend
+state recovery in separate passes. Regression tests cover physical identity, region
+averages, printed order, readonly fields, code meanings, progress/reviewer/undo,
+source loss, synced stale pointers and recovery, scan gating, and stale editor reloads.
+
+Final local checks: Ruff lint and format pass; full pytest **604 passed, 17 skipped**
+(one existing Starlette/httpx deprecation warning); frontend **25 tests passed**;
+TypeScript/Vite production build passed. Independent follow-up checks confirmed
+stale-pointer recovery, global scan completion and editor-context refresh fixes.
+Browser verification at 1366 × 768 used a fresh `/tmp/it-115-pr2-r01` illustrative
+r01 copy with verified original PDF pages: exact `009` correction, original `04`,
+next-field navigation, persisted reload, attribution/progress and a real CSV download.
+The temporary toolbar wrap keeps all queue actions reachable at this width.
+
+A read-only load comparison used a temporary copy of published #51 commit
+`1f772b7`: 44 populated regions, 3,717 dwellings, 230,494 manually supplied supported
+flags. Scan metadata/rendering was stubbed; this is not production flag generation.
+For 216418 (81 dwellings, 5,022 flags): summary **40,146 bytes / 0.103 s**, legacy
+field queue **6,495,484 bytes / 0.274 s**, selected dwelling **80,139 bytes / 0.006 s**.
+The initial region response is **99.4% smaller**. Combined dataset load/indexing took
+58.663 s. These are local observations, not Windows or network performance claims.
+
+A subsequent whole-PR review found and fixed two additional edge cases: incomplete
+optional catalogue titles now fall back without preventing startup, and save/undo
+responses build card navigation after updating progress. Regression tests exercise
+accepting every field on a card and undoing the second decision, verifying that the
+returned next-field link matches a fresh GET. The independent reviewer confirmed
+both fixes; the focused backend suite passed 62 tests and the frontend suite 25.

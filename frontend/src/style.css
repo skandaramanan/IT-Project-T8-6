@@ -732,3 +732,86 @@ summary:focus-visible {
     font-size: var(--meta-size);
   }
 }
+/* Queue metadata and code-book context from the v1.5 boards. */
+.cardscore {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--meta-size);
+  color: var(--header-muted);
+  white-space: nowrap;
+}
+.averages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.averages > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.prog progress {
+  appearance: none;
+  width: 200px;
+  height: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--line);
+}
+.prog progress::-webkit-progress-bar {
+  background: var(--line);
+  border-radius: 3px;
+}
+.prog progress::-webkit-progress-value {
+  background: var(--blue);
+  border-radius: 3px;
+}
+.prog progress::-moz-progress-bar {
+  background: var(--blue);
+  border-radius: 3px;
+}
+.queue-scope {
+  margin-top: 12px;
+}
+.qt .rid {
+  font-variant-numeric: tabular-nums;
+}
+.codes {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 18px;
+  margin-top: 10px;
+  font-size: var(--meta-size);
+}
+.codes li {
+  display: flex;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.codes li.hit {
+  background: var(--surface);
+  color: var(--blue);
+  font-weight: 700;
+}
+.mean-live {
+  font-size: var(--heading-size);
+  font-weight: 600;
+}
+.strip {
+  flex-wrap: wrap;
+}
+.strip .regsel,
+.strip .prog,
+.strip .averages {
+  flex-shrink: 0;
+}
+.top .meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
