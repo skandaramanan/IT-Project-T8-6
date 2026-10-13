@@ -85,6 +85,20 @@ def test_out_of_order_coding_card_joins_its_dwelling_flagged():
     )
 
 
+def test_a_far_card_does_not_join_a_dwelling_that_has_its_card():
+    """Page 12 reads 21, which is dwelling 30's card misread: joining 21 would
+    give two 21s and drop both. Dwelling 9 has no card, so its far one joins."""
+    pages = [(F, "9"), (F, "21"), (C, "21")]
+    for n in ("22", "23", "24", "25"):
+        pages += [(F, n), (C, n)]
+    pages += [(F, "30"), (C, "21"), (C, "9")]
+    dwellings, unplaced = _run(*pages)
+    assert dwellings[0] == ([0, 13], {Flag.OUT_OF_ORDER})
+    assert dwellings[1] == ([1, 2], set())
+    assert dwellings[-1] == ([11], {Flag.NO_CODING_CARD})
+    assert unplaced == [12]
+
+
 def test_unchecked_cards_are_flagged_or_unplaced_not_guessed():
     dwellings, unplaced = _run(
         (R, None),  # no front before it
