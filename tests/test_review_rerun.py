@@ -100,3 +100,83 @@ def test_undo_to_legacy_corrected_field_does_not_unprotect_it(tmp_path):
         merged["dwelling"]["households"][1]["coding"]["weekly_rent"]
         == undone["item"]["field"]
     )
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_it89_note_front_matching_and_review_history_survive_same_rerun(
+    tmp_path, pending
+):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["cards"] = [
+        {"role": "survey-front", "image": "synthetic.pdf", "page": 3},
+        {"role": "survey-back", "image": "synthetic.pdf", "page": 4},
+    ]
+    note = {
+        "text": {
+            "value": "Corrected verbatim note",
+            "status": "ok",
+            "confidence": None,
+            "source": "survey-back",
+            "origin": "corrected",
+            "original_value": "Machine note",
+        },
+        "page": 4,
+        "front_page": 3,
+        "household_id": None,
+    }
+    record["dwelling"]["notes"] = [deepcopy(note)]
+    service.store.save("demo", service.store.regions["demo"][1], [record])
+    decision = decide(service, action="accept")
+    if pending:
+        service.undo_latest(
+            decision["decision"]["id"],
+            "Reviewer",
+            decision["item"]["version"],
+            "combined-undo",
+        )
+    old = deepcopy(service.store.regions["demo"][0][0])
+    reviewed = deepcopy(old["dwelling"]["households"][1]["coding"]["weekly_rent"])
+    rebuilt = synthetic_record()
+    rebuilt["dwelling"]["cards"] = deepcopy(record["dwelling"]["cards"]) + [
+        {"role": "survey-front", "image": "synthetic.pdf", "page": 5},
+        {"role": "survey-back", "image": "synthetic.pdf", "page": 6},
+    ]
+    rebuilt["dwelling"]["notes"] = [
+        {
+            "text": {
+                "value": "New front note",
+                "status": "ok",
+                "confidence": None,
+                "source": "survey-back",
+            },
+            "page": 6,
+            "front_page": 5,
+            "household_id": None,
+        },
+        {
+            **deepcopy(note),
+            "text": {
+                "value": "Reread old front note",
+                "status": "ok",
+                "confidence": None,
+                "source": "survey-back",
+            },
+        },
+    ]
+    rebuilt["dwelling"]["households"][1]["coding"]["weekly_rent"]["value"] = "99"
+    [merged] = _merge([old], [rebuilt])
+    assert merged["schema_version"] == "0.4.0"
+    assert merged["dwelling"]["notes"][0]["front_page"] == 5
+    kept_note = merged["dwelling"]["notes"][1]
+    assert kept_note["text"] == note["text"]
+    assert (kept_note["front_page"], kept_note["page"], kept_note["household_id"]) == (
+        3,
+        4,
+        None,
+    )
+    assert "household_ambiguous" in kept_note["flags"]
+    field = merged["dwelling"]["households"][1]["coding"]["weekly_rent"]
+    assert field["review"] == reviewed["review"]
+    assert field["value"] == ("99" if pending else reviewed["value"])
+    validate_records([merged], "demo")

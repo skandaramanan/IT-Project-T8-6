@@ -46,11 +46,23 @@ def synthetic_record():
     first["dwelling"]["households"][1]["persons"] = [
         {"relationship": {"value": "Head", "status": "ok", "confidence": None}}
     ]
-    first["dwelling"]["households"][1]["notes"] = {
-        "text": "Synthetic reverse notes",
-        "source": "survey-back",
-        "confidence": None,
-    }
+    first["dwelling"]["cards"] = [
+        {"role": "survey-front", "image": "synthetic.pdf", "page": 3},
+        {"role": "survey-back", "image": "synthetic.pdf", "page": 4},
+    ]
+    first["dwelling"]["notes"] = [
+        {
+            "text": {
+                "value": "Synthetic reverse notes",
+                "status": "ok",
+                "confidence": None,
+                "source": "survey-back",
+            },
+            "page": 4,
+            "front_page": 3,
+            "household_id": None,
+        }
+    ]
     return first
 
 
@@ -84,7 +96,7 @@ def write_record(path, record):
 def synthetic_pdf(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     images = []
-    for page, color in [(1, "white"), (2, "#f0e2b8")]:
+    for page, color in [(1, "white"), (2, "#f0e2b8"), (3, "white"), (4, "white")]:
         image = Image.new("RGB", (1000, 650), color)
         draw = ImageDraw.Draw(image)
         draw.text(

@@ -173,6 +173,16 @@ class ReviewService:
                 self.scans.probe(ref)
             except ReviewError as error:
                 errors.append({"code": error.code, "message": str(error)})
+            if any(
+                "notes" in household
+                for household in resolved.record["dwelling"]["households"]
+            ):
+                errors.append(
+                    {
+                        "code": "legacy_notes",
+                        "message": "Migrate legacy household notes to dwelling.notes with verified front/back provenance before review. No notes were discarded.",
+                    }
+                )
             spec = FIELD_SCHEMA_BY_NAME[resolved.label]
             field = resolved.field
             if (
@@ -311,6 +321,16 @@ class ReviewService:
             self.store.check_version(ref.region, expected_version)
             item = self.item(item_id)
             if item["diagnostics"]:
+                migration = next(
+                    (
+                        error
+                        for error in item["diagnostics"]
+                        if error["code"] == "legacy_notes"
+                    ),
+                    None,
+                )
+                if migration:
+                    raise ReviewError(migration["code"], migration["message"])
                 raise ReviewError(
                     "missing_scan", "Review requires the original readable scan", 404
                 )

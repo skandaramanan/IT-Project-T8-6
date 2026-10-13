@@ -14,7 +14,7 @@ Schema `0.4.0` adds optional field `review` metadata with a separate
 pending/accepted/corrected state and append-only decision/undo history. Snapshots
 exclude history. Accepted payloads remain extraction payloads; mutations retain
 original machine value and confidence. IT-89 retains `0.3.0` for dwelling notes
-and lands first. Existing `0.1.0`,
+and is now included from main after merging #50. Existing `0.1.0`,
 `0.2.0`, and IT-89 `0.3.0` records remain readable, including verbatim dwelling
 notes. Earlier versions cannot contain review metadata; this constraint is checked
 by the shared Python validator rather than a recursive JSON Schema legacy tree.
@@ -50,7 +50,45 @@ Incoming updates replace only affected region/index entries. Card lookup uses a
 physical-card dictionary; batch completion uses cached counters, invalidated when
 source scans change. JSONL serialization/replacement still covers the region.
 
-Physical identity is region/PDF/page; shared fields belong to the first coding household. Identity and existing negated
+Physical identity is region/PDF/page; shared fields belong to the first coding
+household. Identity and existing negated
 fields are accept-only. Front/person/handwritten/negation editing and shared-field
 reconciliation are deferred. See [the runbook](../review-backend.md) for API,
 launch, synthetic demo, deployment gates and recovery.
+
+
+## Rebase onto IT-89 (13 October 2026)
+
+IT-113 was rebased onto `origin/main` at `c43a97f`, which includes IT-89 PR #50.
+The original branch tip is preserved locally at
+`refs/backup/it-113-before-main-rebase-928ee1b`. No remote history was rewritten.
+
+Conflict resolutions and integration decisions:
+
+- Keep both `survey extract --notes` and the `review`/`validate-results` commands.
+- Keep IT-89's extraction, back-card provenance, omitted-back fallback and note
+  ownership updates. Corrected notes follow their `front_page` when a front is
+  gained or note order changes; review protection is applied after that mapping.
+- Keep accepted/corrected coding payloads and their append-only histories across
+  reruns. Undo-to-pending preserves history while allowing a new extraction value.
+- Keep `0.3.0` as IT-89's notes version; the combined builder and current example
+  use `0.4.0`. Review metadata requires `0.4.0`.
+- Per the user's explicit decision, `0.3.0` and `0.4.0` reject household-level
+  notes. Only `0.1.0`/`0.2.0` retain read compatibility for that legacy shape.
+  Reviewing such a record is blocked with a migration diagnostic before any write.
+  Move the notes explicitly using verified front/back provenance; do not discard
+  their text or invent page associations merely to upgrade a schema version.
+- Update the synthetic review fixture to canonical dwelling notes with matching
+  synthetic front/back pages. This keeps unflagged-note preservation exercised
+  against the same structure the extractor now writes.
+
+Validation covers both upstream notes tests and review regressions, including one
+rerun preserving a corrected note after a front is added and retaining either an
+active coding review or its pending undo history. Legacy-note migration refusal
+also verifies the original file and note text remain unchanged.
+
+Post-rebase verification: Ruff lint/format and whitespace checks pass. The full
+combined suite reports **589 passed, 14 skipped, 2 failed**. The failures remain
+the two pre-existing local confidence-benchmark data checks documented in the
+runbook; no notes or review regression failed. CLI smoke checks expose both
+`extract --notes` and `review`. Native Windows/remote CI remains pending.

@@ -334,3 +334,34 @@ def test_it89_notes_and_review_metadata_coexist(tmp_path):
         == record["dwelling"]["notes"]
     )
     validate_records(service.store.regions["demo"][0], "demo")
+
+
+@pytest.mark.parametrize("version", ["0.1.0", "0.2.0"])
+def test_legacy_household_notes_remain_readable_but_require_migration_before_review(
+    tmp_path, version
+):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["schema_version"] = version
+    record["dwelling"].pop("notes")
+    legacy = {
+        "text": "Legacy verbatim notes",
+        "source": "survey-back",
+        "confidence": None,
+    }
+    record["dwelling"]["households"][0]["notes"] = legacy
+    service.store.save("demo", service.store.regions["demo"][1], [record])
+    path = service.store.directory / "demo.jsonl"
+    before = path.read_bytes()
+    item = service.item(refs()[0].item_id)
+    assert item["allowed_actions"] == [] and not item["resolved"]
+    assert item["diagnostics"][0]["code"] == "legacy_notes"
+    with pytest.raises(ReviewError, match="Migrate legacy household notes"):
+        decide(service, refs()[0], action="accept")
+    assert path.read_bytes() == before
+    assert (
+        service.store.current(refs()[0])[0].record["dwelling"]["households"][0]["notes"]
+        == legacy
+    )
+    record["schema_version"] = "0.4.0"
+    assert schema_errors(record)

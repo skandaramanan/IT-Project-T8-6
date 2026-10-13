@@ -260,7 +260,7 @@ an identical decision displays an informational message and adds no audit event.
 
 ## Durable data and reruns
 
-New builders use schema `0.4.0`. IT-89 lands first and owns `0.3.0` for
+New builders use schema `0.4.0`. IT-89 has landed on main and owns `0.3.0` for
 `dwelling.notes`. Existing `0.1.0`, `0.2.0`, and IT-89 `0.3.0` records remain
 readable. Review upgrades only the changed record; startup does not rewrite files.
 Old versions cannot carry review metadata: the shared Python validator checks this
@@ -271,7 +271,9 @@ Downstream consumers must accept optional `review` metadata before live rollout.
 Earlier disposable demos from this PR used `0.3.0` for review metadata. Preserve
 those directories and create a fresh test with the updated helper, or explicitly
 upgrade a backed-up copy of reviewed records to `0.4.0` and run `validate-results`.
-Do not relabel IT-89 records or overwrite an existing test checkout.
+Any legacy household notes also require explicit migration to dwelling-level
+notes before the record can be valid at `0.4.0`. Do not relabel IT-89 records or
+overwrite an existing test checkout.
 
 `review.state` is pending/accepted/corrected and independent of extraction status.
 History records decision/request IDs, reviewer, backend UTC time, action,
@@ -408,10 +410,14 @@ sign-off, production-data acceptance, or Windows desktop verification.
 
 ## Concurrent-region and performance follow-up
 
-The review schema is now `0.4.0`, reserving `0.3.0` for IT-89 (#50), which must
-land first. Compatibility includes #50's dwelling notes and required `front_page`
-provenance (checked against PR head `ef722fa`). The legacy household-note shape
-remains readable. The review changes do not replace IT-89's extraction work.
+The review schema is `0.4.0`, incorporating IT-89 (#50) from main at `c43a97f`.
+IT-89 retains `0.3.0` for dwelling notes with required `front_page` provenance.
+Both extraction and review behavior are now combined. Household-level notes are
+readable only in `0.1.0`/`0.2.0`; newer versions reject that legacy shape. An old
+record with household notes must be explicitly migrated before review can upgrade
+it. Migration diagnostics disable decisions, and failed attempts leave the file
+and note text intact. Verify each front/back association rather than inventing
+provenance or silently deleting legacy notes.
 
 A local before/after benchmark used unchanged copies of #51's results at
 `c1a7ffe`, with 44 populated regions, 3,590 dwellings and 222,780 manually supplied
@@ -461,3 +467,11 @@ checks pass. A disposable r01 test also verified original-PDF PNG serving, all
 three durable decisions, completion counters, schema `0.4.0`, and sharing to a
 local bare remote. Original scans and the existing user test checkout were not
 modified. Remote CI and Windows desktop acceptance remain pending.
+
+Post-IT-89 rebase verification (13 October 2026): the branch includes main at
+`c43a97f` and both extraction/review implementations. Full tests report **589
+passed, 14 skipped, 2 failed**, with the same two existing confidence-benchmark
+failures. Lint, formatting and whitespace pass. Combined rerun tests preserve
+corrected note text by `front_page`, active coding review history, and pending
+undo history. Strict modern-schema tests reject household notes; legacy-record
+migration refusal retains source bytes. Decisions are recorded in D029.
