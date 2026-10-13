@@ -260,7 +260,8 @@ an identical decision displays an informational message and adds no audit event.
 
 ## Durable data and reruns
 
-New builders use schema `0.4.0`. IT-89 has landed on main and owns `0.3.0` for
+New builders use schema `0.5.0` (IT-123: dwelling flags, nullable
+`record_id`); review metadata arrived in `0.4.0`. IT-89 owns `0.3.0` for
 `dwelling.notes`. Existing `0.1.0`, `0.2.0`, and IT-89 `0.3.0` records remain
 readable. Review upgrades only the changed record; startup does not rewrite files.
 Old versions cannot carry review metadata: the shared Python validator checks this

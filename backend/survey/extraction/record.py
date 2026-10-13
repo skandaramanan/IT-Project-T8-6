@@ -39,12 +39,13 @@ Deliberately not done here:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)
@@ -290,7 +291,8 @@ def build_omitted_field(*, source: str | None = None) -> dict[str, Any]:
 
 def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> str:
     """Dwelling number alone repeats across municipalities, so identity is the
-    three of them together, zero padded: 27-0006-01."""
+    three of them together, zero padded: 27-0006-01. A dwelling numbered with a
+    letter keeps it: 487A is 21-0487A-01, a different dwelling from 487."""
     missing = [
         name
         for name, value in (
@@ -302,7 +304,44 @@ def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> s
     ]
     if missing:
         raise ValueError(f"cannot build record_id without {', '.join(missing)}")
-    return f"{municipality:0>2}-{dwelling_no:0>4}-{household_no:0>2}"
+    match = re.fullmatch(r"(\d{1,4})([A-Z]?)", dwelling_no.upper())
+    if not (
+        re.fullmatch(r"\d{1,2}", municipality)
+        and match
+        and re.fullmatch(r"\d{1,2}", household_no)
+    ):
+        # A struck number read together with its replacement: 276303, 1.01.
+        raise ValueError(
+            f"cannot build record_id from {municipality}-{dwelling_no}-{household_no}"
+        )
+    number, suffix = match.groups()
+    return f"{municipality:0>2}-{number:0>4}{suffix}-{household_no:0>2}"
+
+
+IDENTITY_LABELS = ("Municipality", "Number of Dwelling", "Number of Household")
+_IDENTITY_PARTS = (r"\d{1,2}", r"\d{1,4}[A-Z]?", r"\d{1,2}")
+
+
+def fill_identity(first: dict[str, str], second: dict[str, str]) -> dict[str, str]:
+    """``first`` with the identity parts it lacks (blank, or malformed like a
+    struck number read with its replacement) taken from ``second``, a second
+    reading of the same card. Raises ValueError unless ``second`` agrees with
+    every part ``first`` has and the result builds a record_id: a second read
+    may fill a gap, never overrule the first."""
+    filled = dict(first)
+    for label, pattern in zip(IDENTITY_LABELS, _IDENTITY_PARTS):
+        had, now = (normalise(fields.get(label)).upper() for fields in (first, second))
+        if not re.fullmatch(pattern, had):
+            filled[label] = now
+        elif had.lstrip("0") != now.lstrip("0"):
+            raise ValueError(f"second reading disagrees on {label}: {had} vs {now}")
+    identity_of(filled)
+    return filled
+
+
+def identity_of(fields: dict[str, str]) -> str:
+    """The record_id a coding card's reading spells; ValueError if none."""
+    return build_record_id(*(normalise(fields.get(label)) for label in IDENTITY_LABELS))
 
 
 def build_record(
@@ -357,11 +396,14 @@ def build_record(
             ),
         )
 
-    record_id = build_record_id(
-        groups["dwelling"]["municipality"]["value"] or "",
-        groups["dwelling"]["dwelling_no"]["value"] or "",
-        groups["household"]["household_no"]["value"] or "",
-    )
+    try:
+        record_id: str | None = build_record_id(
+            groups["dwelling"]["municipality"]["value"] or "",
+            groups["dwelling"]["dwelling_no"]["value"] or "",
+            groups["household"]["household_no"]["value"] or "",
+        )
+    except ValueError:  # still written; association flags the dwelling (D007)
+        record_id = None
 
     household: dict[str, Any] = {
         "record_id": record_id,

@@ -13,6 +13,7 @@ households nesting; ``build_record`` splits them by "Number of Household".
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -35,11 +36,13 @@ class ReviewFlag(StrEnum):
     NO_CODING_CARD = "no_coding_card"
     # More than one household, and the front does not say whose column is whose.
     PERSONS_UNASSIGNED = "persons_unassigned"
-    # A coding card without municipality, dwelling or household number.
+    # A coding card whose municipality, dwelling or household number is blank
+    # or unreadable: written with record_id null.
     MISSING_RECORD_ID = "missing_record_id"
     # Coding cards in one dwelling naming different municipalities.
     MUNICIPALITY_MISMATCH = "municipality_mismatch"
-    # A record_id another coding card in the batch also has.
+    # A record_id another coding card in the batch also has: written null,
+    # unless only this card sits with a front.
     DUPLICATE_RECORD_ID = "duplicate_record_id"
     # A coding card here has no reading (failed, or the run stopped first).
     UNREAD_CODING_CARD = "unread_coding_card"
@@ -48,6 +51,25 @@ class ReviewFlag(StrEnum):
     # Two fronts of one dwelling read differently for the same field; the
     # first front's value is kept.
     FRONTS_DISAGREE = "fronts_disagree"
+    # A coding card no front fits, written as a dwelling of its own.
+    UNPLACED = "unplaced"
+    # A coding card whose number fits no front, paired with the front sitting
+    # where this batch's coding cards usually sit from theirs.
+    PAIRED_BY_POSITION = "paired_by_position"
+    # A household whose record_id was completed by a second reading of its
+    # card's identity block, which only filled what the first left blank.
+    IDENTITY_REREAD = "identity_reread"
+
+
+# Set from what the survey fronts read, not the coding cards.
+FRONT_FLAGS = frozenset(
+    {
+        ReviewFlag.MISSING_DWELLING_NO,
+        ReviewFlag.DUPLICATE_DWELLING_NO,
+        ReviewFlag.FRONTS_DISAGREE,
+        ReviewFlag.PERSONS_UNASSIGNED,
+    }
+)
 
 
 @dataclass
@@ -58,9 +80,10 @@ class Dwelling:
 
 
 def dwelling_key(raw: str | None) -> str | None:
-    """Leading zeros dropped: a dwelling number is an ordinal, not a code."""
-    cleaned = normalise(raw)
-    return str(int(cleaned)) if cleaned.isdigit() else None
+    """Leading zeros dropped: a dwelling number is an ordinal, not a code. A
+    letter after it names another dwelling (487A is not 487), so it is kept."""
+    match = re.fullmatch(r"(\d+)([A-Z]?)", normalise(raw).upper())
+    return f"{int(match[1])}{match[2]}" if match else None
 
 
 def dwelling_number(card: SegmentedCard, fields: dict[str, str]) -> str | None:
@@ -138,6 +161,47 @@ def associate(
         if not _has_coding(d):
             d.flags.add(ReviewFlag.NO_CODING_CARD)
     return dwellings, unplaced
+
+
+def pair_by_position(
+    dwellings: Sequence[Dwelling], cards: Sequence[SegmentedCard]
+) -> list[SegmentedCard]:
+    """Coding cards paired with the front at the batch's usual offset, as
+    dwellings that hold one front and one coding card show it. A front only
+    takes a card when its dwelling has none. Returns the cards still unpaired."""
+    offsets = Counter(
+        coding[0].page_index - fronts[0].page_index
+        for d in dwellings
+        for fronts, coding in [_split(d)]
+        if len(fronts) == len(coding) == 1
+    )
+    if not offsets:
+        return list(cards)
+    offset = offsets.most_common(1)[0][0]
+    by_page = {
+        c.page_index: d
+        for d in dwellings
+        for c in d.cards
+        if c.card_type is CardType.FRONT
+    }
+    left = []
+    for card in cards:
+        d = by_page.get(card.page_index - offset)
+        if d is None or _has_coding(d):
+            left.append(card)
+            continue
+        d.cards.append(card)
+        d.flags.discard(ReviewFlag.NO_CODING_CARD)
+        d.flags.add(ReviewFlag.PAIRED_BY_POSITION)
+    return left
+
+
+def _split(dwelling: Dwelling) -> tuple[list[SegmentedCard], list[SegmentedCard]]:
+    """The dwelling's fronts and coding cards."""
+    return (
+        [c for c in dwelling.cards if c.card_type is CardType.FRONT],
+        [c for c in dwelling.cards if c.card_type is CardType.NUMERIC_CODING],
+    )
 
 
 def _has_coding(dwelling: Dwelling) -> bool:

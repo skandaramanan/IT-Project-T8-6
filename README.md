@@ -165,8 +165,10 @@ the region's results file. In order, it:
    isn't a recognised card, or a PDF that can't be opened, is logged and
    skipped; the rest of the batch carries on.
 2. Has Gemini read each coding card and scores every field, and read each
-   survey front (address, persons), at one more request per front. Each
-   reading is cached in `data/runs/<region>/<extractor>/`
+   survey front (address, persons), at one more request per front. A coding
+   card whose reading gives no usable record_id has its identity block read
+   again from a crop, at one more request. Each reading is cached in
+   `data/runs/<region>/<extractor>/`
    (gitignored), so no card is paid for twice.
 3. Groups the cards into dwellings by scan order and dwelling number (IT-105).
    A front with no number (blank, or its reading was unusable) takes the
@@ -175,7 +177,12 @@ the region's results file. In order, it:
    failed is not rebuilt, so its previous version (if any) is kept, and the
    card is read again next run. The exception is an extra front with no coding
    card after it: if its request fails, the dwelling before it is written
-   without it.
+   without it. A coding card whose number fits no front pairs with the front
+   at the batch's usual page offset, flagged `paired_by_position`. One that
+   still fits none, or whose identity doesn't check out, is still written,
+   with `dwelling.flags` saying why and `record_id` null if it can't be
+   trusted (D007). An identity completed by the second reading is flagged
+   `identity_reread`. A coding card with no value at all is skipped.
 4. Checks every record against `schema/record-envelope.schema.json`. One that
    fails is logged with its record_id and the failing field, and not written,
    so its previous version (if any) is kept.
@@ -183,8 +190,7 @@ the region's results file. In order, it:
    dwelling (its households nested inside), in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
 6. Logs a summary line: records written, pages skipped, cards unreadable,
    cards unplaced, cards failed, PDFs failed, records invalid. The command
-   exits 1 if any card, PDF or record failed, or a coding card fit no
-   dwelling, so a scheduled run can tell.
+   exits 1 if any card, PDF or record failed, so a scheduled run can tell.
 
 `results/` is committed (D025): committing the file is how the client gets
 the data and how reviewers' corrections come back.

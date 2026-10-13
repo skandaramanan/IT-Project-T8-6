@@ -6,6 +6,7 @@ import pytest
 from review_support import decide, refs, setup_review, synthetic_record, write_record
 
 from survey import records
+from survey.extraction.record import SCHEMA_VERSION
 from survey.records import (
     Reference,
     ReviewError,
@@ -328,7 +329,7 @@ def test_it89_notes_and_review_metadata_coexist(tmp_path):
     validate_records([record], "demo")
     service.store.save("demo", service.store.regions["demo"][1], [record])
     decide(service)
-    assert service.store.regions["demo"][0][0]["schema_version"] == "0.4.0"
+    assert service.store.regions["demo"][0][0]["schema_version"] == SCHEMA_VERSION
     assert (
         service.store.regions["demo"][0][0]["dwelling"]["notes"]
         == record["dwelling"]["notes"]

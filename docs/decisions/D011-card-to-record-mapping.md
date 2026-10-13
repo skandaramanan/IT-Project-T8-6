@@ -38,9 +38,10 @@ path:
 - **Leading zeros are kept.** `04` and `4` are two different codes in a
   fixed-width scheme.
 
-Both substitutions are safe because every value on this card is a number — the
-code book defines no code containing a letter or a period — so neither can turn
-one valid code into another.
+Both substitutions are safe because every value on this card is a number (bar
+a dwelling number's letter, 487A, which in the corpus is A to E, none of them
+a lookalike) — the code book defines no code containing a letter or a period —
+so neither can turn one valid code into another.
 
 The record stores the cleaned value. The literal string the model returned is
 not persisted anywhere.

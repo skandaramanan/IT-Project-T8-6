@@ -18,6 +18,8 @@ from survey.extraction.record import (
     build_record,
     build_record_id,
     clean_text,
+    fill_identity,
+    identity_of,
     normalise,
 )
 
@@ -165,8 +167,44 @@ def test_record_id_needs_all_three_parts():
         build_record_id("27", "", "1")
 
 
+def test_a_lettered_dwelling_keeps_its_letter():
+    assert build_record_id("21", "487a", "1") == "21-0487A-01"
+
+
+@pytest.mark.parametrize(
+    "identity", [("06", "276303", "1"), ("18", "285", "101"), ("2115", "74", "1")]
+)
+def test_a_struck_number_read_with_its_replacement_is_no_record_id(identity):
+    with pytest.raises(ValueError):
+        build_record_id(*identity)
+
+
+def test_a_card_without_a_usable_identity_is_still_a_record():
+    record = build_record(
+        {"Municipality": "06", "Number of Dwelling": "276303"}, region="r"
+    )
+    assert record["dwelling"]["households"][0]["record_id"] is None
+
+
 # --- the envelope -----------------------------------------------------------
 
 
 def test_record_validates_against_the_envelope():
     jsonschema.validate(record(), SCHEMA)
+
+
+def test_a_second_reading_only_fills_what_the_first_lacks():
+    first = {"Municipality": "21", "Number of Dwelling": "481512", "Garden": "1"}
+    second = {
+        "Municipality": "21",
+        "Number of Dwelling": "481",
+        "Number of Household": "1",
+    }
+    filled = fill_identity(first, second)
+    assert identity_of(filled) == "21-0481-01"
+    assert filled["Garden"] == "1"
+    # It may not overrule a part the first read has.
+    with pytest.raises(ValueError):
+        fill_identity({**first, "Municipality": "05"}, {**second, "Municipality": "25"})
+    with pytest.raises(ValueError):
+        fill_identity(first, {"Municipality": "21"})

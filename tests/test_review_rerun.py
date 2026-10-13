@@ -3,6 +3,7 @@ from copy import deepcopy
 import pytest
 from review_support import decide, refs, setup_review, synthetic_record, write_record
 
+from survey.extraction.record import SCHEMA_VERSION
 from survey.pipeline import MergeRefused, _corrected_fields, _merge
 from survey.records import validate_records
 
@@ -37,7 +38,7 @@ def test_pending_undo_history_survives_but_new_reading_can_change(tmp_path):
     assert (
         field["value"] == "25" and field["review"] == undone["item"]["field"]["review"]
     )
-    assert merged["schema_version"] == "0.4.0"
+    assert merged["schema_version"] == SCHEMA_VERSION
     validate_records([merged], "demo")
     write_record(service.store.directory / "demo.jsonl", merged)
     service.store.reload()
@@ -166,7 +167,7 @@ def test_it89_note_front_matching_and_review_history_survive_same_rerun(
     ]
     rebuilt["dwelling"]["households"][1]["coding"]["weekly_rent"]["value"] = "99"
     [merged] = _merge([old], [rebuilt])
-    assert merged["schema_version"] == "0.4.0"
+    assert merged["schema_version"] == SCHEMA_VERSION
     assert merged["dwelling"]["notes"][0]["front_page"] == 5
     kept_note = merged["dwelling"]["notes"][1]
     assert kept_note["text"] == note["text"]

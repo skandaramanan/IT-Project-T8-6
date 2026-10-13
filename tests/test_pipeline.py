@@ -118,9 +118,10 @@ def _fixture_pages(*records: str) -> list[Path]:
 
 
 def _stray_page(tmp_path: Path) -> Path:
-    """Inked but unruled, landing third in a reverse/coding run (FR-21)."""
+    """Faintly inked (bleed-through) and unruled, landing third in a
+    reverse/coding run (FR-21): too faint to be another coding card."""
     rng = np.random.default_rng(0)
-    pixels = np.where(rng.random((500, 800)) < 0.06, 0, 255).astype("uint8")
+    pixels = np.where(rng.random((500, 800)) < 0.01, 0, 255).astype("uint8")
     path = tmp_path / "stray.jpg"
     Image.fromarray(pixels, mode="L").save(path)
     return path
@@ -228,7 +229,7 @@ class NoHouseholdExtractor(FakeExtractor):
         return result
 
 
-def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
+def test_a_card_with_no_readable_identity_is_written_flagged(tmp_path, caplog):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
 
     with caplog.at_level(logging.WARNING):
@@ -240,12 +241,123 @@ def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
         )
 
     assert summary.unreadable_cards == 1
-    assert [r["dwelling"]["households"][0]["record_id"] for r in _read(tmp_path)] == [
-        "27-0006-02"
-    ]
-    assert "unit.pdf p3: cannot build record_id without Number of Household" in (
-        caplog.text
+    first, second = _read(tmp_path)
+    assert first["dwelling"]["households"][0]["record_id"] is None
+    assert "missing_record_id" in first["dwelling"]["flags"]
+    assert second["dwelling"]["households"][0]["record_id"] == "27-0006-02"
+    assert "unit.pdf p3: no record_id from 27-6-?" in caplog.text
+
+
+class IdentityExtractor(FakeExtractor):
+    """Reads a card's identity block as 27-6-1."""
+
+    name = "gemini-3.5-flash-lite-identity"
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        fields = {
+            "Municipality": "27",
+            "Number of Dwelling": "6",
+            "Number of Household": "1",
+        }
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def test_a_second_reading_fills_a_blank_identity_part_flagged(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    identity = IdentityExtractor()
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=NoHouseholdExtractor(),
+        out_dir=tmp_path,
+        identity_extractor=identity,
     )
+
+    first, second = _read(tmp_path)
+    assert identity.calls == 1  # only the card with no record_id
+    assert first["dwelling"]["households"][0]["record_id"] == "27-0006-01"
+    assert "identity_reread" in first["dwelling"]["flags"]
+    assert "missing_record_id" not in first["dwelling"]["flags"]
+    assert second["dwelling"]["households"][0]["record_id"] == "27-0006-02"
+    assert "identity_reread" not in second["dwelling"]["flags"]
+
+
+class SameHouseholdExtractor(FakeExtractor):
+    """Reads household 1 off both of dwelling 6's cards."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        result.fields["Number of Household"] = "1"
+        return result
+
+
+def test_a_shared_record_id_stays_null_until_a_correction_settles_it(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+
+    def rerun(records):
+        _write(tmp_path, records)
+        run(
+            scan_dir,
+            region="north",
+            extractor=SameHouseholdExtractor(),
+            out_dir=tmp_path,
+        )
+        return _read(tmp_path)
+
+    def ids(records):
+        return [r["dwelling"]["households"][0]["record_id"] for r in records]
+
+    records = rerun([])
+    assert ids(records) == [None, None]
+    assert all("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+
+    # A correction elsewhere leaves the identity unsettled.
+    head = records[0]["dwelling"]["households"][0]["head"]
+    key = next(iter(head))
+    head[key] = {**head[key], **CORRECTED}
+    records = rerun(records)
+    assert ids(records) == [None, None]
+
+    # Correcting one household's number settles both.
+    household = records[1]["dwelling"]["households"][0]
+    household["household_no"] = {**household["household_no"], **CORRECTED}
+    records = rerun(records)
+    assert ids(records) == ["27-0006-01", "27-0006-02"]
+    assert not any("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+
+
+def test_a_shared_record_id_comes_back_once_the_other_is_corrected():
+    def dwelling(page: int, municipality: str, **household) -> dict:
+        field = {"value": None, "status": "ok", "confidence": None}
+        return {
+            "dwelling": {
+                "municipality": {**field, "value": municipality},
+                "dwelling_no": {**field, "value": "6"},
+                "flags": ["duplicate_record_id"],
+                "households": [
+                    {
+                        "record_id": None,
+                        "household_no": {**field, "value": "1"},
+                        "cards": [
+                            {"role": "coding-front", "image": "unit.pdf", "page": page}
+                        ],
+                        **household,
+                    }
+                ],
+            }
+        }
+
+    corrected = dwelling(5, "28")  # was 27, the shared 27-0006-01
+    corrected["dwelling"]["municipality"]["origin"] = "corrected"
+    merged = _merge([], [dwelling(3, "27"), corrected])
+
+    assert [r["dwelling"]["households"][0]["record_id"] for r in merged] == [
+        "27-0006-01",
+        "28-0006-01",
+    ]
+    assert not any("flags" in r["dwelling"] for r in merged)
 
 
 def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):

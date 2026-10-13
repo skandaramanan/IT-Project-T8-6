@@ -132,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             fresh=args.fresh,
             front_extractor=GeminiExtractor(survey_front=True),
             notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
+            identity_extractor=GeminiExtractor(identity=True),
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
@@ -149,12 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         summary.invalid_records,
         summary.unattached_notes,
     )
-    failed = (
-        summary.failed_cards
-        or summary.failed_pdfs
-        or summary.invalid_records
-        or summary.unplaced_cards  # a household that fits no dwelling isn't written
-    )
+    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
     return 1 if failed else 0
 
 

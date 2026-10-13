@@ -18,9 +18,9 @@ full-corpus run is split across five machines (IT-123).
 A record is matched to its previous version by the set of coding cards it was
 read from, `(PDF name, PDF page)`. A rebuilt record replaces a previous record
 only when the run rebuilt all of that record's coding cards. A previous record
-the run rebuilt only in part (a household unread, unplaced or with no
-record_id) is kept, and the rebuilt records sharing its cards are dropped. A
-previous record sharing no card with the run is kept. A field with `origin: "corrected"` is copied onto the rebuilt record
+the run rebuilt only in part (a household unread) is kept, and the rebuilt
+records sharing its cards are dropped. A previous record sharing no card with
+the run is kept. A field with `origin: "corrected"` is copied onto the rebuilt record
 at the same path, and only when the rebuilt record has the same households,
 in the same order, with the same cards; otherwise the run stops and writes
 nothing.
