@@ -198,7 +198,9 @@ def test_review_cli_and_validation_do_not_require_model_key(tmp_path, monkeypatc
     monkeypatch.setattr(
         socket,
         "socket",
-        lambda: nullcontext(SimpleNamespace(bind=lambda address: None)),
+        lambda: nullcontext(
+            SimpleNamespace(bind=lambda address: None, setsockopt=lambda *args: None)
+        ),
     )
 
     calls = {}
@@ -279,7 +281,9 @@ def test_review_cli_port_collision_leaves_existing_backend_alone(tmp_path, monke
         raise OSError("Address already in use")
 
     monkeypatch.setattr(
-        socket, "socket", lambda: nullcontext(SimpleNamespace(bind=busy))
+        socket,
+        "socket",
+        lambda: nullcontext(SimpleNamespace(bind=busy, setsockopt=lambda *args: None)),
     )
     monkeypatch.setattr(
         uvicorn,
@@ -325,3 +329,80 @@ def test_missing_region_and_malformed_flags_remain_browsable(tmp_path):
         assert any(d["code"] == "invalid_reference" for d in queue["diagnostics"])
         assert not queue["complete"]
         assert client.get("/api/queue?region=missing").json()["unresolved"] >= 1
+
+
+def test_only_requested_scan_is_rendered(tmp_path):
+    settings, client = setup_client(tmp_path)
+    with client:
+        queue = client.get("/api/queue").json()
+        item = queue["items"][1]
+        assert client.get(f"/api/review-items/{item['id']}").status_code == 200
+        assert not list(settings.cache.glob("*.png"))
+        assert client.get(item["scan_url"]).status_code == 200
+        assert len(list(settings.cache.glob("*.png"))) == 1
+        assert client.get(item["scan_url"]).status_code == 200
+        assert len(list(settings.cache.glob("*.png"))) == 1
+
+
+def test_undo_replay_after_response_is_lost(tmp_path):
+    _, client = setup_client(tmp_path)
+    with client:
+        client.post("/api/session", json={"name": "Reviewer"})
+        item = client.get("/api/queue").json()["items"][1]
+        saved = client.post(
+            f"/api/review-items/{item['id']}/decisions",
+            json={
+                "action": "correct",
+                "value": "009",
+                "expected_version": item["version"],
+                "request_id": "correct",
+            },
+        ).json()
+        body = {"expected_version": saved["item"]["version"], "request_id": "undo"}
+        url = f"/api/decisions/{saved['decision']['id']}/undo"
+        assert client.post(url, json=body).status_code == 200
+        replay = client.post(url, json=body)
+        assert replay.status_code == 200 and replay.json()["replayed"]
+        assert len(replay.json()["item"]["field"]["review"]["history"]) == 2
+
+
+def test_posix_port_probe_rejects_live_listener_but_allows_immediate_restart(
+    tmp_path, monkeypatch
+):
+    import socket
+    import sys
+
+    import uvicorn
+
+    if sys.platform == "win32":
+        pytest.skip("POSIX TIME_WAIT reuse behavior; Windows probe is unchanged")
+    monkeypatch.chdir(tmp_path)
+    _, settings = setup_review(tmp_path)
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        argv = [
+            "review",
+            "--scan-root",
+            str(settings.scan_root),
+            "--data-checkout",
+            str(settings.data_checkout),
+            "--flags",
+            str(settings.flags),
+            "--cache",
+            str(settings.cache),
+            "--port",
+            str(port),
+        ]
+        assert cli.main(argv) == 1 and not calls
+        with socket.socket() as client:
+            client.connect(("127.0.0.1", port))
+            connection, _ = listener.accept()
+            connection.close()  # Server initiates close and enters TIME_WAIT.
+            assert client.recv(1) == b""
+    assert cli.main(argv) == 0
+    assert calls[0]["port"] == port

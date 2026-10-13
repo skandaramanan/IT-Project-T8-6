@@ -12,7 +12,7 @@ from survey.records import (
     RecordStore,
     Reference,
     ReviewError,
-    current_fields,
+    audit_index,
     resolve_field,
 )
 from survey.review.scans import ScanSource
@@ -84,18 +84,9 @@ class ReviewService:
             self.references, self.diagnostics = valid, errors
 
     def reindex_history(self):
-        requests, decisions = {}, {}
-        for records, _ in self.store.regions.values():
-            for _, field in current_fields(records):
-                history = field.get("review", {}).get("history", [])
-                active_decisions(history)
-                for event in history:
-                    if event["request_id"] in requests or event["id"] in decisions:
-                        raise ReviewError(
-                            "invalid_history", "Duplicate request or decision ID"
-                        )
-                    requests[event["request_id"]] = event
-                    decisions[event["id"]] = event
+        requests, decisions = audit_index(
+            {region: records for region, (records, _) in self.store.regions.items()}
+        )
         self.requests, self.decisions = requests, decisions
 
     def reference(self, item_id: str) -> Reference:
@@ -112,7 +103,7 @@ class ReviewService:
             resolved, version = self.store.current(ref)
             warnings, errors = [], []
             try:
-                self.scans.get_scan(ref)
+                self.scans.probe(ref)
             except ReviewError as error:
                 errors.append({"code": error.code, "message": str(error)})
             spec = FIELD_SCHEMA_BY_NAME[resolved.label]
@@ -254,6 +245,9 @@ class ReviewService:
                 raise ReviewError(
                     "missing_scan", "Review requires the original readable scan", 404
                 )
+            # A metadata probe cannot prove that compressed image pixels decode.
+            # Recheck/render the selected original before committing a decision.
+            self.scans.get_scan(ref)
             records = deepcopy(self.store.regions[ref.region][0])
             resolved = resolve_field(records, ref)
             field = resolved.field

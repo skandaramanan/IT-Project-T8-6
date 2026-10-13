@@ -214,3 +214,64 @@ def test_lock_is_released_when_owning_process_exits(tmp_path):
     lock = WriterLock(path)
     lock.acquire()
     lock.release()
+
+
+@pytest.mark.parametrize("corruption", ["id", "request_id", "invalid_utf8"])
+def test_invalid_incoming_snapshot_keeps_checkout_and_active_index(
+    tmp_path, corruption
+):
+    from copy import deepcopy
+    from dataclasses import replace
+    from uuid import uuid4
+
+    from review_support import write_record
+
+    service, settings, sync = make_sync(tmp_path)
+    decide(service)
+    assert sync.sync()["state"] == "uploaded"
+    head = git(settings.data_checkout, "rev-parse", "HEAD")
+    before = deepcopy(service.store.regions)
+    source_bytes = (service.store.directory / "demo.jsonl").read_bytes()
+    other = other_clone(tmp_path)
+    path = other / "results/other.jsonl"
+    if corruption == "invalid_utf8":
+        path.write_bytes(b"\xff")
+    else:
+        record = deepcopy(before["demo"][0][0])
+        record["region"] = "other"
+        event = record["dwelling"]["households"][1]["coding"]["weekly_rent"]["review"][
+            "history"
+        ][0]
+        event["item_id"] = replace(refs()[1], region="other").item_id
+        event["request_id" if corruption == "id" else "id"] = str(uuid4())
+        write_record(path, record)
+    git(other, "add", "results/other.jsonl")
+    git(other, "commit", "-m", "Invalid incoming test dataset")
+    git(other, "push", "origin", "review-data")
+    status = sync.sync(service.reindex_history)
+    assert status["state"] == "upload_failed"
+    assert status["error"]["code"] in {"invalid_records", "invalid_history"}
+    assert git(settings.data_checkout, "rev-parse", "HEAD") == head
+    assert service.store.regions == before
+    assert (service.store.directory / "demo.jsonl").read_bytes() == source_bytes
+    assert not (service.store.directory / "other.jsonl").exists()
+
+
+def test_duplicate_across_local_regions_is_not_committed_or_uploaded(tmp_path):
+    from copy import deepcopy
+
+    from review_support import write_record
+
+    service, settings, sync = make_sync(tmp_path)
+    decide(service)
+    assert sync.sync()["state"] == "uploaded"
+    head = git(settings.data_checkout, "rev-parse", "HEAD")
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["region"] = "other"
+    write_record(service.store.directory / "other.jsonl", record)
+    status = sync.sync()
+    assert status["error"]["code"] == "invalid_history"
+    assert "demo.jsonl" in status["error"]["message"]
+    assert "other.jsonl" in status["error"]["message"]
+    assert git(settings.data_checkout, "rev-parse", "HEAD") == head
+    assert git(tmp_path / "remote.git", "rev-parse", "review-data") == head

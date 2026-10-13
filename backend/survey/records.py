@@ -58,7 +58,7 @@ def schema_errors(record: dict) -> list[str]:
 
 
 def validate_records(records: list[dict], region: str) -> None:
-    seen, decision_ids, request_ids = set(), set(), set()
+    seen = set()
     for number, record in enumerate(records, 1):
         if errors := schema_errors(record):
             raise ReviewError(
@@ -70,13 +70,6 @@ def validate_records(records: list[dict], region: str) -> None:
             )
         for _, field in current_fields(record):
             validate_history(field)
-            for event in field.get("review", {}).get("history", []):
-                if event["id"] in decision_ids or event["request_id"] in request_ids:
-                    raise ReviewError(
-                        "invalid_history", "Duplicate audit decision or request ID"
-                    )
-                decision_ids.add(event["id"])
-                request_ids.add(event["request_id"])
         for household in record["dwelling"]["households"]:
             for card in household.get("cards", []):
                 if card["role"] != "coding-front":
@@ -85,6 +78,27 @@ def validate_records(records: list[dict], region: str) -> None:
                 if key in seen:
                     raise ReviewError("ambiguous_card", f"duplicate coding card {key}")
                 seen.add(key)
+    audit_index({region: records})
+
+
+def audit_index(regions: dict[str, list[dict]]) -> tuple[dict, dict]:
+    """Build one dataset-wide registry, reporting both duplicate locations."""
+    requests, decisions, locations = {}, {}, {}
+    for region, records in regions.items():
+        for number, record in enumerate(records, 1):
+            for path, field in current_fields(record):
+                location = f"{region}.jsonl record {number} /{'/'.join(map(str, path))}"
+                for event in field.get("review", {}).get("history", []):
+                    for key, index in (("request_id", requests), ("id", decisions)):
+                        identity = (key, event[key])
+                        if identity in locations:
+                            raise ReviewError(
+                                "invalid_history",
+                                f"Duplicate audit {key}: {locations[identity]} and {location}",
+                            )
+                        locations[identity] = location
+                        index[event[key]] = event
+    return requests, decisions
 
 
 def validate_history(field: dict) -> None:
@@ -199,20 +213,51 @@ def validate_history(field: dict) -> None:
         )
 
 
-def read_records(path: Path, region: str) -> tuple[list[dict], str]:
+def parse_records(raw: bytes, region: str, name: str) -> tuple[list[dict], str]:
     try:
-        raw = path.read_bytes()
         records = [
             json.loads(line)
             for line in raw.decode("utf-8-sig").splitlines()
             if line.strip()
         ]
-    except (OSError, ValueError, UnicodeError) as error:
+    except (ValueError, UnicodeError) as error:
+        raise ReviewError("invalid_records", f"Cannot read {name}: {error}") from error
+    validate_records(records, region)
+    return records, digest(raw)
+
+
+def read_records(path: Path, region: str) -> tuple[list[dict], str]:
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
         raise ReviewError(
             "invalid_records", f"Cannot read {path.name}: {error}"
         ) from error
-    validate_records(records, region)
-    return records, digest(raw)
+    return parse_records(raw, region, path.name)
+
+
+def validate_dataset(regions: dict[str, tuple[list[dict], str]]) -> None:
+    """Check cross-file constraints after parse_records validated each file."""
+    if not regions:
+        raise ReviewError("missing_records", "No region JSONL found")
+    for region, (records, _) in regions.items():
+        if not records:
+            raise ReviewError("empty_records", f"{region}.jsonl contains no records")
+    audit_index({region: records for region, (records, _) in regions.items()})
+
+
+def read_dataset(paths: list[Path]) -> dict[str, tuple[list[dict], str]]:
+    candidate = {}
+    for path in paths:
+        if not REGION.fullmatch(path.stem) or path.is_symlink():
+            raise ReviewError(
+                "invalid_path", f"Unsupported region JSONL path: {path.name}"
+            )
+        if path.stem in candidate:
+            raise ReviewError("invalid_path", f"Duplicate region file: {path.name}")
+        candidate[path.stem] = read_records(path, path.stem)
+    validate_dataset(candidate)
+    return candidate
 
 
 def write_atomic(path: Path, text: str) -> None:
@@ -356,13 +401,7 @@ class RecordStore:
 
     def reload(self):
         with self.lock:
-            regions = {}
-            for path in sorted(self.directory.glob("*.jsonl")):
-                if not REGION.fullmatch(path.stem) or path.is_symlink():
-                    raise ReviewError(
-                        "invalid_path", f"Unsupported results path: {path.name}"
-                    )
-                regions[path.stem] = read_records(path, path.stem)
+            regions = read_dataset(sorted(self.directory.glob("*.jsonl")))
             self.regions = regions
 
     def current(self, ref: Reference) -> tuple[Resolved, str]:
@@ -396,6 +435,7 @@ class RecordStore:
     def save(self, region: str, expected: str, records: list[dict]) -> str:
         with self.lock:
             validate_records(records, region)
+            validate_dataset({**self.regions, region: (records, expected)})
             self.check_version(region, expected)
             text = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
             try:

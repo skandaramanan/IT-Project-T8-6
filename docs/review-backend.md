@@ -51,6 +51,14 @@ extraction. No bulk scan preprocessing is required. Source metadata invalidates
 cached images when a PDF changes; clear the external cache if moving/replacing
 scans while preserving file metadata. Original PDFs remain untouched.
 
+Queue/item metadata requests probe PDF presence, page bounds and image metadata
+without rendering PNGs. Metadata is cached per PDF fingerprint; PNGs are generated
+when the reviewer requests a scan and reused from disk on later views. A loading
+indicator disables decisions until the image loads. Saving also verifies that
+the selected original can decode; rendering failures keep the item unresolved.
+If first-card loading proves too slow in acceptance, revisit rendering latency
+and consider preloading the next card in the queue. Preloading is not enabled.
+
 On Windows, set the three required path variables once (or fill `.env`). Create
 a shortcut to `scripts\review.cmd`. The launcher uses the already installed
 `.venv\Scripts\survey.exe`, waits for readiness, and opens the browser. It does
@@ -215,7 +223,9 @@ A successful decision returns:
 The example abbreviates the full field and audit event. Mutations reject extra
 properties such as a payload reviewer name; attribution comes from the session.
 Accept/no_data/illegible omit `value`. Undo sends only `expected_version` and
-`request_id` to `/api/decisions/{decision-id}/undo`.
+`request_id` to `/api/decisions/{decision-id}/undo`. The browser retains the original
+undo target, version and request ID across network failures or uncertain server
+errors. A confirmed conflict clears that retry and reloads the current item.
 
 Each request ID is unique across the dataset. Retry **the same complete request**
 (including original version) after an uncertain response. The prior saved decision
@@ -239,6 +249,13 @@ progress, and local vs remote status. Save & Exit waits for a sharing attempt;
 pending work requires explicit acknowledgement before the page says it may close.
 Closing a tab does not reliably run sharing. Local decisions were already saved.
 
+To amend a saved no-data or illegible decision, select the field, enter digits and
+choose **Save correction**. **Accept stored value** preserves the stored value
+and extraction status, including an empty or illegible value. It is disabled while
+the correction input differs from the stored value, preventing accidental
+acceptance of the old payload instead of saving the entered amendment. Repeating
+an identical decision displays an informational message and adds no audit event.
+
 ## Durable data and reruns
 
 New builders use schema `0.3.0`. Existing `0.1.0` illustrative records and `0.2.0`
@@ -252,7 +269,10 @@ before/after payload and state, request input, and undo target when applicable.
 Snapshots exclude review/history. Acceptance keeps extraction payload unchanged.
 Validation checks request/value consistency, empty or illegible decision payloads,
 preserved provenance, continuous active snapshots, undo targets, and duplicate
-audit IDs within a region file. A pending field may change after re-extraction;
+audit IDs across the dataset. CLI validation, startup and synchronization share
+the same audit index, with both conflicting locations reported. Incoming Git
+snapshots are validated before fast-forwarding or replacing the active index.
+A pending field may change after re-extraction;
 its next decision snapshots the new payload rather than altering old history.
 Corrections preserve original machine value across repeated edits, confidence,
 source and negation metadata. Human digits bypass OCR normalization; zeros and
@@ -348,3 +368,13 @@ Still required: actual extracted regional records and matching teammate flags;
 production contract/consumer agreement; user/admin branch/rules/credentials and
 authorized deployment checks; Windows CI outcome and manual desktop acceptance.
 Negation editing and shared-card reconciliation retain their deferred defaults.
+
+PR-readiness verification (13 October 2026): the full suite reports **509 passed,
+7 skipped, 2 failed**, with the same two local benchmark-data failures documented
+above. Lint, formatting and whitespace checks pass. Follow-up regressions cover
+uncertain undo retries, lazy scan rendering, dataset-wide audit-ID validation,
+rejection of invalid incoming Git snapshots, immediate POSIX server restart, and
+amending accepted no-data/illegible fields. Browser checks confirm correction,
+undo, local Git sharing, and no-data-to-numeric amendment. This supports a draft
+implementation PR; it does not replace remote CI, team schema/queue contract
+sign-off, production-data acceptance, or Windows desktop verification.

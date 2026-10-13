@@ -89,8 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
     if args.command == "validate-results":
-        from survey.records import REGION as RECORD_REGION
-        from survey.records import ReviewError, read_records
+        from survey.records import ReviewError, read_dataset
 
         paths = (
             [args.path] if args.path.is_file() else sorted(args.path.glob("*.jsonl"))
@@ -99,17 +98,9 @@ def main(argv: list[str] | None = None) -> int:
             log.error("No region JSONL found at %s", args.path)
             return 1
         try:
-            for path in paths:
-                if not RECORD_REGION.fullmatch(path.stem) or path.is_symlink():
-                    raise ReviewError(
-                        "invalid_path", "Region filename must be a plain lowercase name"
-                    )
-                records, _ = read_records(path, path.stem)
-                log.info("%s: %d valid dwelling records", path.name, len(records))
-                if not records:
-                    raise ReviewError(
-                        "empty_records", f"{path.name} contains no records"
-                    )
+            dataset = read_dataset(paths)
+            for region, (records, _) in dataset.items():
+                log.info("%s.jsonl: %d valid dwelling records", region, len(records))
         except ReviewError as error:
             log.error("%s", error)
             return 1
@@ -210,6 +201,10 @@ def _review(args, parser) -> int:
         return 1
     try:
         with socket.socket() as probe:
+            if sys.platform != "win32":
+                # Match Uvicorn's POSIX reuse behavior: TIME_WAIT connections
+                # after shutdown must not look like a live competing server.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("127.0.0.1", settings.port))
     except OSError as error:
         log.error(

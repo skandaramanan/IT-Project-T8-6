@@ -214,3 +214,50 @@ def test_validator_rejects_duplicate_audit_ids_across_fields(tmp_path, key):
     event[key] = first["decision"][key]
     with pytest.raises(ReviewError, match="Duplicate audit"):
         validate_records([record], "demo")
+
+
+@pytest.mark.parametrize("key", ["id", "request_id"])
+def test_dataset_duplicate_is_rejected_by_cli_reload_and_save(
+    tmp_path, monkeypatch, key
+):
+    from uuid import uuid4
+
+    from survey import cli
+    from survey.records import RecordStore
+
+    monkeypatch.chdir(tmp_path)
+    service, settings = setup_review(tmp_path / "source")
+    decide(service)
+    before = deepcopy(service.store.regions)
+    original_bytes = (service.store.directory / "demo.jsonl").read_bytes()
+    other = deepcopy(before["demo"][0][0])
+    other["region"] = "other"
+    event = other["dwelling"]["households"][1]["coding"]["weekly_rent"]["review"][
+        "history"
+    ][0]
+    event["item_id"] = replace(refs()[1], region="other").item_id
+    event["request_id" if key == "id" else "id"] = str(uuid4())
+    write_record(service.store.directory / "other.jsonl", other)
+    assert cli.main(["validate-results", str(service.store.directory)]) == 1
+    with pytest.raises(ReviewError, match="demo.jsonl.*other.jsonl"):
+        service.store.reload()
+    assert service.store.regions == before
+    # A valid multi-region dataset passes and can be indexed.
+    event[key] = str(uuid4())
+    write_record(service.store.directory / "other.jsonl", other)
+    assert cli.main(["validate-results", str(service.store.directory)]) == 0
+    service.store.reload()
+    changed = deepcopy(service.store.regions["other"][0])
+    changed[0]["dwelling"]["households"][1]["coding"]["weekly_rent"]["review"][
+        "history"
+    ][0][key] = before["demo"][0][0]["dwelling"]["households"][1]["coding"][
+        "weekly_rent"
+    ]["review"]["history"][0][key]
+    other_bytes = (service.store.directory / "other.jsonl").read_bytes()
+    with pytest.raises(ReviewError, match="Duplicate audit"):
+        service.store.save("other", service.store.regions["other"][1], changed)
+    assert (service.store.directory / "other.jsonl").read_bytes() == other_bytes
+    assert (service.store.directory / "demo.jsonl").read_bytes() == original_bytes
+    assert (
+        RecordStore(settings.data_checkout / "results").regions == service.store.regions
+    )

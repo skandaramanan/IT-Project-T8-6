@@ -7,7 +7,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
-from survey.records import REGION, RecordStore, ReviewError, read_records
+from survey.records import (
+    REGION,
+    RecordStore,
+    ReviewError,
+    parse_records,
+    read_dataset,
+    validate_dataset,
+)
 
 
 class WriterLock:
@@ -180,6 +187,39 @@ class GitSync:
             raise ReviewError("git_failed", "Cannot compare data branch history", 503)
         return result.returncode == 0
 
+    def validate_snapshot(self, revision: str) -> None:
+        """Validate immutable incoming blobs before changing checkout or index."""
+        entries = self.git("ls-tree", "-rz", revision, "--", "results")
+        candidate = {}
+        for entry in entries.split("\0"):
+            if not entry:
+                continue
+            metadata, path = entry.split("\t", 1)
+            if not path.endswith(".jsonl"):
+                continue
+            mode, kind, blob = metadata.split()
+            if (
+                not self.allowed(path)
+                or mode not in {"100644", "100755"}
+                or kind != "blob"
+            ):
+                raise ReviewError(
+                    "invalid_path", "Remote contains an unsupported region JSONL path"
+                )
+            result = subprocess.run(
+                ["git", "-C", str(self.checkout), "cat-file", "blob", blob],
+                capture_output=True,
+                timeout=40,
+                check=False,
+            )
+            if result.returncode:
+                raise ReviewError(
+                    "git_failed", "Cannot read incoming region records", 503
+                )
+            region = Path(path).stem
+            candidate[region] = parse_records(result.stdout, region, path)
+        validate_dataset(candidate)
+
     def status(self) -> dict:
         with self.store.lock:
             try:
@@ -252,6 +292,7 @@ class GitSync:
                                 "Remote has new data and local edits exist; reconcile manually",
                                 409,
                             )
+                        self.validate_snapshot(remote)
                         self.git("merge", "--ff-only", remote)
                         self.store.reload()
                         if reload_callback:
@@ -265,13 +306,7 @@ class GitSync:
                         )
                 for region, (_, version) in self.store.regions.items():
                     self.store.check_version(region, version)
-                for path in self.store.directory.glob("*.jsonl"):
-                    if path.is_symlink() or not REGION.fullmatch(path.stem):
-                        raise ReviewError(
-                            "invalid_path",
-                            "Sync refuses symlinks or non-region JSONL names",
-                        )
-                    read_records(path, path.stem)
+                read_dataset(sorted(self.store.directory.glob("*.jsonl")))
                 outgoing = self.git("rev-list", f"{remote}..{head}").splitlines()
                 for commit in outgoing:
                     paths = self.git(

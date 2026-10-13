@@ -100,6 +100,34 @@ def test_accepting_illegible_resolves_without_recovering_value(tmp_path):
     assert result["item"]["resolved"] and result["item"]["field"]["value"] is None
 
 
+@pytest.mark.parametrize("action", ["no_data", "illegible"])
+@pytest.mark.parametrize("accept_before_amend", [False, True])
+def test_empty_decision_can_be_amended_after_acceptance_and_restart(
+    tmp_path, action, accept_before_amend
+):
+    service, settings = setup_review(tmp_path)
+    decide(service, action=action)
+    if accept_before_amend:
+        decide(service, action="accept", request_id="accept-empty")
+    service = ReviewService(
+        RecordStore(settings.data_checkout / "results"), refs(), [], service.scans
+    )
+    amended = decide(service, value="04", request_id="amend-empty")
+    field = amended["item"]["field"]
+    assert field["value"] == "04" and field["status"] == "ok"
+    assert field["review"]["state"] == "corrected"
+    assert field["original_value"] == "12"
+    history = field["review"]["history"]
+    assert len(history) == (3 if accept_before_amend else 2)
+    assert history[-1]["before"]["value"] is None
+    assert history[-1]["after"]["value"] == "04"
+    undone = service.undo_latest(
+        amended["decision"]["id"], "Reviewer", amended["item"]["version"], "undo-amend"
+    )
+    assert undone["item"]["field"]["value"] is None
+    assert undone["item"]["field"]["status"] == action
+
+
 def test_idempotent_retry_after_restart_and_conflicting_reuse(tmp_path):
     service, settings = setup_review(tmp_path)
     version = service.item(refs()[1].item_id)["version"]
