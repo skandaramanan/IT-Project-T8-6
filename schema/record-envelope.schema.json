@@ -145,7 +145,7 @@
 
     "note": {
       "type": "object",
-      "required": ["text", "page", "household_id"],
+      "required": ["text", "page", "front_page", "household_id"],
       "additionalProperties": false,
       "properties": {
         "text": {
@@ -155,6 +155,10 @@
         "page": {
           "type": ["integer", "null"],
           "description": "PDF page of the back, null when none was found. Tells apart the backs of two overflow fronts, which share a role."
+        },
+        "front_page": {
+          "type": "integer",
+          "description": "PDF page of the survey front this note belongs to. Every note has one, so a rerun pairs notes by it."
         },
         "household_id": {
           "type": ["string", "null"],

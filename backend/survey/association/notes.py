@@ -230,13 +230,14 @@ def attach_notes(
         entry: dict[str, Any] = {
             "text": note.text,
             "page": note.slot.page,
+            "front_page": front[1],
             "household_id": None,
             "flags": sorted(note.flags),
         }
         assign_household(entry, dwelling["households"])
         dwelling.setdefault("notes", []).append(entry)
         if note.slot.page is not None:
-            _add_card(dwelling, front, note.slot.page)
+            add_back_card(dwelling, front, note.slot.page)
     return unattached
 
 
@@ -256,7 +257,7 @@ def assign_household(entry: dict[str, Any], households: list[dict[str, Any]]) ->
         entry.pop("flags", None)
 
 
-def _add_card(dwelling: dict[str, Any], front: tuple[str, int], page: int) -> None:
+def add_back_card(dwelling: dict[str, Any], front: tuple[str, int], page: int) -> None:
     """The back's card entry, straight after its front's, so the record lists
     each sheet's two sides together. The back is in the front's scan."""
     cards = dwelling.setdefault("cards", [])

@@ -41,14 +41,16 @@ from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
 from survey.association.dwelling import ReviewFlag
-from survey.association.notes import SOURCE as SURVEY_BACK
 from survey.association.notes import (
+    FRONT,
     ReverseSlot,
+    add_back_card,
     assign_household,
     attach_notes,
     find_reverses,
     read_notes,
 )
+from survey.association.notes import SOURCE as SURVEY_BACK
 from survey.association.records import FRONT_SLOTS, Locate, build_dwelling_records
 from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
@@ -506,28 +508,52 @@ def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
 
 def _keep_notes(old: dict[str, Any], new: dict[str, Any]) -> None:
     """Notes read before outlive a run that didn't read backs, and a back read
-    before but unread now (a failed call, or the run stopping) keeps its text."""
+    before but unread or not found now keeps its text. Notes pair by front,
+    which every note has, unlike its back."""
     before, now = old["dwelling"], new["dwelling"]
-    if "notes" not in before or _fronts(before) != _fronts(now):
+    if "notes" not in before:
         return
+    kept = {note["front_page"]: note for note in before["notes"]}
+    fronts = {
+        card["page"]: card for card in now.get("cards", []) if card["role"] == FRONT
+    }
+    for page, note in kept.items():
+        if page not in fronts and note["text"]["status"] != "omitted":
+            log.warning(
+                "%s p%d: front left the dwelling, its notes not kept",
+                before["cards"][0]["image"],
+                page,
+            )
     if "notes" not in now:
-        now["notes"] = before["notes"]
-        now["cards"] = before["cards"]  # the same fronts, with their backs
+        notes = [kept[page] for page in fronts if page in kept]
+        for note in notes:
+            _keep_back(now, fronts[note["front_page"]], note)
+        if notes:
+            now["notes"] = notes
         return
-    kept = {note["page"]: note for note in before["notes"] if note["page"] is not None}
     for index, note in enumerate(now["notes"]):
-        previous = kept.get(note["page"])
+        previous = kept.get(note["front_page"])
         if (
             previous
             and note["text"]["status"] == "omitted"
             and previous["text"]["status"] != "omitted"
+            and note["page"] in (None, previous["page"])
         ):
             now["notes"][index] = previous
+            if note["page"] is None:
+                _keep_back(now, fronts[note["front_page"]], previous)
             log.warning(
                 "%s p%d: back unread, previous notes kept",
                 now["cards"][0]["image"],
-                note["page"],
+                note["front_page"],
             )
+
+
+def _keep_back(
+    dwelling: dict[str, Any], front: dict[str, Any], note: dict[str, Any]
+) -> None:
+    if note["page"] is not None:
+        add_back_card(dwelling, (front["image"], front["page"]), note["page"])
 
 
 def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
@@ -539,7 +565,7 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     for path, field in corrections:
         try:
-            *parents, last = _note_by_page(path, old, new)
+            *parents, last = _note_by_front(path, old, new)
             reduce(getitem, parents, new)[last] = field
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
@@ -565,19 +591,14 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
         )
 
 
-def _note_by_page(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tuple:
-    """A corrected note goes back on the note for the same back: a gained or
-    lost front shifts the list. KeyError when that back is gone."""
+def _note_by_front(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tuple:
+    """A corrected note goes back on the note for the same front: a gained or
+    lost front shifts the list. KeyError when that front left the dwelling."""
     if path[:2] != ("dwelling", "notes"):
         return path
-    page = old["dwelling"]["notes"][path[2]]["page"]
-    if page is None and _fronts(old["dwelling"]) == _fronts(new["dwelling"]):
-        return path  # no back to follow, and nothing moved
-    index = {
-        note["page"]: i
-        for i, note in enumerate(new["dwelling"]["notes"])
-        if note["page"] is not None
-    }[page]
+    front = old["dwelling"]["notes"][path[2]]["front_page"]
+    indexes = {note["front_page"]: i for i, note in enumerate(new["dwelling"]["notes"])}
+    index = indexes[front]
     return (*path[:2], index, *path[3:])
 
 

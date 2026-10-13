@@ -153,8 +153,8 @@ coded values, and `handwritten`, the survey front's dwelling fields as written.
 
 FR-05's notes are written on the back of the survey front, and the front is one
 per dwelling. So `dwelling.notes` is a list with one entry per front's back.
-Each entry has the text as a field object, the PDF `page` of the back, and a
-`household_id`.
+Each entry has the text as a field object, the PDF `page` of the back, the
+PDF `front_page` of its front, and a `household_id`.
 
 - `household_id` is the household's `record_id` only when the dwelling has
   exactly one household. When there are several, nothing on the card says
@@ -169,7 +169,10 @@ Each entry has the text as a field object, the PDF `page` of the back, and a
 - No `notes` key at all means the backs were never read: reading them is
   opt-in (`survey extract --notes`), at one Gemini request per back. A run
   without `--notes` keeps the notes an earlier run wrote, and a back that
-  fails on a rerun keeps the text read before.
+  fails or is not found on a rerun keeps the text read before.
+- A rerun pairs each note with the one before by `front_page`, not `page`:
+  every note has a front, but its back can go unfound. A corrected note
+  follows its front, and is refused only when that front left the dwelling.
 
 This replaces `household.notes`. That slot held a bare string, which could not
 tell a blank back from an unread one, and it sat at the wrong level.

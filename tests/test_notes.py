@@ -252,6 +252,7 @@ def test_a_one_household_dwelling_gets_its_note_and_the_backs_card():
                 ExtractionResult(fields={NOTES: "Very big house."})
             ),
             "page": 2,
+            "front_page": 1,
             "household_id": "27-0006-01",
         }
     ]

@@ -17,6 +17,7 @@ from PIL import Image
 from survey import pipeline
 from survey.association import records as association
 from survey.extraction.base import ExtractionResult
+from survey.extraction.record import build_omitted_field
 from survey.pipeline import MAX_FAILURE_STREAK, MergeRefused, _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -632,17 +633,16 @@ def test_merge_refuses_to_move_a_correction_onto_a_regrouped_record():
         _merge([_stub(3, garden=CORRECTED)], [_stub(3, 7)])
 
 
-def test_merge_refuses_to_move_a_corrected_note_onto_another_back():
+def test_merge_refuses_a_corrected_note_whose_front_left_the_dwelling():
     """The main front read as this dwelling before and as another now: the
     coding card stays, but notes[0] is now the overflow sheet's back."""
 
     def front(page: int) -> dict:
         return {"role": "survey-front", "image": "unit.pdf", "page": page}
 
-    other = {"page": 4, "text": {"value": "x", "status": "ok"}}
-    old = _stub(
-        5, cards=[front(1), front(3)], notes=[{"page": 2, "text": CORRECTED}, other]
-    )
+    other = {"page": 4, "front_page": 3, "text": {"value": "x", "status": "ok"}}
+    main = {"page": 2, "front_page": 1, "text": CORRECTED}
+    old = _stub(5, cards=[front(1), front(3)], notes=[main, other])
     new = _stub(5, cards=[front(3)], notes=[other])
 
     with pytest.raises(MergeRefused, match="dwelling/notes/0/text has no place"):
@@ -1034,9 +1034,9 @@ def test_a_corrected_note_survives_a_rerun_that_rereads_it(tmp_path):
     jsonschema.validate(record, SCHEMA)
 
 
-def test_a_corrected_note_follows_its_back_when_a_front_is_gained(tmp_path):
+def test_a_corrected_note_follows_its_front_when_a_front_is_gained(tmp_path):
     """An overflow front joining the dwelling (IT-128) puts its back's note
-    first, so the correction has to follow page 2, not stay at index 0."""
+    first, so the correction has to follow its front, not stay at index 0."""
     scan_dir = _batch(tmp_path, _fixture_pages("r01"))
     run(scan_dir, out_dir=tmp_path, **_with_notes())
     [old], [new] = _read(tmp_path), _read(tmp_path)
@@ -1045,7 +1045,7 @@ def test_a_corrected_note_follows_its_back_when_a_front_is_gained(tmp_path):
     old["dwelling"]["notes"][0]["text"] = corrected
     dwelling = new["dwelling"]
     dwelling["cards"].append({**dwelling["cards"][0], "page": 3})
-    dwelling["notes"].insert(0, {**dwelling["notes"][0], "page": 4})
+    dwelling["notes"].insert(0, {**dwelling["notes"][0], "page": 4, "front_page": 3})
 
     [merged] = _merge([old], [new])
 
@@ -1083,7 +1083,12 @@ def test_a_corrected_household_number_moves_its_note_too(tmp_path):
 
 def test_notes_kept_from_before_name_no_household_once_a_second_joins():
     front = {"role": "survey-front", "image": "unit.pdf", "page": 1}
-    note = {"page": 2, "text": {"value": "x", "status": "ok"}, "household_id": "A"}
+    note = {
+        "page": 2,
+        "front_page": 1,
+        "text": {"value": "x", "status": "ok"},
+        "household_id": "A",
+    }
     old = _stub(3, cards=[front], notes=[note])
     new = _stub(3, 7, cards=[front])
     for record in (old, new):
@@ -1094,6 +1099,88 @@ def test_notes_kept_from_before_name_no_household_once_a_second_joins():
 
     [kept] = merged["dwelling"]["notes"]
     assert (kept["household_id"], kept["flags"]) == (None, ["household_ambiguous"])
+
+
+def _back_not_found(record: dict) -> dict:
+    """The same record as a rerun that found no back behind its front."""
+    rerun = json.loads(json.dumps(record))
+    dwelling = rerun["dwelling"]
+    dwelling["cards"] = [c for c in dwelling["cards"] if c["role"] != "survey-back"]
+    for note in dwelling["notes"]:
+        note.update(page=None, text=build_omitted_field(), flags=["no_reverse_found"])
+    return rerun
+
+
+def test_a_back_not_found_now_keeps_the_notes_read_before(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old] = _read(tmp_path)
+
+    [merged] = _merge([old], [_back_not_found(old)])
+
+    assert merged == old
+
+
+def test_a_corrected_note_survives_a_rerun_that_finds_no_back(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old] = _read(tmp_path)
+    text = old["dwelling"]["notes"][0]["text"]
+    corrected = {**text, "origin": "corrected", "original_value": text["value"]}
+    old["dwelling"]["notes"][0]["text"] = corrected
+
+    [merged] = _merge([old], [_back_not_found(old)])
+
+    [note] = merged["dwelling"]["notes"]
+    assert (note["page"], note["text"]) == (2, corrected)
+    jsonschema.validate(merged, SCHEMA)
+
+
+def test_a_rerun_without_notes_keeps_notes_when_a_front_is_gained(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    del dwelling["notes"]
+    front = dwelling["cards"][0]
+    dwelling["cards"] = [front, {**front, "page": 3}]
+
+    [merged] = _merge([old], [new])
+
+    assert merged["dwelling"]["notes"] == old["dwelling"]["notes"]
+    assert [(c["role"], c["page"]) for c in merged["dwelling"]["cards"]] == [
+        ("survey-front", 1),
+        ("survey-back", 2),
+        ("survey-front", 3),
+    ]
+
+
+def test_a_different_back_now_does_not_take_the_old_notes(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    dwelling["cards"][1]["page"] = 4
+    dwelling["notes"][0].update(page=4, text=build_omitted_field(source="survey-back"))
+
+    [merged] = _merge([old], [new])
+
+    [note] = merged["dwelling"]["notes"]
+    assert (note["page"], note["text"]["status"]) == (4, "omitted")
+
+
+def test_notes_whose_front_left_the_dwelling_are_logged_not_kept(tmp_path, caplog):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, out_dir=tmp_path, **_with_notes())
+    [old], [new] = _read(tmp_path), _read(tmp_path)
+    dwelling = new["dwelling"]
+    del dwelling["notes"]
+    dwelling["cards"] = [{**dwelling["cards"][0], "page": 3}]
+
+    [merged] = _merge([old], [new])
+
+    assert "notes" not in merged["dwelling"]
+    assert "unit.pdf p1: front left the dwelling" in caplog.text
 
 
 def test_three_failed_backs_stop_the_run(tmp_path):
