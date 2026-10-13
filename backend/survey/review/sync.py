@@ -1,5 +1,6 @@
 """Normal Git sharing of allowlisted JSONL, with network outside the save lock."""
 
+import errno
 import os
 import re
 import subprocess
@@ -26,12 +27,10 @@ class WriterLock:
     def acquire(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         stream = self.path.open("a+b")
-        stream.seek(0)
-        if not stream.read(1):
-            stream.write(b"0")
-            stream.flush()
-        stream.seek(0)
         try:
+            # Windows locks prevent reads of another owner's byte too. Acquire
+            # before any content I/O; msvcrt can lock a byte beyond EOF.
+            stream.seek(0)
             if os.name == "nt":
                 import msvcrt
 
@@ -42,6 +41,8 @@ class WriterLock:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as error:
             stream.close()
+            if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                raise
             raise ReviewError(
                 "writer_busy", "Another review application owns this checkout", 409
             ) from error

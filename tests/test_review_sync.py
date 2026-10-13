@@ -151,6 +151,111 @@ def test_writer_lock_second_writer_and_crash_release(tmp_path):
     second.release()
 
 
+def test_windows_writer_lock_does_not_read_locked_byte_and_closes_failed_handle(
+    monkeypatch,
+):
+    import errno
+    import sys
+    from types import SimpleNamespace
+
+    from survey.review import sync
+
+    streams, held = [], set()
+
+    class Stream:
+        def __init__(self):
+            self.closed = False
+            self.fd = len(streams)
+            streams.append(self)
+
+        def read(self, *args):
+            if held:
+                raise PermissionError(errno.EACCES, "Windows denied reading locked byte")
+            return b"0"
+
+        def write(self, *args):
+            pytest.fail("Lock initialization must not write another owner's byte")
+
+        def seek(self, offset):
+            assert offset == 0
+
+        def fileno(self):
+            return self.fd
+
+        def close(self):
+            self.closed = True
+
+    def locking(fd, mode, length):
+        assert length == 1
+        if mode == 1:
+            if held:
+                raise PermissionError(errno.EACCES, "Lock already owned")
+            held.add(fd)
+        else:
+            held.remove(fd)
+
+    monkeypatch.setattr(sync, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", SimpleNamespace(locking=locking, LK_NBLCK=1, LK_UNLCK=2)
+    )
+    path = SimpleNamespace(
+        parent=SimpleNamespace(mkdir=lambda **kwargs: None), open=lambda mode: Stream()
+    )
+    first, second = WriterLock(path), WriterLock(path)
+    first.acquire()
+    try:
+        with pytest.raises(ReviewError) as error:
+            second.acquire()
+        assert error.value.code == "writer_busy"
+        assert streams[1].closed and second.stream is None
+    finally:
+        first.release()
+    second.acquire()
+    second.release()
+    assert not held and all(stream.closed for stream in streams)
+
+
+def test_writer_lock_open_permission_failure_is_not_reported_as_contention():
+    import errno
+    from types import SimpleNamespace
+
+    def denied(mode):
+        raise PermissionError(errno.EACCES, "Cannot open lock file")
+
+    path = SimpleNamespace(
+        parent=SimpleNamespace(mkdir=lambda **kwargs: None), open=denied
+    )
+    lock = WriterLock(path)
+    with pytest.raises(PermissionError, match="Cannot open"):
+        lock.acquire()
+    assert lock.stream is None
+
+
+def test_writer_lock_unexpected_lock_failure_closes_handle_without_masking(monkeypatch):
+    import errno
+    import sys
+    from types import SimpleNamespace
+
+    from survey.review import sync
+
+    stream = SimpleNamespace(seek=lambda offset: None, fileno=lambda: 1, closed=False)
+    stream.close = lambda: setattr(stream, "closed", True)
+
+    def broken(*args):
+        raise OSError(errno.EBADF, "Invalid descriptor")
+
+    monkeypatch.setattr(sync, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setitem(
+        sys.modules, "msvcrt", SimpleNamespace(locking=broken, LK_NBLCK=1)
+    )
+    path = SimpleNamespace(
+        parent=SimpleNamespace(mkdir=lambda **kwargs: None), open=lambda mode: stream
+    )
+    with pytest.raises(OSError, match="Invalid descriptor"):
+        WriterLock(path).acquire()
+    assert stream.closed
+
+
 def test_wrong_branch_and_missing_identity(tmp_path):
     service, settings, sync = make_sync(tmp_path)
     git(settings.data_checkout, "switch", "-c", "main")
