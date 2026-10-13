@@ -332,3 +332,36 @@ def test_decision_and_undo_return_current_card_navigation(tmp_path):
     )
     assert undone["item"]["cards"][0]["next_item_id"] == refs()[2].item_id
     assert undone["item"]["cards"] == service.item(refs()[2].item_id)["cards"]
+
+
+def test_locator_and_unqueued_household_context_do_not_create_actions(tmp_path):
+    service, _ = setup_review(tmp_path)
+    service.replace_queue([refs()[0]], [])
+    item = service.item(refs()[0].item_id)
+    assert item["column"] == "Middle column"
+    assert item["household_count"] == 2
+    assert len(item["cards"]) == 2
+    assert item["cards"][1]["first_item_id"] is None
+    assert item["cards"][1]["next_item_id"] is None
+    assert item["cards"][1]["score"] is None
+    fields = {field["label"]: field for field in item["card_fields"]}
+    assert fields["Municipality"]["column"] == "Left column"
+    assert fields["Length of Residence"]["column"] == "Right column"
+    assert fields["Weekly Rent"]["column"] == "Middle column"
+    assert service.dwelling_items(item["dwelling_id"], "demo")["total"] == 1
+
+
+@pytest.mark.parametrize("page", [None, "absent"])
+def test_unqueued_card_without_page_cannot_block_supported_field(tmp_path, page):
+    service, _ = setup_review(tmp_path)
+    service.replace_queue([refs()[0]], [])
+    card = service.store.regions["demo"][0][0]["dwelling"]["households"][1]["cards"][0]
+    if page == "absent":
+        card.pop("page")
+    else:
+        card["page"] = page
+    item = service.item(refs()[0].item_id)
+    assert item["source"]["page"] == 1
+    assert item["cards"][1]["page"] is None
+    assert item["cards"][1]["first_item_id"] is None
+    assert "accept" in item["allowed_actions"]

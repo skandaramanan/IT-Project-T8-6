@@ -309,7 +309,20 @@ class ReviewService:
             for card in resolved.household["cards"]
             if card["role"] == "coding-front"
         )
+        positions = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
+
+        def column(label):
+            position = positions[label]
+            if position < positions["Normal Household I."]:
+                return "Left column"
+            if position < positions["Length of Residence"]:
+                return "Middle column"
+            return "Right column"
+
         details = {
+            "column": column(resolved.label),
+            "household_count": len(resolved.record["dwelling"]["households"]),
+            "dwelling_flags": resolved.record["dwelling"].get("flags", []),
             "dwelling_id": self.dwelling_id(ref.region, resolved.record),
             "address": resolved.record["dwelling"].get("address", {}).get("value"),
             "region_title": self.region_titles.get(ref.region) or None,
@@ -350,6 +363,7 @@ class ReviewService:
                     if field_ref.item_id in self.references
                     else None,
                     "label": label,
+                    "column": column(label),
                     "field_path": pointer,
                     "field": snapshot(field),
                     "review_state": state(field),
@@ -386,29 +400,29 @@ class ReviewService:
                     if candidate.pdf == card["image"]
                     and candidate.page == card.get("page")
                 ]
-                if refs:
-                    cards.append(
-                        {
-                            "card_id": refs[0].card_id,
-                            "household_index": index,
-                            "household_no": household.get("household_no", {}).get(
-                                "value"
+                cards.append(
+                    {
+                        "card_id": digest(
+                            json.dumps(
+                                [ref.region, card["image"], card.get("page")]
+                            ).encode()
+                        ),
+                        "score": card.get("confidence"),
+                        "household_index": index,
+                        "household_no": household.get("household_no", {}).get("value"),
+                        "record_id": household.get("record_id"),
+                        "page": card.get("page"),
+                        "first_item_id": refs[0].item_id if refs else None,
+                        "next_item_id": next(
+                            (
+                                candidate.item_id
+                                for candidate in refs
+                                if not self.item_resolved.get(candidate.item_id, False)
                             ),
-                            "record_id": household.get("record_id"),
-                            "page": card.get("page"),
-                            "first_item_id": refs[0].item_id,
-                            "next_item_id": next(
-                                (
-                                    candidate.item_id
-                                    for candidate in refs
-                                    if not self.item_resolved.get(
-                                        candidate.item_id, False
-                                    )
-                                ),
-                                None,
-                            ),
-                        }
-                    )
+                            None,
+                        ),
+                    }
+                )
         details["cards"] = cards
         return details
 
