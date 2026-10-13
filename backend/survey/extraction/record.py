@@ -44,7 +44,7 @@ from typing import Any
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)

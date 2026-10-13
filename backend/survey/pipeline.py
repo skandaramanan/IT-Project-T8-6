@@ -31,13 +31,13 @@ import logging
 import shutil
 import tempfile
 from collections.abc import Iterator
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from functools import reduce
 from operator import getitem
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
 from pypdf import PdfReader
 
 from survey.association.dwelling import ReviewFlag
@@ -57,7 +57,8 @@ from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_confidence_bands
-from survey.extraction.record import FIELD_MAP, build_record_id
+from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION, build_record_id
+from survey.records import current_fields, schema_errors, write_atomic
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import (
     CardType,
@@ -69,11 +70,6 @@ from survey.segmentation.segmenter import (
 log = logging.getLogger(__name__)
 
 MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
-
-# ponytail: repo-relative, which holds for the editable install uv makes. Move
-# the schema into the package if survey is ever installed from a wheel.
-SCHEMA_PATH = Path(__file__).parents[2] / "schema" / "record-envelope.schema.json"
-_VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text()))
 
 
 class MergeRefused(ValueError):
@@ -351,10 +347,7 @@ def _reading(
 
 def _schema_errors(record: dict[str, Any]) -> list[str]:
     """Every way ``record`` breaks the envelope, as ``"<path>: <reason>"``."""
-    return [
-        f"{'/'.join(map(str, error.absolute_path)) or '<record>'}: {error.message}"
-        for error in _VALIDATOR.iter_errors(record)
-    ]
+    return schema_errors(record)
 
 
 def _score(
@@ -566,7 +559,15 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
     for path, field in corrections:
         try:
             *parents, last = _note_by_front(path, old, new)
-            reduce(getitem, parents, new)[last] = field
+            destination = reduce(getitem, parents, new)
+            review = field.get("review", {})
+            if review.get("state") == "pending" and field.get("origin") != "corrected":
+                # Undo retains history; the current pending reading may change.
+                destination[last]["review"] = deepcopy(review)
+            else:
+                destination[last] = deepcopy(field)
+            if review:
+                new["schema_version"] = SCHEMA_VERSION
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
             raise MergeRefused(
@@ -605,20 +606,10 @@ def _note_by_front(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tup
 def _corrected_fields(
     node: Any, path: tuple = ()
 ) -> Iterator[tuple[tuple, dict[str, Any]]]:
-    if isinstance(node, dict):
-        if node.get("origin") == "corrected":
-            yield path, node
-            return
-        children = node.items()
-    elif isinstance(node, list):
-        children = enumerate(node)
-    else:
-        return
-    for key, child in children:
-        yield from _corrected_fields(child, (*path, key))
+    for field_path, field in current_fields(node, path):
+        if field.get("origin") == "corrected" or field.get("review"):
+            yield field_path, field
 
 
 def _write_atomic(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
-    tmp.replace(path)
+    write_atomic(path, text)

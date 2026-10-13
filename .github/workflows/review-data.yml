@@ -1,0 +1,16 @@
+name: Validate review data
+on:
+  push:
+    branches: [review-data]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run survey validate-results results
+      # This runs after a direct push. Uploaded is not a claim that CI passed.

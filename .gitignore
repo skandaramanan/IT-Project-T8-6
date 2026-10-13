@@ -225,3 +225,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Unique atomic region-write temp files; cache remains outside the checkouts.
+results/.*.tmp

@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Structured data extraction from the 1941-43 social survey cards, for University of Melbourne Archives"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
     "google-genai>=2.21.0",
     "jsonschema>=4.26.0",
     "numpy>=2.5.2",
@@ -46,6 +48,7 @@ src = ["backend", "benchmark"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28,<1",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.2",
