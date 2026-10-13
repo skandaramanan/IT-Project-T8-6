@@ -35,6 +35,9 @@ export interface Item {
   region_title: string | null;
   card_score: number | null;
   field_kind: string;
+  column?: string;
+  household_count?: number;
+  dwelling_flags?: string[];
   code_list: { value: string; label: string }[];
   card_fields?: CardField[];
   cards?: Card[];
@@ -53,6 +56,7 @@ export interface Item {
   undo_decision_id: string | null;
 }
 export interface CardField {
+  column?: string;
   id: string | null;
   label: string;
   field_path: string;
@@ -60,6 +64,7 @@ export interface CardField {
   review_state: ReviewState;
 }
 export interface Card {
+  score?: number | null;
   card_id: string;
   household_index: number;
   household_no: string | null;

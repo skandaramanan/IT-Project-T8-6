@@ -1,4 +1,4 @@
-# IT-115 reviewer UI: PRs 1 and 2
+# IT-115 reviewer UI: PRs 1–3
 
 React + TypeScript in `frontend/`, built with Vite and served by the local
 FastAPI backend at `http://127.0.0.1:8765`. The browser and API share an origin.
@@ -303,3 +303,131 @@ responses build card navigation after updating progress. Regression tests exerci
 accepting every field on a card and undoing the second decision, verifying that the
 returned next-field link matches a fresh GET. The independent reviewer confirmed
 both fixes; the focused backend suite passed 62 tests and the frontend suite 25.
+
+
+## PR 3: magnifier, help, history, finish and laptop review
+
+PR 3 is a local branch `skandar/it-115-reviewer-polish-pr-3`, stacked on
+PR 2 (`0eaea42`, GitHub #57). PR 1 and PR 2 branches remain unchanged.
+
+The scan viewer fits the entire original card into its viewport using the image's
+real dimensions. Use +/− to zoom, or drag with the mouse to move an enlarged scan.
+Magnifier toggles a mouse-following 2.5× lens; +/− changes the lens diameter while
+it is on. Keyboard users can switch it off and use zoom and arrow-key scrolling.
+Zoom, lens toggle and lens size stay while moving between fields on one physical
+card and reset when switching cards. Each field/retry loads fresh image evidence;
+late events from a previous image cannot enable the current decisions.
+
+Help opens after the first sign-in and remains available from the header.
+More help explains the real v1 contract and has a switch for single-letter
+shortcuts, remembered in browser storage when available. A/E/U work with focus in
+the field panel; M works with focus in the scan or its controls. Decision shortcuts do not act
+while typing, during another request, or behind a modal. A accepts, E corrects,
+U undoes the saved decision after advancement (or the selected field's latest
+applicable decision). Left/right navigate queued fields on the current card.
+Enter saves a correction; Escape cancels from the input or its buttons, except
+while saving is uncertain. Turning shortcuts off disables A/E/U/M, retaining
+ordinary Tab/Enter and the correction form's Enter/Escape controls.
+
+History displays the recorded original answer/status/confidence and the audit
+before/after values, status, reviewer and local date/time. Clicking a decided
+field opens its history. Imported legacy corrections use `original_value`, and
+say when the original status/actor/date was not recorded; none is invented.
+Only the backend-provided latest applicable decision can be undone. Undo adds an
+audit entry and never deletes previous decisions.
+
+The field locator names its printed column and label, without claiming a pixel
+location or universal line number (C2 prints an extra field). Completed columns
+can fold, expand and reopen their decided fields. The active column stays open.
+Card context adds `column`, `household_count`, `dwelling_flags`, per-field column,
+and each coding card's score. Unqueued coding cards are visible in the tabs as
+“Not queued” without an action ID. The actual shared building fields remain on
+household 0. Front/person/back editing, record-ID changes, Damaged and crossed-out
+mutations remain deferred. Grouping/identity warnings are translated to plain
+language; unknown flags still ask the team to check the grouping/identity.
+
+Save and Exit opens a modal over the current review context. It confirms local
+persistence separately from a confirmed uploaded sharing state and timestamp.
+Failed/uncertain sharing never displays “Shared”. Keep reviewing returns to the
+same field, scan and settings. The continuation hint names the region, household
+card, page and printed field; it describes how to find it in the queue and does
+not pretend that browser selection survives a backend restart. A completed
+supported dwelling directs the reviewer back to the queue to check diagnostics.
+Unsaved drafts and uncertain saves block exit until saved, cancelled or retried.
+
+At 1366 × 768 the header, scan toolbar and exit action remain reachable; the field
+panel and scan scroll independently, and modal contents scroll within the screen.
+Long reviewer names are visually shortened with the full name available on hover;
+the complete name remains in every saved audit decision.
+
+### Acceptance and integration boundaries
+
+- AC1: every supported supplied flag is reachable through the dwelling/card/field
+  navigation, including completed columns. Unsupported diagnostics remain visible.
+- AC2: image evidence, current/original values, status and score precede an action;
+  scan failure/reload/card switching cannot bypass the gate.
+- AC3: the existing versioned backend persists exact digits and provenance, keeps
+  retry IDs stable after uncertainty, and supports restart/undo/rerun protection.
+- IT-116 has no findings yet. The unaided non-technical participant test and
+  independent manual UI acceptance remain required; developer/subagent checks
+  cannot claim NFR-09 or physical Windows desktop acceptance.
+- #53 still needs production queue fixes/integration. #51 now retains 5,356
+  records/5,411 households and schema 0.5.0; this stack's 0.4 schema must integrate
+  with it before validating that latest corpus. Counts are always data-derived.
+  The old PR 2 load comparison remains a historical measurement of its cited commit.
+- Full Windows release packaging, provisioned data-branch credentials/rules and
+  client repository handover remain deployment work. The existing CI-built frontend
+  artifact is not by itself the single complete deployable recommended above.
+
+Use the existing Build and run instructions with a fresh disposable directory,
+e.g. `scripts/review_fixture.py /tmp/it-115-pr3-test --scan-root ...`, and run its
+printed command. Original results and scans remain unchanged. All verification
+mutations/sharing use copied data and a local bare remote, never GitHub.
+
+
+### PR 3 verification
+
+Separate subagents independently reviewed each implementation stage and the final
+whole change: one final pass for AC/requirements and another for usability,
+quality, bugs and security. The final quality pass exposed an optional-page/source
+regression in unqueued card context; it was fixed and independently rechecked for
+absent/null page and a non-PDF image identifier. Such context cannot prevent a
+healthy queued field from opening. Final reviewers found no remaining actionable
+findings; human acceptance gates above still apply.
+
+Frontend: **43 tests pass**, including scan-gate reload/late events, per-card view
+settings, actual lens source/geometry, pan/keyboard controls, shortcut off, modal
+help/finish/draft guards, audit history, original legacy values, latest-saved undo,
+completed-column reopening and household switching. TypeScript/Vite build passes.
+The focused dwelling suite passes **17 tests**, including the optional-source fix.
+Ruff lint/format and whitespace checks pass. Full `uv run pytest` with stable built assets: **607 passed, 17 skipped**,
+with one existing Starlette/httpx deprecation warning.
+
+Browser checks at **1366 × 768** used the illustrative `/tmp/it-115-pr3-r01`
+copy and its verified original scan: exact `009` correction with machine `04`
+kept, history actor/date, next-field navigation, native help focus restoration,
+persisted shortcut setting, sharing/finish/Keep reviewing, and a 95-character
+reviewer name without horizontal overflow. The correction and audit survived a
+backend restart; the copied JSONL validates. Sharing went only to the fixture's
+local bare remote. Test servers/tabs were stopped and the viewport reset.
+
+One intermediate full run overlapped a frontend rebuild and returned a temporary
+404 for the static root while Vite replaced dist. The isolated API suite passed
+15 tests; final full verification holds built assets stable. No application change
+was made to hide that test-run interference.
+
+
+A further fresh bug and visual review found a reviewer-switch scan-gate bug:
+changing reviewer unmounted the scan but retained the prior readiness marker.
+Successful sign-in now clears readiness/failure and advances the image evidence
+revision while retaining the selected field, draft, history and queue. A regression
+proves Accept/Correct remain disabled until the new image loads; the independent
+reviewer rechecked **43 frontend tests** and the production build. Focus returns
+to the open field, preserving correction-input focus during reauthentication.
+
+The separate visual reviewer found no actionable issue at 1366 × 768,
+1024 × 768 or 390 × 844, including real-scan save/history/help/finish and synthetic
+two-household switching. Magnifier toggle and lens-size controls were exercised;
+native mouse-hover lens rendering was not exercised by the available browser
+controls (source/geometry are covered by component tests). All review tests used
+disposable data/local remotes; that reviewer's server/tab and viewport were cleaned up.

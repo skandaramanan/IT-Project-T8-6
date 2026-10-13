@@ -1,7 +1,20 @@
 // A bounded review slice over IT-113: saves are confirmed before advancing.
 import { useEffect, useRef, useState } from 'react';
+import ScanViewer from './ScanViewer';
+import Dialog from './Dialog';
+import Help, { readPreference, savePreference, SHORTCUTS_KEY, HELP_KEY } from './Help';
+import History from './History';
 import { api, ApiError, dwellingKey, reviewSummaryCsv } from './api';
-import type { Action, Dwelling, DwellingQueue, Item, Queue, Region, Saved, Sync } from './api';
+import type {
+  Action,
+  Dwelling,
+  DwellingQueue,
+  Item,
+  Queue,
+  Region,
+  Saved,
+  Sync,
+} from './api';
 
 const statuses = {
   ok: 'Readable',
@@ -76,12 +89,18 @@ export default function App() {
     text: string;
   } | null>(null);
   const activeFieldRef = useRef<HTMLElement>(null);
-  const [zoom, setZoom] = useState(1);
+  const [showHelp, setShowHelp] = useState(false);
+  const [moreHelp, setMoreHelp] = useState(false);
+  const [shortcuts, setShortcuts] = useState(() => readPreference(SHORTCUTS_KEY, true));
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedColumns, setExpandedColumns] = useState<string[]>([]);
+  const [finishError, setFinishError] = useState('');
   const [exited, setExited] = useState(false);
 
   useEffect(() => {
     activeFieldRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [item?.id]);
+    if (!correcting) activeFieldRef.current?.focus({ preventScroll: true });
+  }, [item?.id, reviewer]);
 
   useEffect(() => {
     function warnBeforeClose(event: BeforeUnloadEvent) {
@@ -99,9 +118,10 @@ export default function App() {
     let timer: ReturnType<typeof setTimeout>;
     async function initialize() {
       try {
-        const health = await api<{ ready: boolean; diagnostics: { message: string }[] }>(
-          '/api/health',
-        );
+        const health = await api<{
+          ready: boolean;
+          diagnostics: { message: string }[];
+        }>('/api/health');
         if (!health.ready) {
           if (health.diagnostics.length)
             throw new ApiError(health.diagnostics.map((d) => d.message).join(' '), 503);
@@ -117,7 +137,10 @@ export default function App() {
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 0) timer = setTimeout(initialize, 2000);
-        else setStartupError(e instanceof Error ? e.message : 'Could not open the review tool.');
+        else
+          setStartupError(
+            e instanceof Error ? e.message : 'Could not open the review tool.',
+          );
       }
     }
     void initialize();
@@ -206,19 +229,30 @@ export default function App() {
     setScanAttempt((attempt) => attempt + 1);
     setNeedsReload(false);
     setAlternatives(false);
-    setZoom(1);
+    setShowHistory(false);
+    setExpandedColumns([]);
     if (!retainDraft) {
       setCorrecting(false);
       setDraft(next.field.value ?? '');
     }
   }
   async function signIn() {
-    const data = await api<{ reviewer: string }>('/api/session', { name: name.trim() });
+    const data = await api<{ reviewer: string }>('/api/session', {
+      name: name.trim(),
+    });
+    // Signing in remounts the scan; a previous reviewer's load is not current evidence.
+    setScanLoaded('');
+    setScanFailed(false);
+    setScanAttempt((attempt) => attempt + 1);
     setReviewer(data.reviewer);
+    setExited(false);
+    if (!readPreference(HELP_KEY)) setShowHelp(true);
     if (!queue && region) await loadRegion(region);
   }
   async function refreshQueue() {
-    setQueue(await api<DwellingQueue>(`/api/dwellings?${new URLSearchParams({ region })}`));
+    setQueue(
+      await api<DwellingQueue>(`/api/dwellings?${new URLSearchParams({ region })}`),
+    );
   }
   async function openDwelling(row: Dwelling) {
     setLastSaved(null);
@@ -230,7 +264,9 @@ export default function App() {
     if (next) await openItem(next.id);
     else {
       await refreshQueue();
-      setNotice('This dwelling has no supported fields to open. Check the queue messages.');
+      setNotice(
+        'This dwelling has no supported fields to open. Check the queue messages.',
+      );
     }
   }
   function updateQueue(saved: Item) {
@@ -278,7 +314,9 @@ export default function App() {
     if (undone) {
       setScanLoaded('');
       setScanFailed(false);
-      setNotice('Undo saved on this computer. The original decision stays in the history.');
+      setNotice(
+        'Undo saved on this computer. The original decision stays in the history.',
+      );
     } else {
       const next = dwellingItems?.items.find(
         (i) =>
@@ -322,6 +360,25 @@ export default function App() {
   async function share() {
     showSync(await api<Sync>('/api/sync', {}));
   }
+  async function finish() {
+    if (busyRef.current || pending || correcting || stopped) return;
+    await run(async () => {
+      setFinishError('');
+      try {
+        await share();
+      } catch (failure) {
+        setSyncUnknown(true);
+        setFinishError(
+          failure instanceof Error ? failure.message : 'Sharing has not been confirmed.',
+        );
+      }
+      setExited(true);
+    });
+  }
+  function closeHelp() {
+    savePreference(HELP_KEY, true);
+    setShowHelp(false);
+  }
 
   const groups = queue?.dwellings ?? [];
   const continueDwelling = groups.find((d) => d.unresolved > 0 && d.first_item_id);
@@ -332,13 +389,15 @@ export default function App() {
   const cardFields = item?.card_fields ?? cardItems;
   const cards = item?.cards ?? [];
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
-  const canNavigate = !busy && !pending && !correcting;
+  const canNavigate = !busy && !pending && !correcting && !showHelp && !exited;
   const canDecide =
     !!reviewer &&
     !busy &&
     !pending &&
     !stopped &&
     !needsReload &&
+    !showHelp &&
+    !exited &&
     !!item &&
     scanLoaded === scanKey &&
     !scanFailed &&
@@ -384,13 +443,26 @@ export default function App() {
               This card <Confidence score={item.card_score} />
             </span>
             <span className="meta">
-              {item.address ?? 'Address not available'} · {item.region_title ?? item.region}
+              {item.address ?? 'Address not available'} · {item.region}
+              {item.region_title ? ` · ${item.region_title}` : ''}
             </span>
           </>
         ) : (
           <strong className="prod">Survey Card Review</strong>
         )}
         <span className="sp" />
+        {ready && (
+          <button
+            disabled={busy || exited}
+            className="btn ghost sm"
+            onClick={() => {
+              setMoreHelp(false);
+              setShowHelp(true);
+            }}
+          >
+            Help
+          </button>
+        )}
         {reviewer && (
           <>
             <span
@@ -402,11 +474,14 @@ export default function App() {
               {!syncUnknown && sync?.state === 'uploaded' && time ? ` ${time}` : ''}
             </span>
             <span className="who">
-              <strong>{reviewer}</strong> ·{' '}
+              <strong title={reviewer}>{reviewer}</strong> ·{' '}
               <button
                 className="link small"
                 disabled={!canNavigate}
-                onClick={() => setReviewer('')}
+                onClick={() => {
+                  setReviewer('');
+                  setExited(false);
+                }}
               >
                 Change
               </button>
@@ -521,22 +596,6 @@ export default function App() {
             </button>
           </form>
         </main>
-      ) : exited ? (
-        <main className="signin">
-          <div className="sicol">
-            <h1>You're all saved</h1>
-            <p>Every decision saved as you made it.</p>
-            <p className={sync?.pending || syncUnknown ? 'warnbox' : 'muted'}>
-              {sync?.pending || syncUnknown
-                ? 'Sharing has not been confirmed. Your decisions remain on this computer. Reopen the tool to retry sharing.'
-                : 'Shared with the team.'}
-            </p>
-            <p>You may close this tab. Stop the review tool with Ctrl+C in its console.</p>
-            <button className="btn" onClick={() => setExited(false)}>
-              Keep reviewing
-            </button>
-          </div>
-        </main>
       ) : !item ? (
         <main className="qbody">
           <h1>Review queue</h1>
@@ -586,8 +645,8 @@ export default function App() {
               <div className="averages small">
                 <span>{queue.unresolved.toLocaleString()} fields to review</span>
                 <span>
-                  Average <Confidence score={queue.summary.average_card_score} /> · all so far{' '}
-                  {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
+                  Average <Confidence score={queue.summary.average_card_score} /> · all so
+                  far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
                 </span>
                 <span className="muted">
                   {queue.summary.scored_cards} scored coding cards ·{' '}
@@ -626,26 +685,15 @@ export default function App() {
               <button
                 className="btn primary"
                 disabled={!canNavigate}
-                onClick={() =>
-                  void run(() =>
-                    openDwelling(continueDwelling!),
-                  )
-                }
+                onClick={() => void run(() => openDwelling(continueDwelling!))}
               >
-                Continue{' '}
-                {continueDwelling.record_id ?? 'review'}{' '}
-                →
+                Continue {continueDwelling.record_id ?? 'review'} →
               </button>
             )}
             <button
               className="btn"
               disabled={busy || !!pending || stopped}
-              onClick={() =>
-                void run(async () => {
-                  await share();
-                  setExited(true);
-                })
-              }
+              onClick={() => void finish()}
             >
               Save and Exit
             </button>
@@ -746,8 +794,8 @@ export default function App() {
               </table>
               <div className="pager">
                 <span>
-                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, groups.length)} of{' '}
-                  {groups.length} dwellings
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, groups.length)}{' '}
+                  of {groups.length} dwellings
                 </span>
                 <span className="sp" />
                 <button
@@ -784,88 +832,165 @@ export default function App() {
                   onClick={() => void run(() => openItem((c.next_item_id ?? c.first_item_id)!))}
                 >
                   Coding card · household {c.household_no ?? 'not identified'}
+                  {c.record_id && <span className="pg">{c.record_id}</span>}
+                  {c.score !== undefined && <Confidence score={c.score} />}
                   {c.page && <span className="pg">p.{c.page}</span>}
                   <span className="ct">
-                    {
-                      dwelling.filter((i) => i.source.card_id === c.card_id && !i.resolved)
-                        .length
-                    }{' '}
-                    to review
+                    {!c.first_item_id ? (
+                      'Not queued'
+                    ) : (
+                      <>
+                        {
+                          dwelling.filter(
+                            (i) => i.source.card_id === c.card_id && !i.resolved,
+                          ).length
+                        }{' '}
+                        to review
+                      </>
+                    )}
                   </span>
                 </button>
               ))}
             </nav>
-            <section className="stage" aria-label="Scanned coding card">
-              <div className="ctrls">
-                <button
-                  aria-label="Zoom out"
-                  disabled={scanLoaded !== scanKey}
-                  onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-                >
-                  −
-                </button>
-                <span className="zv">{Math.round(zoom * 100)}%</span>
-                <button
-                  aria-label="Zoom in"
-                  disabled={scanLoaded !== scanKey}
-                  onClick={() => setZoom(Math.min(4, zoom + 0.25))}
-                >
-                  +
-                </button>
-                <button aria-label="Fit whole card" onClick={() => setZoom(1)}>
-                  ⛶
-                </button>
+            {(item.household_count ?? cards.length) > 1 && (
+              <p className="household-context small">
+                {item.household_count ?? cards.length} households in this dwelling. Shared
+                building fields are reviewed on the first coding card only. Survey fronts,
+                people and back-of-card notes are outside this version’s editing tools.
+              </p>
+            )}
+            {!!item.dwelling_flags?.length && (
+              <div className="warnbox household-context">
+                This dwelling needs the team’s attention:{' '}
+                {item.dwelling_flags
+                  .map(
+                    (flag) =>
+                      ({
+                        persons_unassigned:
+                          'People have not been assigned to a household',
+                        unplaced: 'The household could not be placed with a survey front',
+                        duplicate_record_id:
+                          'More than one card has this household number',
+                        paired_by_position:
+                          'The cards were grouped by their scan positions',
+                        identity_reread: 'The identity block was read again',
+                        identity_unreadable: 'The household number could not be read',
+                      })[flag] ?? 'The card grouping or identity needs checking',
+                  )
+                  .join('. ')}
+                . Identity fields can only be accepted; leave incorrect identities
+                pending.
               </div>
-              <div className="scan-scroll">
-                <img
-                  key={scanKey}
-                  className="scan"
-                  src={item.scan_url}
-                  alt={`Original coding card: ${item.source.pdf}, page ${item.source.page}`}
-                  style={{
-                    width: `${zoom * 100}%`,
-                    maxHeight: zoom === 1 ? '100%' : undefined,
-                  }}
-                  onLoad={() => {
-                    setScanLoaded(scanKey);
-                    setScanFailed(false);
-                  }}
-                  onError={() => {
-                    setScanLoaded('');
-                    setScanFailed(true);
-                  }}
-                />
-                {scanLoaded !== scanKey && (
-                  <div className="scan-placeholder" role="status">
-                    <strong>
-                      {scanFailed || item.diagnostics.length
-                        ? "Image couldn't load"
-                        : 'Opening the scan…'}
-                    </strong>
-                    <p>
-                      {item.source.pdf}, page {item.source.page}
-                    </p>
-                    {(scanFailed || item.diagnostics.length > 0) && (
-                      <>
-                        <p>
-                          Check that the original PDF is in the scans folder configured in the
-                          launcher.
-                        </p>
-                        <button
-                          className="btn"
-                          disabled={busy}
-                          onClick={() => void run(() => openItem(item.id, true))}
-                        >
-                          Try loading again
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
+            )}
+            <ScanViewer
+              key={item.source.card_id}
+              evidenceKey={scanKey}
+              cardId={item.source.card_id}
+              scanUrl={item.scan_url}
+              alt={`Original coding card: ${item.source.pdf}, page ${item.source.page}`}
+              shortcutsEnabled={shortcuts}
+              onLoad={() => {
+                setScanLoaded(scanKey);
+                setScanFailed(false);
+              }}
+              onError={() => {
+                setScanLoaded('');
+                setScanFailed(true);
+              }}
+            >
+              {scanLoaded !== scanKey && (
+                <div className="scan-placeholder" role="status">
+                  <strong>
+                    {scanFailed || item.diagnostics.length
+                      ? "Image couldn't load"
+                      : 'Opening the scan…'}
+                  </strong>
+                  <p>
+                    {item.source.pdf}, page {item.source.page}
+                  </p>
+                  {(scanFailed || item.diagnostics.length > 0) && (
+                    <>
+                      <p>
+                        Check that the original PDF is in the scans folder configured in
+                        the launcher.
+                      </p>
+                      <button
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => void run(() => openItem(item.id, true))}
+                      >
+                        Try loading again
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </ScanViewer>
           </div>
-          <section className="panel" aria-label="Fields to review on this card">
+          <section
+            className="panel"
+            aria-label="Fields to review on this card"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (
+                event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.repeat ||
+                showHelp ||
+                exited
+              )
+                return;
+              const target = event.target as HTMLElement;
+              if (event.key === 'Escape' && correcting && !busy && !pending) {
+                event.preventDefault();
+                setCorrecting(false);
+                setDraft(item.field.value ?? '');
+                return;
+              }
+              if (target.closest('input, textarea, select, [contenteditable="true"]')) {
+                return;
+              }
+              const key = event.key.toLowerCase();
+              if (shortcuts && key === 'a' && canDecide && !correcting) {
+                event.preventDefault();
+                void run(() => decide('accept'));
+              }
+              if (
+                shortcuts &&
+                key === 'e' &&
+                canDecide &&
+                item.allowed_actions.includes('correct') &&
+                !correcting
+              ) {
+                event.preventDefault();
+                setCorrecting(true);
+                setAlternatives(false);
+              }
+              if (shortcuts && key === 'u' && canDecide && !correcting) {
+                const target = lastSaved
+                  ? { id: lastSaved.item.id, decision: lastSaved.decisionId }
+                  : item.undo_decision_id
+                    ? { id: item.id, decision: item.undo_decision_id }
+                    : null;
+                if (target) {
+                  event.preventDefault();
+                  void run(() => undo(target.id, target.decision));
+                }
+              }
+              if (
+                (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+                canNavigate
+              ) {
+                const index = cardItems.findIndex((field) => field.id === item.id);
+                const next = cardItems[index + (event.key === 'ArrowRight' ? 1 : -1)];
+                if (next) {
+                  event.preventDefault();
+                  void run(() => openItem(next.id));
+                }
+              }
+            }}
+          >
             {lastSaved && (
               <div className="saved" role="status">
                 <span>✓ {lastSaved.text} · saved here</span>
@@ -886,255 +1011,331 @@ export default function App() {
               </span>
             </div>
             <div className="p-list">
-              {cardFields.map((row) =>
-                row.id === item.id ? (
-                  <article className="open" key={row.field_path} ref={activeFieldRef}>
-                    <h3>{item.label}</h3>
-                    <p className="where">
-                      Find this printed label on the card. Nothing is highlighted.
-                    </p>
-                    <p className="value">
-                      <strong>
-                        <Value item={item} />
-                      </strong>
-                      {item.field.label && <span className="mean">{item.field.label}</span>}
-                    </p>
-                    <div className="facts">
-                      <span>
-                        {item.field.code ? `Code ${item.field.code} · ` : ''}
-                        {statuses[item.field.status]}
-                      </span>
-                      <Confidence score={item.field.confidence} />
-                    </div>
-                    <span
-                      className={`tag ${item.review_state === 'pending' ? 'machine' : item.review_state}`}
-                    >
-                      {item.review_state === 'pending'
-                        ? 'MACHINE'
-                        : item.review_state.toUpperCase()}
-                    </span>
-                    <details className="why" open>
-                      <summary>How reliable is this?</summary>
-                      <p>
-                        {item.field.confidence === 0.91
-                          ? "Only one computer reader has read this card, so there's nothing to compare. In our tests its readings were right about 9 times in 10. A number is only “sure” once two readers agree."
-                          : item.field.confidence === null
-                            ? "We can't say how sure the machine is: no score is available. Check this field against the card."
-                            : 'The score describes the machine reading, not a guarantee. Check the value and its status against the card.'}
-                      </p>
-                      {item.reason && <p>Flagged because: {item.reason}</p>}
-                    </details>
-                    {item.field.origin === 'corrected' && (
-                      <p className="small">
-                        Machine read: {item.field.original_value ?? 'No numeric value'}. The
-                        original is kept.
-                      </p>
-                    )}
-                    {item.warnings.length > 0 && (
-                      <ul className="warnings">
-                        {item.warnings.map((w) => (
-                          <li key={w}>{w}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {item.diagnostics.map((d) => (
-                      <p className="errbox" key={d.code}>
-                        {d.message}
-                      </p>
-                    ))}
-                    {correcting ? (
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          void run(() => decide('correct'));
-                        }}
-                      >
-                        <label className="lbl" htmlFor="correction">
-                          Your correction
-                        </label>
-                        <input
-                          id="correction"
-                          className={`input ${draft && !validDigits ? 'err' : ''}`}
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          disabled={busy || !!pending}
-                          inputMode="numeric"
-                          maxLength={64}
-                          autoComplete="off"
-                          autoFocus
-                          aria-describedby="digits-help"
-                        />
-                        <p id="digits-help" className="small">
-                          Digits only. Type exactly what the card shows. Leading zeros are kept.
-                        </p>
-                        {draft && !validDigits && (
-                          <p className="errbox">Digits only. If the card shows a 1, type 1.</p>
-                        )}
-                        {item.code_list.length > 0 && (
-                          <>
-                            <p className="lbl">
-                              {item.field_kind === 'numeric_sentinel'
-                                ? 'Special codes for this field'
-                                : 'Codes for this field, from the code book'}
+              {cardFields.map((row, index) => {
+                const column = row.column;
+                const rows = cardFields.filter((field) => field.column === column);
+                const completed =
+                  !!column &&
+                  rows.every((field) => !field.id || field.review_state !== 'pending') &&
+                  !rows.some((field) => field.id === item.id);
+                const folded = completed && !expandedColumns.includes(column!);
+                const heading = column && cardFields[index - 1]?.column !== column;
+                return (
+                  <div key={row.field_path}>
+                    {heading &&
+                      (completed ? (
+                        <button
+                          className="column-heading"
+                          aria-expanded={!folded}
+                          onClick={() =>
+                            setExpandedColumns((previous) =>
+                              folded
+                                ? [...previous, column]
+                                : previous.filter((value) => value !== column),
+                            )
+                          }
+                        >
+                          <b>{column}</b> · {rows[0].label} to {rows.at(-1)!.label}{' '}
+                          <span>
+                            {rows.filter((field) => field.id).length} decided ·{' '}
+                            {folded ? 'Show' : 'Hide'}
+                          </span>
+                        </button>
+                      ) : (
+                        <h3 className="column-heading">{column}</h3>
+                      ))}
+                    {!folded &&
+                      (row.id === item.id ? (
+                        <article
+                          className="open"
+                          key={row.field_path}
+                          ref={activeFieldRef}
+                          tabIndex={-1}
+                        >
+                          <h3>{item.label}</h3>
+                          <p className="where">
+                            {item.column ? `${item.column} · ` : ''}Find “{item.label}” on
+                            the card. Nothing is highlighted.
+                          </p>
+                          <p className="value">
+                            <strong>
+                              <Value item={item} />
+                            </strong>
+                            {item.field.label && (
+                              <span className="mean">{item.field.label}</span>
+                            )}
+                          </p>
+                          <div className="facts">
+                            <span>
+                              {item.field.code ? `Code ${item.field.code} · ` : ''}
+                              {statuses[item.field.status]}
+                            </span>
+                            <Confidence score={item.field.confidence} />
+                          </div>
+                          <span
+                            className={`tag ${item.review_state === 'pending' ? 'machine' : item.review_state}`}
+                          >
+                            {item.review_state === 'pending'
+                              ? 'MACHINE'
+                              : item.review_state.toUpperCase()}
+                          </span>
+                          <details className="why" open>
+                            <summary>How reliable is this?</summary>
+                            <p>
+                              {item.field.confidence === 0.91
+                                ? "Only one computer reader has read this card, so there's nothing to compare. In our tests its readings were right about 9 times in 10. A number is only “sure” once two readers agree."
+                                : item.field.confidence === null
+                                  ? "We can't say how sure the machine is: no score is available. Check this field against the card."
+                                  : 'The score describes the machine reading, not a guarantee. Check the value and its status against the card.'}
                             </p>
-                            <p className="mean-live" aria-live="polite">
-                              {item.code_list.find((code) => code.value === draft)?.label ??
-                                (item.field_kind === 'categorical'
-                                  ? 'Code not in this list. Check the card; exact digits can still be saved.'
-                                  : 'an amount or count')}
+                            {item.reason && <p>Flagged because: {item.reason}</p>}
+                          </details>
+                          {item.field.origin === 'corrected' && (
+                            <p className="small">
+                              Machine read:{' '}
+                              {item.field.original_value ?? 'No numeric value'}. The
+                              original is kept.
                             </p>
-                            <ul className="codes" aria-label="Codes for this field">
-                              {item.code_list.map((code) => (
-                                <li
-                                  key={code.value}
-                                  className={code.value === draft ? 'hit' : ''}
-                                >
-                                  <b>{code.value}</b> {code.label}
-                                </li>
+                          )}
+                          {item.warnings.length > 0 && (
+                            <ul className="warnings">
+                              {item.warnings.map((w) => (
+                                <li key={w}>{w}</li>
                               ))}
                             </ul>
-                          </>
-                        )}
-                        {item.field_kind === 'unknown' && (
-                          <p className="small muted">
-                            This field has no confirmed code list. Copy the digits exactly.
-                          </p>
-                        )}
-                        {item.field.value?.startsWith('0') && draft !== item.field.value && (
-                          <p className="warnbox">
-                            Check the leading zero. The machine read {item.field.value}. We save
-                            what you type.
-                          </p>
-                        )}
-                        <p className="diff">
-                          <Value item={item} /> → <b>{draft || 'Your correction'}</b>
-                        </p>
-                        <div className="acts">
-                          <button
-                            className="btn primary lg"
-                            disabled={
-                              !canDecide ||
-                              !validDigits ||
-                              !item.allowed_actions.includes('correct')
-                            }
-                          >
-                            Save {validDigits ? draft : '(fix the digits first)'}
-                          </button>
-                          <button
-                            className="btn lg"
-                            type="button"
-                            disabled={busy || !!pending}
-                            onClick={() => {
-                              setCorrecting(false);
-                              setDraft(item.field.value ?? '');
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <>
-                        <div className="acts">
-                          <button
-                            className="btn lg"
-                            disabled={!canDecide || !item.allowed_actions.includes('accept')}
-                            onClick={() => void run(() => decide('accept'))}
-                          >
-                            Accept {item.field.value ?? 'stored status'}
-                          </button>
-                          <button
-                            className="btn lg"
-                            disabled={!canDecide || !item.allowed_actions.includes('correct')}
-                            onClick={() => {
-                              setCorrecting(true);
-                              setAlternatives(false);
-                            }}
-                          >
-                            Correct
-                          </button>
-                        </div>
-                        {item.allowed_actions.includes('no_data') && (
-                          <div className="alt">
-                            <button
-                              className="link small"
-                              disabled={!canDecide}
-                              onClick={() => setAlternatives(!alternatives)}
+                          )}
+                          {item.diagnostics.map((d) => (
+                            <p className="errbox" key={d.code}>
+                              {d.message}
+                            </p>
+                          ))}
+                          {correcting ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                void run(() => decide('correct'));
+                              }}
                             >
-                              Can't read it or blank?
-                            </button>
-                          </div>
-                        )}
-                        {alternatives && (
-                          <div className="choices">
+                              <label className="lbl" htmlFor="correction">
+                                Your correction
+                              </label>
+                              <input
+                                id="correction"
+                                className={`input ${draft && !validDigits ? 'err' : ''}`}
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                disabled={busy || !!pending}
+                                inputMode="numeric"
+                                maxLength={64}
+                                autoComplete="off"
+                                autoFocus
+                                aria-describedby="digits-help"
+                              />
+                              <p id="digits-help" className="small">
+                                Digits only. Type exactly what the card shows. Leading
+                                zeros are kept.
+                              </p>
+                              {draft && !validDigits && (
+                                <p className="errbox">
+                                  Digits only. If the card shows a 1, type 1.
+                                </p>
+                              )}
+                              {item.code_list.length > 0 && (
+                                <>
+                                  <p className="lbl">
+                                    {item.field_kind === 'numeric_sentinel'
+                                      ? 'Special codes for this field'
+                                      : 'Codes for this field, from the code book'}
+                                  </p>
+                                  <p className="mean-live" aria-live="polite">
+                                    {item.code_list.find((code) => code.value === draft)
+                                      ?.label ??
+                                      (item.field_kind === 'categorical'
+                                        ? 'Code not in this list. Check the card; exact digits can still be saved.'
+                                        : 'an amount or count')}
+                                  </p>
+                                  <ul className="codes" aria-label="Codes for this field">
+                                    {item.code_list.map((code) => (
+                                      <li
+                                        key={code.value}
+                                        className={code.value === draft ? 'hit' : ''}
+                                      >
+                                        <b>{code.value}</b> {code.label}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </>
+                              )}
+                              {item.field_kind === 'unknown' && (
+                                <p className="small muted">
+                                  This field has no confirmed code list. Copy the digits
+                                  exactly.
+                                </p>
+                              )}
+                              {item.field.value?.startsWith('0') &&
+                                draft !== item.field.value && (
+                                  <p className="warnbox">
+                                    Check the leading zero. The machine read{' '}
+                                    {item.field.value}. We save what you type.
+                                  </p>
+                                )}
+                              <p className="diff">
+                                <Value item={item} /> →{' '}
+                                <b>{draft || 'Your correction'}</b>
+                              </p>
+                              <div className="acts">
+                                <button
+                                  className="btn primary lg"
+                                  disabled={
+                                    !canDecide ||
+                                    !validDigits ||
+                                    !item.allowed_actions.includes('correct')
+                                  }
+                                >
+                                  Save {validDigits ? draft : '(fix the digits first)'}
+                                </button>
+                                <button
+                                  className="btn lg"
+                                  type="button"
+                                  disabled={busy || !!pending}
+                                  onClick={() => {
+                                    setCorrecting(false);
+                                    setDraft(item.field.value ?? '');
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              <div className="acts">
+                                <button
+                                  className="btn lg"
+                                  disabled={
+                                    !canDecide || !item.allowed_actions.includes('accept')
+                                  }
+                                  onClick={() => void run(() => decide('accept'))}
+                                >
+                                  Accept {item.field.value ?? 'stored status'}
+                                </button>
+                                <button
+                                  className="btn lg"
+                                  disabled={
+                                    !canDecide ||
+                                    !item.allowed_actions.includes('correct')
+                                  }
+                                  onClick={() => {
+                                    setCorrecting(true);
+                                    setAlternatives(false);
+                                  }}
+                                >
+                                  Correct
+                                </button>
+                              </div>
+                              {item.allowed_actions.includes('no_data') && (
+                                <div className="alt">
+                                  <button
+                                    className="link small"
+                                    disabled={!canDecide}
+                                    onClick={() => setAlternatives(!alternatives)}
+                                  >
+                                    Can't read it or blank?
+                                  </button>
+                                </div>
+                              )}
+                              {alternatives && (
+                                <div className="choices">
+                                  <button
+                                    className="btn"
+                                    disabled={
+                                      !canDecide ||
+                                      !item.allowed_actions.includes('no_data')
+                                    }
+                                    onClick={() => void run(() => decide('no_data'))}
+                                  >
+                                    Nothing written: it's blank
+                                  </button>
+                                  <button
+                                    className="btn"
+                                    disabled={
+                                      !canDecide ||
+                                      !item.allowed_actions.includes('illegible')
+                                    }
+                                    onClick={() => void run(() => decide('illegible'))}
+                                  >
+                                    Something's there but I can't read it
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {scanLoaded !== scanKey && (
+                            <p className="small muted">
+                              Accept and Correct switch on once the scan and every detail
+                              have loaded.
+                            </p>
+                          )}
+                          <button
+                            className="link small"
+                            aria-expanded={showHistory}
+                            onClick={() => setShowHistory(!showHistory)}
+                          >
+                            {showHistory ? 'Hide history' : 'Show history'}
+                          </button>
+                          {showHistory && (
+                            <History item={item} onClose={() => setShowHistory(false)} />
+                          )}
+                          {item.undo_decision_id && (
                             <button
-                              className="btn"
-                              disabled={!canDecide || !item.allowed_actions.includes('no_data')}
-                              onClick={() => void run(() => decide('no_data'))}
-                            >
-                              Nothing written: it's blank
-                            </button>
-                            <button
-                              className="btn"
-                              disabled={
-                                !canDecide || !item.allowed_actions.includes('illegible')
+                              className="link small undo-field"
+                              disabled={!canDecide || correcting}
+                              onClick={() =>
+                                void run(() => undo(item.id, item.undo_decision_id!))
                               }
-                              onClick={() => void run(() => decide('illegible'))}
                             >
-                              Something's there but I can't read it
+                              Undo latest decision on this field
                             </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {scanLoaded !== scanKey && (
-                      <p className="small muted">
-                        Accept and Correct switch on once the scan and every detail have loaded.
-                      </p>
-                    )}
-                    {item.undo_decision_id && (
-                      <button
-                        className="link small undo-field"
-                        disabled={!canDecide || correcting}
-                        onClick={() => void run(() => undo(item.id, item.undo_decision_id!))}
-                      >
-                        Undo latest decision on this field
-                      </button>
-                    )}
-                  </article>
-                ) : (
-                  <button
-                    className="r"
-                    key={row.field_path}
-                    disabled={!canNavigate || !row.id}
-                    onClick={() => row.id && void run(() => openItem(row.id!))}
-                  >
-                    <span className="nm">{row.label}</span>
-                    <b className="val">{row.field.value ?? statuses[row.field.status]}</b>
-                    <Confidence score={row.field.confidence} />
-                    <span
-                      className={`tag ${row.review_state === 'pending' ? 'machine' : row.review_state}`}
-                    >
-                      {!row.id
-                        ? 'NOT QUEUED'
-                        : row.review_state === 'pending'
-                          ? 'MACHINE'
-                          : row.review_state.toUpperCase()}
-                    </span>
-                  </button>
-                ),
-              )}
+                          )}
+                        </article>
+                      ) : (
+                        <button
+                          className="r"
+                          key={row.field_path}
+                          disabled={!canNavigate || !row.id}
+                          onClick={() =>
+                            row.id &&
+                            void run(async () => {
+                              await openItem(row.id!);
+                              setShowHistory(row.review_state !== 'pending');
+                            })
+                          }
+                        >
+                          <span className="nm">{row.label}</span>
+                          <b className="val">
+                            {row.field.value ?? statuses[row.field.status]}
+                          </b>
+                          <Confidence score={row.field.confidence} />
+                          <span
+                            className={`tag ${row.review_state === 'pending' ? 'machine' : row.review_state}`}
+                          >
+                            {!row.id
+                              ? 'NOT QUEUED'
+                              : row.review_state === 'pending'
+                                ? 'MACHINE'
+                                : row.review_state.toUpperCase()}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                );
+              })}
             </div>
             <div className="exitbar">
               <button
                 className="btn lg"
                 disabled={busy || !!pending || correcting || stopped}
-                onClick={() =>
-                  void run(async () => {
-                    await share();
-                    setExited(true);
-                  })
-                }
+                onClick={() => void finish()}
               >
                 Save and Exit
               </button>
@@ -1145,6 +1346,81 @@ export default function App() {
             </p>
           </section>
         </main>
+      )}
+      {showHelp && (
+        <Help
+          reviewer={reviewer || 'reviewer'}
+          more={moreHelp}
+          shortcuts={shortcuts}
+          setMore={setMoreHelp}
+          setShortcuts={(value) => {
+            setShortcuts(value);
+            savePreference(SHORTCUTS_KEY, value);
+          }}
+          onClose={closeHelp}
+        />
+      )}
+      {exited && (
+        <Dialog title="You're all saved" compact onClose={() => setExited(false)}>
+          <p>Every decision saved as you made it.</p>
+          {sync?.state === 'uploaded' && !sync.pending && !syncUnknown && !stopped ? (
+            <p>Shared with the team{time ? ` at ${time}` : ''}.</p>
+          ) : (
+            <p className="warnbox">
+              Sharing has not been confirmed. Your decisions remain on this computer. Keep
+              the tool running to retry, or reopen it later.
+            </p>
+          )}
+          {finishError && <p className="small">{finishError}</p>}
+          {stopped && (
+            <p className="errbox">
+              Ask the team to reconcile this region before continuing.
+            </p>
+          )}
+          {item && (
+            <p>
+              To continue, choose region {item.region}, dwelling{' '}
+              {item.record_id ?? 'Number not identified'} in the queue.
+              {dwelling.find((field) => !field.resolved) && (
+                <>
+                  {' '}
+                  Next:{' '}
+                  <b>
+                    coding card{' '}
+                    {dwelling.find((field) => !field.resolved)!.record_id ??
+                      'Number not identified'}
+                    , page {dwelling.find((field) => !field.resolved)!.source.page},{' '}
+                    {dwelling.find((field) => !field.resolved)!.label}
+                  </b>
+                  .
+                </>
+              )}
+            </p>
+          )}
+          {item && !dwelling.some((field) => !field.resolved) && (
+            <p>
+              Every supported field in this dwelling has a decision. Return to the queue
+              to check for diagnostics and choose the next dwelling.
+            </p>
+          )}
+          <p className="small muted">
+            You may close this tab. Stop the review tool with Ctrl+C in its console.
+          </p>
+          <div className="dfoot">
+            <button
+              className="btn primary lg"
+              onClick={() => {
+                setExited(false);
+                setReviewer('');
+              }}
+            >
+              Close
+            </button>
+            <button className="link" onClick={() => setExited(false)}>
+              Keep reviewing
+            </button>
+          </div>
+        </Dialog>
       )}
     </div>
   );
