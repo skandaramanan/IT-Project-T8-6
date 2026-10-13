@@ -198,6 +198,7 @@ rerun on the branch holding the reviewed file.
 |---|---|
 | the same command | Replays cards already read on this machine, so only new or unfinished ones cost a request. Use it after an interruption, the daily cap, or new scans landing in the folder. On another machine every card is read again. |
 | the same command with `--fresh` | Moves the cached readings aside to `data/runs/<region>/<extractor>.previous/` and reads every card again. Use it after changing a prompt or `GEMINI_MEDIA_RESOLUTION`, which a normal rerun would not pick up. If it is cut short, rerun **without** `--fresh` to carry on; repeating `--fresh` starts over. |
+| the same command with `--notes` | Also reads each survey back's interview notes (FR-05) into `dwelling.notes`, at one more request per back. Off by default; a run without it keeps the notes an earlier run read. |
 
 Changing `GEMINI_MODEL`, `GEMINI_CONFIDENCE_BAND` or `GEMINI_STRUCK_DETECTION`
 starts a fresh cache by itself. A card Gemini couldn't read is cached too and
@@ -273,3 +274,23 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
 ## Project management
 
 Work is tracked in Linear: https://linear.app/um-it-project
+
+### Reviewing flagged C1/C2 fields (IT-113)
+
+The local review backend reads teammate-supplied flagged JSONL, saves decisions
+and undo history in the region records, and shares them through a separate
+`review-data` checkout. It does not require Gemini credentials. A small browser
+page proves the API integration; production React remains a separate ticket.
+
+```sh
+uv run python scripts/review_demo.py "/tmp/survey-review-demo"
+# Run the launch command printed by the synthetic demo.
+uv run survey validate-results "/path/to/review-data/results"
+```
+
+The demo uses synthetic cards and a local Git remote. For production paths,
+Windows shortcut setup, frontend API examples, rerun semantics and rollout gates,
+see [docs/review-backend.md](docs/review-backend.md) and
+[D029](docs/decisions/D029-review-persistence.md). Live use requires matching
+extracted records/flags, branch provisioning/rules/credentials, and Windows
+acceptance. Use one dataset writer; stop extraction while reviewing.
