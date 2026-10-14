@@ -357,7 +357,7 @@ export default function App() {
   }
   async function decide(action: Action) {
     if (!item || !canDecide || !item.allowed_actions.includes(action)) return;
-    if (action === 'correct' && !/^[0-9]{1,64}$/.test(draft)) return;
+    if (action === 'correct' && !(item.field_kind === 'text' ? !!draft.trim() : /^[0-9]{1,64}$/.test(draft))) return;
     await submit({
       path: `/api/review-items/${item.id}/decisions`,
       body: {
@@ -431,7 +431,8 @@ export default function App() {
     scanLoaded === scanKey &&
     !scanFailed &&
     !item.diagnostics.length;
-  const validDigits = /^[0-9]{1,64}$/.test(draft);
+  const textField = item?.field_kind === 'text';
+  const validCorrection = textField ? !!draft.trim() : /^[0-9]{1,64}$/.test(draft);
   const syncText = syncUnknown
     ? 'Sharing status unavailable'
     : !sync
@@ -467,7 +468,7 @@ export default function App() {
             >
               ← Queue
             </button>
-            <strong className="rid">{item.record_id ?? 'Number not identified'}</strong>
+            <strong className="rid">{item.source.role === 'survey-back' ? 'Dwelling interview notes' : item.source.role === 'survey-front' ? 'Dwelling survey front' : item.record_id ?? 'Number not identified'}</strong>
             <span className="cardscore">
               This card <Confidence score={item.card_score} />
             </span>
@@ -728,7 +729,7 @@ export default function App() {
             </button>
           </div>
           <p className="queue-scope small muted">
-            Progress covers supplied coding-card flags only. Rows keep the queue's
+            Progress covers supplied supported flags only. Rows keep the queue's
             lowest-confidence order. Averages cover available coding-card scores, including
             cards outside this queue.
           </p>
@@ -851,7 +852,7 @@ export default function App() {
       ) : (
         <main className="rv">
           <div className="stagecol">
-            <nav className="tabs" aria-label="Coding cards in this dwelling">
+            <nav className="tabs" aria-label="Cards in this dwelling">
               {cards.map((c) => (
                 <button
                   key={`${c.household_index}:${c.card_id}`}
@@ -860,7 +861,7 @@ export default function App() {
                   disabled={!canNavigate || !c.first_item_id}
                   onClick={() => void run(() => openItem((c.next_item_id ?? c.first_item_id)!))}
                 >
-                  Coding card · household {c.household_no ?? 'not identified'}
+                  {c.role === 'survey-front' ? 'Survey front' : c.role === 'survey-back' ? 'Interview notes' : `Coding card · household ${c.household_no ?? 'not identified'}`}
                   {c.record_id && <span className="pg">{c.record_id}</span>}
                   {c.score !== undefined && <Confidence score={c.score} />}
                   {c.page && <span className="pg">p.{c.page}</span>}
@@ -884,8 +885,7 @@ export default function App() {
             {(item.household_count ?? cards.length) > 1 && (
               <p className="household-context small">
                 {item.household_count ?? cards.length} households in this dwelling. Shared
-                building fields are reviewed on the first coding card only. Survey fronts,
-                people and back-of-card notes are outside this version’s editing tools.
+                building fields are reviewed on the first coding card only. A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
               </p>
             )}
             {!!item.dwelling_flags?.length && (
@@ -916,7 +916,7 @@ export default function App() {
               evidenceKey={scanKey}
               cardId={item.source.card_id}
               scanUrl={item.scan_url}
-              alt={`Original coding card: ${item.source.pdf}, page ${item.source.page}`}
+              alt={`Original card: ${item.source.pdf}, page ${item.source.page}`}
               shortcutsEnabled={shortcuts}
               onLoad={() => {
                 setScanLoaded(scanKey);
@@ -1084,10 +1084,9 @@ export default function App() {
                         >
                           <h3>{item.label}</h3>
                           <p className="where">
-                            {item.column ? `${item.column} · ` : ''}Find “{item.label}” on
-                            the card. Nothing is highlighted.
+                            {item.column ? `${item.column} · ` : ''}{item.source.role === 'survey-back' ? 'Read the interview notes on this back. Nothing is highlighted.' : `Find “${item.label}” on the card. Nothing is highlighted.`}
                           </p>
-                          <p className="value">
+                          <p className={`value ${textField ? 'text-value' : ''}`}>
                             <strong>
                               <Value item={item} />
                             </strong>
@@ -1123,7 +1122,7 @@ export default function App() {
                           {item.field.origin === 'corrected' && (
                             <p className="small">
                               Machine read:{' '}
-                              {item.field.original_value ?? 'No numeric value'}. The
+                              {item.field.original_value ?? 'No readable value'}. The
                               original is kept.
                             </p>
                           )}
@@ -1149,25 +1148,37 @@ export default function App() {
                               <label className="lbl" htmlFor="correction">
                                 Your correction
                               </label>
-                              <input
-                                id="correction"
-                                className={`input ${draft && !validDigits ? 'err' : ''}`}
-                                value={draft}
-                                onChange={(e) => setDraft(e.target.value)}
-                                disabled={busy || !!pending}
-                                inputMode="numeric"
-                                maxLength={64}
-                                autoComplete="off"
-                                autoFocus
-                                aria-describedby="digits-help"
-                              />
-                              <p id="digits-help" className="small">
-                                Digits only. Type exactly what the card shows. Leading
-                                zeros are kept.
+                              {textField ? (
+                                <textarea
+                                  id="correction"
+                                  className="input"
+                                  value={draft}
+                                  onChange={(e) => setDraft(e.target.value)}
+                                  disabled={busy || !!pending}
+                                  rows={6}
+                                  autoFocus
+                                  aria-describedby="correction-help"
+                                />
+                              ) : (
+                                <input
+                                  id="correction"
+                                  className={`input ${draft && !validCorrection ? 'err' : ''}`}
+                                  value={draft}
+                                  onChange={(e) => setDraft(e.target.value)}
+                                  disabled={busy || !!pending}
+                                  inputMode="numeric"
+                                  maxLength={64}
+                                  autoComplete="off"
+                                  autoFocus
+                                  aria-describedby="correction-help"
+                                />
+                              )}
+                              <p id="correction-help" className="small">
+                                {textField ? 'Copy the text as written. Line breaks and Unicode are kept. Use Nothing on the card for a blank source.' : 'Digits only. Type exactly what the card shows. Leading zeros are kept.'}
                               </p>
-                              {draft && !validDigits && (
+                              {draft && !validCorrection && (
                                 <p className="errbox">
-                                  Digits only. If the card shows a 1, type 1.
+                                  {textField ? 'Enter text, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
                                 </p>
                               )}
                               {item.code_list.length > 0 && (
@@ -1202,7 +1213,7 @@ export default function App() {
                                   exactly.
                                 </p>
                               )}
-                              {item.field.value?.startsWith('0') &&
+                              {!textField && item.field.value?.startsWith('0') &&
                                 draft !== item.field.value && (
                                   <p className="warnbox">
                                     Check the leading zero. The machine read{' '}
@@ -1218,11 +1229,11 @@ export default function App() {
                                   className="btn primary lg"
                                   disabled={
                                     !canDecide ||
-                                    !validDigits ||
+                                    !validCorrection ||
                                     !item.allowed_actions.includes('correct')
                                   }
                                 >
-                                  Save {validDigits ? draft : '(fix the digits first)'}
+                                  {textField ? 'Save correction' : `Save ${validCorrection ? draft : '(fix the digits first)'}`}
                                 </button>
                                 <button
                                   className="btn lg"
@@ -1247,7 +1258,7 @@ export default function App() {
                                   }
                                   onClick={() => void run(() => decide('accept'))}
                                 >
-                                  Accept {item.field.value ?? 'stored status'}
+                                  {textField ? 'Accept' : `Accept ${item.field.value ?? 'stored status'}`}
                                 </button>
                                 <button
                                   className="btn lg"
@@ -1410,7 +1421,7 @@ export default function App() {
           {item && (
             <p>
               To continue, choose region {item.region}, dwelling{' '}
-              {item.record_id ?? 'Number not identified'} in the queue.
+              {item.source.role === 'survey-back' ? 'Dwelling interview notes' : item.source.role === 'survey-front' ? 'Dwelling survey front' : item.record_id ?? 'Number not identified'} in the queue.
               {dwelling.find((field) => !field.resolved) && (
                 <>
                   {' '}

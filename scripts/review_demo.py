@@ -59,12 +59,53 @@ def create_demo(root: Path):
         pages.append(image)
     record = records[0]
     record["dwelling"]["households"].append(records[1]["dwelling"]["households"][0])
+    record["dwelling"]["address"] = {
+        "value": "Synthetic address only",
+        "status": "ok",
+        "confidence": None,
+        "source": "survey-front",
+    }
+    record["dwelling"]["cards"] = [
+        {"role": "survey-front", "image": "synthetic.pdf", "page": 3},
+        {"role": "survey-back", "image": "synthetic.pdf", "page": 4},
+    ]
+    record["dwelling"]["notes"] = [
+        {
+            "front_page": 3,
+            "page": 4,
+            "household_id": None,
+            "flags": ["household_ambiguous"],
+            "text": {
+                "value": "Synthetic interview notes\nSecond line",
+                "status": "ok",
+                "confidence": None,
+                "source": "survey-back",
+            },
+        }
+    ]
+    for label, value in [
+        ("Survey front", "Address: Synthetic address only"),
+        ("Survey back", "Synthetic interview notes\nSecond line"),
+    ]:
+        image = Image.new("RGB", (1200, 800), "white")
+        draw = ImageDraw.Draw(image)
+        draw.text(
+            (50, 50),
+            "SYNTHETIC DEMO / NOT A REAL TRANSCRIPTION",
+            fill="black",
+            font_size=30,
+        )
+        draw.text((50, 150), label, fill="black", font_size=30)
+        draw.text((50, 250), value, fill="black", font_size=30)
+        pages.append(image)
     (results / "demo.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
     pages[0].save(scan_dir / "synthetic.pdf", save_all=True, append_images=pages[1:])
     pointers = [
         (1, "/dwelling/households/0/coding/weekly_rent"),
         (2, "/dwelling/households/1/coding/weekly_rent"),
         (1, "/dwelling/house/garden"),
+        (3, "/dwelling/address"),
+        (4, "/dwelling/notes/0/text"),
     ]
     (root / "flags.jsonl").write_text(
         "".join(

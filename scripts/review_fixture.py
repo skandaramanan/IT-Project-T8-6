@@ -26,6 +26,17 @@ def adapt_record(example):
     record.update(schema_version="0.4.0", region=REGION, batch=PDF)
     for card in record["dwelling"]["households"][0]["cards"]:
         card["image"] = PDF
+    # The illustrative excerpt puts all four roles on its one household.
+    # Verified original role/page pairs can populate IT-89's dwelling cards.
+    household = record["dwelling"]["households"][0]
+    record["dwelling"]["cards"] = [
+        c for c in household["cards"] if c["role"] in {"survey-front", "survey-back"}
+    ]
+    household["cards"] = [
+        c
+        for c in household["cards"]
+        if c["role"] not in {"survey-front", "survey-back"}
+    ]
 
     # The schema example's scores are illustrative, not measured confidences.
     def clear_confidence(node):

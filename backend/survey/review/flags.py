@@ -57,6 +57,10 @@ def build_flags(
                         "coding card"
                     )
         for (pdf, page), owners in card_index(records).items():
+            # Dwelling fronts/backs have no household owner and are outside
+            # this coding-only generator.
+            if all(index is None for _, index, _ in owners):
+                continue
             if len(owners) > 1:
                 skipped.append(f"{region}: {pdf} p{page} is on two households")
                 continue

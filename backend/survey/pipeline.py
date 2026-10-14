@@ -1023,6 +1023,15 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     for path, field in corrections:
         try:
+            if field.get("review") and field.get("source") == "survey-front":
+                before_fronts = {
+                    (c["image"], c.get("page")) for c in _fronts(old["dwelling"])
+                }
+                after_fronts = {
+                    (c["image"], c.get("page")) for c in _fronts(new["dwelling"])
+                }
+                if len(before_fronts) != 1 or before_fronts != after_fronts:
+                    raise KeyError("reviewed front ownership changed")
             *parents, last = _note_by_front(path, old, new)
             destination = reduce(getitem, parents, new)
             review = field.get("review", {})
@@ -1032,7 +1041,9 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             else:
                 destination[last] = deepcopy(field)
             if review:
-                new["schema_version"] = SCHEMA_VERSION
+                new["schema_version"] = (
+                    "0.5.0" if new["schema_version"] == "0.5.0" else SCHEMA_VERSION
+                )
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
             raise MergeRefused(
@@ -1113,8 +1124,25 @@ def _note_by_front(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tup
     if path[:2] != ("dwelling", "notes"):
         return path
     front = old["dwelling"]["notes"][path[2]]["front_page"]
+    if (
+        sum(n["front_page"] == front for n in old["dwelling"]["notes"]) != 1
+        or sum(n["front_page"] == front for n in new["dwelling"].get("notes", [])) != 1
+    ):
+        raise KeyError("ambiguous note ownership")
     indexes = {note["front_page"]: i for i, note in enumerate(new["dwelling"]["notes"])}
     index = indexes[front]
+    previous = old["dwelling"]["notes"][path[2]]
+    current = new["dwelling"]["notes"][index]
+    if previous["text"].get("review"):
+        before_fronts = [c for c in _fronts(old["dwelling"]) if c.get("page") == front]
+        after_fronts = [c for c in _fronts(new["dwelling"]) if c.get("page") == front]
+        if (
+            len(before_fronts) != 1
+            or len(after_fronts) != 1
+            or before_fronts[0]["image"] != after_fronts[0]["image"]
+            or previous.get("page") != current.get("page")
+        ):
+            raise KeyError("reviewed note physical association changed")
     return (*path[:2], index, *path[3:])
 
 

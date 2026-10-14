@@ -52,8 +52,9 @@ source scans change. JSONL serialization/replacement still covers the region.
 
 Physical identity is region/PDF/page; shared fields belong to the first coding
 household. Identity and existing negated
-fields are accept-only. Front/person/handwritten/negation editing and shared-field
-reconciliation are deferred. See [the runbook](../review-backend.md) for API,
+fields are accept-only. The IT-113 follow-up supports uniquely owned front dwelling fields and verified
+IT-89 notes. Person/ambiguous-front/negation editing and shared-field reconciliation
+remain deferred. See [the runbook](../review-backend.md) for API,
 launch, synthetic demo, deployment gates and recovery.
 
 
@@ -92,3 +93,25 @@ combined suite reports **589 passed, 14 skipped, 2 failed**. The failures remain
 the two pre-existing local confidence-benchmark data checks documented in the
 runbook; no notes or review regression failed. CLI smoke checks expose both
 `extract --notes` and `review`. Native Windows/remote CI remains pending.
+
+
+## Bounded text review and corpus compatibility (14 October 2026)
+
+Descriptors reuse the established extraction field definitions. Front dwelling
+fields need one verified source front; person columns lack durable physical
+identity. IT-89 notes bind front_page and verified original back, never array order
+alone. Changed reviewed ownership/association is unresolved or refuses a rerun.
+There is no new provenance structure or coding-back field contract.
+
+Text keeps Unicode, whitespace and line breaks, with no digit normalization or
+codebook decoding. Identity/negated fields remain accept-only. Damage/obstruction
+uses the illegible decision; existing damaged extraction payloads remain valid and
+Accept preserves them. Atomic JSONL saves, versions, audit and sharing remain.
+
+The validator accepts corpus schema 0.5.0's nullable/lettered IDs and dwelling
+flags alongside review metadata. Saves retain 0.5.0; older versions retain their
+numeric, non-null IDs and 0.3+ still rejects legacy household notes. No corpus
+extraction changes or version-only conversions were imported.
+
+Native Windows, production sharing and human usability are still pending. The
+local release package and operator checklist are preparation, not acceptance.

@@ -47,7 +47,7 @@ export interface Item {
   field: Field;
   review_state: ReviewState;
   version: string;
-  source: { pdf: string; page: number; card_id: string };
+  source: { pdf: string; page: number; card_id: string; role?: 'coding-front' | 'survey-front' | 'survey-back'; front_page?: number | null };
   scan_url: string;
   reason: string;
   allowed_actions: Action[];
@@ -67,7 +67,8 @@ export interface CardField {
 export interface Card {
   score?: number | null;
   card_id: string;
-  household_index: number;
+  household_index: number | null;
+  role?: 'coding-front' | 'survey-front' | 'survey-back';
   household_no: string | null;
   page?: number;
   record_id: string | null;
