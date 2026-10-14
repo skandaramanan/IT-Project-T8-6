@@ -106,6 +106,7 @@ function backend(items = [field()]) {
   }
   const fetch = vi.fn(async (input: string, options?: RequestInit) => {
     const path = String(input);
+    if (path.startsWith('/api/scan-batches')) return response({ error: { message: 'No Drive batch', code: 'batch_not_available' } }, 404);
     if (path === '/api/health') return response({ ready: true, diagnostics: [] });
     if (path === '/api/regions')
       return response({

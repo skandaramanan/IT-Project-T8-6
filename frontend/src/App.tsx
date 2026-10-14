@@ -1,6 +1,7 @@
 // A bounded review slice over IT-113: saves are confirmed before advancing.
 import { useEffect, useRef, useState } from 'react';
 import ScanViewer from './ScanViewer';
+import ScanBatch from './ScanBatch';
 import Dialog from './Dialog';
 import Help, { readPreference, savePreference, SHORTCUTS_KEY, HELP_KEY } from './Help';
 import History from './History';
@@ -600,6 +601,11 @@ export default function App() {
       ) : !item ? (
         <main className="qbody">
           <h1>Review queue</h1>
+          <ScanBatch key={region} region={region} onReady={async () => {
+            await loadRegion(region);
+            const data = await api<{ regions: Region[] }>('/api/regions');
+            setRegions(data.regions);
+          }} />
           <div className="strip">
             <label className="regsel">
               Region{' '}
@@ -882,6 +888,12 @@ export default function App() {
                 pending.
               </div>
             )}
+            {scanFailed && <ScanBatch key={item.region} region={item.region} onReady={async () => {
+              const refreshed = await api<Item>(`/api/review-items/${item.id}`);
+              setItem((current) => current?.id === refreshed.id ? refreshed : current);
+              setScanAttempt((attempt) => attempt + 1);
+              setScanFailed(false);
+            }} />}
             <ScanViewer
               key={item.source.card_id}
               evidenceKey={scanKey}
