@@ -37,13 +37,14 @@ Configuration comes from CLI arguments or the code checkout's `.env`:
 
 | CLI | Environment | Default |
 | --- | --- | --- |
-| `--scan-root` | `SURVEY_REVIEW_SCAN_ROOT` | required; contains region/PDF |
+| `--scan-root` | `SURVEY_REVIEW_SCAN_ROOT` | required existing folder; may start empty |
 | `--data-checkout` | `SURVEY_REVIEW_DATA_CHECKOUT` | required; Git root, `results/` below |
 | `--flags` | `SURVEY_REVIEW_FLAGS` | required; supplied flagged JSONL |
 | `--cache` | `SURVEY_REVIEW_CACHE` | OS temp directory / `survey-review-scans` |
 | `--data-branch` | `SURVEY_REVIEW_DATA_BRANCH` | `review-data`; main/master refused |
 | `--sync-interval` | `SURVEY_REVIEW_SYNC_INTERVAL` | 180 seconds |
 | `--port` | `SURVEY_REVIEW_PORT` | 8765; bound to 127.0.0.1 |
+| — | `SURVEY_REVIEW_DRIVE_API_KEY` | blank; manual download/import remains available |
 
 Cache must be outside both Git checkouts. Scans are retrieved on demand from
 `scan_root/region/pdf`, using the original one-based PDF page and existing image
@@ -549,3 +550,118 @@ See [the verification record](review-continuation-verification.md),
 [prepared Linear wording corrections](review-linear-wording.md). Windows/user
 acceptance, IT-109 merge verification, live IT-115 base/head reconciliation and
 production provisioning remain separate delivery gates.
+
+## Download scans for one region
+
+The built React reviewer now offers **Download scans**, **Open in Drive** and
+**Import downloaded PDF** for a region whose record provenance matches the pinned
+Drive catalogue. One region is one original PDF. Extracted JSONL, supplied flags,
+review decisions and Git sharing retain their existing setup. No extraction or
+Google account login is added to the reviewer name-entry screen.
+
+Create an empty writable scans directory outside the data checkout and use it
+as `--scan-root`. It must exist before launch, but its region folders need not.
+Existing PDFs are never overwritten. Transfers write temporary files beside
+the destination, validate the complete size/checksum and referenced PDF pages,
+then create the original filename atomically. PNG rendering remains on demand.
+Progress and missing-scan diagnostics refresh after installation. Cancelled or
+failed transfers remove their temporary files; retry starts from byte zero.
+Only one transfer runs per backend. A stopped/crashed process may leave an
+ignored `.scan-*.part` file; remove it while the backend is stopped.
+
+For automatic downloads, create a Google Cloud project, enable **Google Drive
+API**, create an API key restricted to that API, and put it in the code
+checkout's untracked `.env`:
+
+```dotenv
+SURVEY_REVIEW_DRIVE_API_KEY=your-key
+```
+
+Restart the backend after changing configuration. The key is used only by Python
+and is never returned through the API or embedded in frontend assets. A locally
+distributed application cannot conceal a key from its operator; do not package
+`.env` or distribute a private service-account key with the reviewer release.
+Anyone-with-link sharing must remain enabled on the source PDFs. If permissions
+change, downloads fail honestly; private access needs a separate OAuth or hosted
+access design. Download permission must also be enabled. Google's documentation:
+[public folder API-key access](https://developers.google.com/workspace/drive/api/guides/search-files),
+[PDF downloads](https://developers.google.com/workspace/drive/api/guides/manage-downloads).
+
+With no API key, use **Open in Drive**, download that PDF in the browser, then
+**Import downloaded PDF** and choose it. The browser streams it to the loopback
+backend; importing uses the same pinned byte and page validation and does not
+require an API key. A different filename is harmless if its bytes match the
+approved PDF; the installed filename always comes from the catalogue. A
+wrong-size or wrong-checksum PDF is refused. Matching existing scans work offline.
+
+The endpoints are:
+
+- `GET /api/scan-batches?region=…`: PDF name, byte size, state, progress, source
+  link, automatic-download availability and any error. Unmapped/custom datasets
+  return `batch_not_available` (404) and retain local scan review.
+- `POST /api/scan-batches/{region}/download` and `/cancel`: JSON requests, existing
+  reviewer session and same-origin checks. Starting the same active download
+  returns its status; another transfer returns `download_busy` (409).
+- `POST /api/scan-batches/{region}/import`: raw `application/pdf` body, existing
+  reviewer session and same-origin checks. No multipart dependency is needed.
+
+Network metadata/connection requests retry temporary errors up to three times.
+An interrupted media stream fails and can be retried explicitly. Errors never
+include credential-bearing URLs. Download jobs are ephemeral; PDFs survive
+restart and are rechecked against the catalogue.
+
+### Catalogue provenance and reconciliation
+
+`backend/survey/review/drive-catalogue.json` pins the 45 region/file mappings
+observed in the supplied Drive root. Checksums pin the local archival source at
+`Wilfred_Prest_Survey_Data`; automatic downloading checks Drive metadata against
+those pins before transferring. This does not prove which scan version produced
+an arbitrary separately supplied results checkout; the operator must supply
+records extracted from the approved originals.
+
+Three sources differ in size between Drive and the local archive used for this
+catalogue: **216413, 216414 and 216415**. Their entries retain the local-source
+size/checksum and record `drive_size_at_catalogue_build`. Automatic downloads
+will report `source_changed`, and importing the differing Drive version will
+fail validation. Existing matching local originals remain usable. Reconcile
+these originals with extraction provenance before changing their catalogue pins;
+never bypass the checksum or update the PDFs silently. The remaining 42 matched
+by filename and size; their Drive MD5 values are checked at download time.
+
+A maintainer can rebuild all pins after reconciliation:
+
+```sh
+uv run python scripts/build_drive_catalogue.py /path/to/approved/original/scans
+```
+
+The helper loads the code checkout's `.env`, lists public Drive folders with
+pagination, requires exactly one PDF per matching numeric region folder, and
+verifies local size and MD5 against Drive. Any mismatch aborts before writing the
+catalogue. Review the resulting diff with the matching extraction source before
+shipping it. No PDFs, credentials, records or review decisions are modified.
+
+Build the React UI before distributing the release (`npm --prefix frontend run
+build`); the plain fallback integration page does not provide scan preparation.
+The existing release helper includes the catalogue and new backend/component
+source with the frontend build. Independent Windows and real-network acceptance
+remain required before rollout.
+
+### Implementation verification
+
+Synthetic transfer/API tests cover download and manual import, exact source bytes,
+restart detection, cancellation/retry, wrong or corrupt PDFs, source changes,
+page bounds, existing-file races, symlink rejection, connection retries,
+resource keys, catalogue pagination, and credential-safe errors. Browser smoke
+verification used a synthetic PDF and a local bare Git remote; download progress,
+readiness, and opening the installed scan were observed. Original archival PDFs
+and extracted results were not written during verification.
+
+Ruff lint/format, TypeScript/Vite build and all **51 frontend tests** pass. The
+full backend suite reports **653 passed, 14 skipped, 2 deselected** when excluding
+two unrelated calibration checks that require the missing local Qwen benchmark
+arm. The initial full run failed those checks because all 1,860 benchmark fields
+had no second opinion; no confidence/benchmark data was changed. The final
+focused transfer/API/launcher/benchmark regression suite also passes **33 tests**.
+Actual Google API transfer latency has not been measured: a Drive-enabled API
+key is needed for the real-network smoke test. The shipped public file mappings
+were read through Drive, and local archival PDFs were hashed read-only.

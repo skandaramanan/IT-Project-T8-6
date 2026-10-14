@@ -497,3 +497,21 @@ source; reviewers do not need Node. See [operator steps](review-windows-acceptan
 Live PR stack freshness and IT-109's merge remain unverified; no teammate branch
 was rewritten. Developer verification is recorded separately from human acceptance
 in [the continuation record](review-continuation-verification.md).
+
+
+## One-region scan preparation
+
+Choose a region and use **Download scans** in the queue. Progress, Cancel and
+Retry concern only the region's original PDF; review completion still comes from
+saved field decisions. Downloaded scans remain available after restart. If the
+transfer fails or automatic downloading is not configured, use **Open in Drive**,
+download the PDF, then **Import downloaded PDF**. The imported bytes must match
+the approved original. The backend never overwrites an existing different PDF.
+
+No Google login is required while the scans remain shared with anyone with the
+link. Automatic downloading requires the backend's optional Drive API key;
+manual import does not. Extracted records and supplied review flags must already
+be configured. See [backend setup and catalogue reconciliation](review-backend.md#download-scans-for-one-region),
+including the three known differing source versions. Build the React frontend
+to make these controls available; the plain integration fallback remains for
+backend testing.
