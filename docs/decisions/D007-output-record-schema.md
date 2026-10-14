@@ -331,3 +331,14 @@ schema to follow its structure, and this record was written without it.
 Also revisit when IT-46 picks an extraction engine: if the chosen engine cannot
 produce a per-field score, FR-10 is unsatisfiable as written and either the
 requirement or the nullable `confidence` here has to give.
+
+
+## Review continuation compatibility (14 October 2026)
+
+The IT-113 validator reconciles review metadata with the inspected IT-123 0.5.0
+corpus envelope: nullable/lettered household IDs, corresponding note household IDs
+and optional dwelling flags. These shapes remain confined to 0.5.0; older schemas
+retain their ID rules. Saves preserve 0.5.0 without down-conversion. Current local
+extraction builders still use 0.4.0; importing corpus extraction changes is separate.
+Established survey-front definitions and IT-89 note ownership supply bounded text
+review. No person column/page structure or coding-back fields are invented.

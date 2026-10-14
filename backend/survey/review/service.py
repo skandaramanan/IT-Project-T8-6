@@ -2,14 +2,18 @@
 
 import csv
 import json
-import re
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from survey.extraction.card_fields import FIELD_SCHEMA, FIELD_SCHEMA_BY_NAME
+from survey.extraction.card_fields import (
+    FIELD_SCHEMA,
+    SURVEY_FRONT_DWELLING_FIELDS,
+)
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
+from survey.extraction.survey_front import record_key
 from survey.records import (
     RecordStore,
     Reference,
@@ -69,7 +73,9 @@ class ReviewService:
             errors = deepcopy(diagnostics)
             for ref in references:
                 try:
-                    self.store.current(ref)
+                    resolved, _ = self.store.current(ref)
+                    if resolved.front_page is not None:
+                        ref = replace(ref, front_page=resolved.front_page)
                 except ReviewError as error:
                     errors.append(
                         {
@@ -201,6 +207,10 @@ class ReviewService:
             warnings, errors = [], []
             try:
                 self.scans.probe(ref)
+                if resolved.front_page is not None:
+                    self.scans.probe(
+                        Reference(ref.region, ref.pdf, resolved.front_page, "/")
+                    )
             except ReviewError as error:
                 errors.append({"code": error.code, "message": str(error)})
             if any(
@@ -213,7 +223,7 @@ class ReviewService:
                         "message": "Migrate legacy household notes to dwelling.notes with verified front/back provenance before review. No notes were discarded.",
                     }
                 )
-            spec = FIELD_SCHEMA_BY_NAME[resolved.label]
+            spec = resolved.descriptor.spec
             field = resolved.field
             if (
                 spec.code_book_category in CLOSED_CATEGORIES
@@ -223,10 +233,7 @@ class ReviewService:
                 warnings.append("Unknown numeric code retained exactly")
             if spec.kind == "unknown":
                 warnings.append("Codebook coverage for this field is unresolved")
-            restricted = (
-                resolved.group in {"dwelling", "household"}
-                or field.get("negated") is True
-            )
+            restricted = resolved.descriptor.accept_only or field.get("negated") is True
             if restricted:
                 warnings.append(
                     "Accept-only field: if wrong, leave unresolved; editing is deferred"
@@ -241,13 +248,22 @@ class ReviewService:
                 "id": item_id,
                 "region": ref.region,
                 "batch": ref.pdf,
-                "record_id": resolved.household["record_id"],
+                "record_id": resolved.household["record_id"]
+                if resolved.descriptor.role == "coding-front"
+                or len(resolved.record["dwelling"]["households"]) == 1
+                else None,
                 "field_path": ref.field_path,
                 "label": resolved.label,
                 "field": deepcopy(field),
                 "review_state": state(field),
                 "version": version,
-                "source": {"pdf": ref.pdf, "page": ref.page, "card_id": ref.card_id},
+                "source": {
+                    "pdf": ref.pdf,
+                    "page": ref.page,
+                    "card_id": ref.card_id,
+                    "role": resolved.descriptor.role,
+                    "front_page": resolved.front_page,
+                },
                 "scan_url": f"/api/scans/{ref.card_id}",
                 "reason": ref.reason,
                 "allowed_actions": []
@@ -292,6 +308,10 @@ class ReviewService:
         ]
 
     @classmethod
+    def physical_cards(cls, record):
+        return cls.coding_cards(record) + record["dwelling"].get("cards", [])
+
+    @classmethod
     def dwelling_id(cls, region, record):
         locations = sorted(
             ((card["image"], card.get("page")) for card in cls.coding_cards(record)),
@@ -300,18 +320,28 @@ class ReviewService:
         return digest(json.dumps([region, locations]).encode())
 
     def item_context(self, ref, resolved, context):
-        spec = FIELD_SCHEMA_BY_NAME[resolved.label]
+        spec = resolved.descriptor.spec
         codes = CLOSED_CATEGORIES.get(spec.code_book_category, {}) | SENTINEL_CODES.get(
             spec.code_book_category, {}
         )
         card = next(
             card
-            for card in resolved.household["cards"]
-            if card["role"] == "coding-front"
+            for card in (
+                resolved.household["cards"]
+                if resolved.descriptor.role == "coding-front"
+                else resolved.record["dwelling"].get("cards", [])
+            )
+            if card["role"] == resolved.descriptor.role
+            and card["image"] == ref.pdf
+            and card.get("page") == ref.page
         )
         positions = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
 
         def column(label):
+            if resolved.descriptor.role != "coding-front":
+                return (
+                    "Interview notes" if resolved.group == "notes" else "Survey front"
+                )
             position = positions[label]
             if position < positions["Normal Household I."]:
                 return "Left column"
@@ -336,6 +366,7 @@ class ReviewService:
             return details
         fields = []
         index = resolved.record["dwelling"]["households"].index(resolved.household)
+        pointers = []
         for field_spec in FIELD_SCHEMA:
             label = field_spec.name
             key, group = FIELD_MAP[label]
@@ -343,18 +374,41 @@ class ReviewService:
                 group = "household"
             if group in {"dwelling", "house"} and index != 0:
                 continue
-            pointer = (
-                f"/dwelling/{key}"
-                if group == "dwelling"
-                else f"/dwelling/house/{key}"
-                if group == "house"
-                else f"/dwelling/households/{index}/{key}"
-                if group == "household"
-                else f"/dwelling/households/{index}/{group}/{key}"
+            pointers.append(
+                (
+                    label,
+                    (
+                        f"/dwelling/{key}"
+                        if group == "dwelling"
+                        else f"/dwelling/house/{key}"
+                        if group == "house"
+                        else f"/dwelling/households/{index}/{key}"
+                        if group == "household"
+                        else f"/dwelling/households/{index}/{group}/{key}"
+                    ),
+                )
             )
+        for label in SURVEY_FRONT_DWELLING_FIELDS:
+            key = record_key(label)
+            pointers.append(
+                (
+                    label,
+                    f"/dwelling/{key}"
+                    if key in {"address", "families_in_dwelling"}
+                    else f"/dwelling/handwritten/{key}",
+                )
+            )
+        pointers.extend(
+            ("Interview Notes", f"/dwelling/notes/{n}/text")
+            for n in range(len(resolved.record["dwelling"].get("notes", [])))
+        )
+        for label, pointer in pointers:
             field_ref = Reference(ref.region, ref.pdf, ref.page, pointer)
             try:
-                field = self.store.current(field_ref)[0].field
+                candidate = self.store.current(field_ref)[0]
+                field = candidate.field
+                if candidate.front_page is not None:
+                    field_ref = replace(field_ref, front_page=candidate.front_page)
             except ReviewError:
                 continue
             fields.append(
@@ -390,9 +444,11 @@ class ReviewService:
         details["card_fields"] = fields
         cards = []
         dwelling_refs = self.dwelling_references.get(details["dwelling_id"], [])
-        for index, household in enumerate(resolved.record["dwelling"]["households"]):
+        owners = list(enumerate(resolved.record["dwelling"]["households"]))
+        owners.append((None, {"cards": resolved.record["dwelling"].get("cards", [])}))
+        for index, household in owners:
             for card in household.get("cards", []):
-                if card["role"] != "coding-front":
+                if card["role"] not in {"coding-front", "survey-front", "survey-back"}:
                     continue
                 refs = [
                     candidate
@@ -400,6 +456,8 @@ class ReviewService:
                     if candidate.pdf == card["image"]
                     and candidate.page == card.get("page")
                 ]
+                if card["role"] != "coding-front" and not refs:
+                    continue
                 cards.append(
                     {
                         "card_id": digest(
@@ -409,6 +467,7 @@ class ReviewService:
                         ),
                         "score": card.get("confidence"),
                         "household_index": index,
+                        "role": card["role"],
                         "household_no": household.get("household_no", {}).get("value"),
                         "record_id": household.get("record_id"),
                         "page": card.get("page"),
@@ -477,14 +536,15 @@ class ReviewService:
                     if (not d.get("region") or d["region"] == refs[0].region)
                     and (
                         not d.get("batch")
-                        or d["batch"] in {card["image"] for card in cards}
+                        or d["batch"]
+                        in {card["image"] for card in self.physical_cards(record)}
                     )
                     and (
                         not d.get("page")
                         or any(
                             card["image"] == d.get("batch")
                             and card.get("page") == d["page"]
-                            for card in cards
+                            for card in self.physical_cards(record)
                         )
                     )
                 ]
@@ -611,29 +671,33 @@ class ReviewService:
                 label: index
                 for index, label in enumerate(spec.name for spec in FIELD_SCHEMA)
             }
+            front_order = {
+                label: i for i, label in enumerate(SURVEY_FRONT_DWELLING_FIELDS)
+            }
+
+            def field_order(ref):
+                resolved = self.store.current(ref)[0]
+                return (
+                    order if resolved.descriptor.role == "coding-front" else front_order
+                ).get(resolved.label, len(front_order))
+
+            physical = self.physical_cards(group[0])
             refs = sorted(
                 group[1],
                 key=lambda ref: (
                     next(
-                        index
-                        for index, household in enumerate(
-                            group[0]["dwelling"]["households"]
-                        )
-                        if any(
-                            card["role"] == "coding-front"
-                            and card["image"] == ref.pdf
-                            and card.get("page") == ref.page
-                            for card in household.get("cards", [])
-                        )
+                        i
+                        for i, card in enumerate(physical)
+                        if card["image"] == ref.pdf and card.get("page") == ref.page
                     ),
-                    order[self.store.current(ref)[0].label],
+                    field_order(ref),
                 ),
             )
             items = [self.item(ref.item_id, context=False) for ref in refs]
             for item in items:
                 self.update_progress(item)
             resolved = sum(item["resolved"] for item in items)
-            cards = self.coding_cards(group[0])
+            cards = self.physical_cards(group[0])
             diagnostics = [
                 deepcopy(d)
                 for d in [*self.diagnostics, *self.progress_diagnostics.values()]
@@ -771,13 +835,11 @@ class ReviewService:
             # A metadata probe cannot prove that compressed image pixels decode.
             # Recheck/render the selected original before committing a decision.
             self.scans.get_scan(ref)
+            if ref.front_page is not None:
+                self.scans.get_scan(Reference(ref.region, ref.pdf, ref.front_page, "/"))
             current, _ = self.store.current(ref)
             record = deepcopy(current.record)
-            locations = self.store.cards[ref.region][(ref.pdf, ref.page)]
-            local_locations = {
-                (ref.pdf, ref.page): [(0, h, primary) for _, h, primary in locations]
-            }
-            resolved = resolve_field([record], ref, local_locations)
+            resolved = resolve_field([record], ref)
             field = resolved.field
             before, before_state = snapshot(field), state(field)
             history = deepcopy(field.get("review", {}).get("history", []))
@@ -805,14 +867,14 @@ class ReviewService:
                 after = deepcopy(before)
                 after_state = "accepted" if action == "accept" else "corrected"
                 if action == "correct":
-                    if not isinstance(value, str) or not re.fullmatch(
-                        r"[0-9]{1,64}", value
-                    ):
+                    if not resolved.descriptor.valid_correction(value):
                         raise ReviewError(
                             "invalid_value",
-                            "Enter 1–64 ASCII digits; zeros are preserved",
+                            "Enter nonblank text exactly as written"
+                            if resolved.descriptor.spec.kind == "text"
+                            else "Enter 1–64 ASCII digits; zeros are preserved",
                         )
-                    category = FIELD_SCHEMA_BY_NAME[resolved.label].code_book_category
+                    category = resolved.descriptor.spec.code_book_category
                     coded = category in CLOSED_CATEGORIES or category in SENTINEL_CODES
                     after.update(
                         value=value,
@@ -850,7 +912,9 @@ class ReviewService:
             history.append(event)
             field.clear()
             field.update(after, review={"state": after_state, "history": history})
-            resolved.record["schema_version"] = SCHEMA_VERSION
+            resolved.record["schema_version"] = (
+                "0.5.0" if record["schema_version"] == "0.5.0" else SCHEMA_VERSION
+            )
             self.store.save_record(
                 ref.region, expected_version, current.record_index, record
             )

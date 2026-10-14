@@ -78,8 +78,8 @@ uv run python scripts/review_demo.py "/tmp/survey-review-demo"
 ```
 
 On Windows, use e.g. `"C:\Temp\survey-review-demo"`. The script prints a launch
-command. It creates an explicitly synthetic two-household dwelling, a two-page
-synthetic PDF, three flags, a separate data checkout, and a local bare Git remote.
+command. It creates an explicitly synthetic two-household dwelling, a four-page
+synthetic PDF, five manual flags, a separate data checkout, and a local bare Git remote.
 It never contacts GitHub or runs an extractor. Use the printed command, enter a
 name, and review the second household's rent. Try `009`, accept, no data, and
 illegible; inspect history and undo. Stop and restart with the same command to
@@ -146,9 +146,19 @@ This is a synthetic example, not a real transcription. Region and PDF are plain
 names; page is a positive integer. Household indexes must match the physically
 identified card's current owner. Shared `/dwelling/house/...` and identity fields
 belong to the first coding household and its first coding card. Other household
-cards cannot review independently stored copies of a shared field. The mapping
-allowlist is the existing C1/C2 `FIELD_MAP`; front, handwritten, person and reverse
-fields are not editable.
+cards cannot review independently stored copies of a shared field. Descriptors follow the existing C1/C2 `FIELD_MAP`, survey-front dwelling field
+definitions and IT-89 interview notes. A front dwelling field requires exactly one
+physical survey front, with the field's `source` matching that role. Multiple-front
+merged fields remain unresolved. Person columns lack durable page/column ownership
+and are unsupported. Coding-back fields have no established field contract.
+
+A note flag uses `/dwelling/notes/N/text` on its verified back page. The note's
+`front_page` must identify one front in the same PDF; its back must follow that
+front in IT-89's stored card order and agree with `note.page`. Both original sides
+must be available. Item identity binds the physical back and owning front,
+independently of note-array order. Stale pointers are rejected; resupply the correct
+pointer after reordering. A changed reviewed association requires explicit
+reconciliation. No missing back or household attribution is guessed.
 
 Card identity is `(region, PDF basename, original PDF page)`. Item ID combines
 that physical identity with the logical field path (excluding household index).
@@ -255,7 +265,7 @@ progress, and local vs remote status. Save & Exit waits for a sharing attempt;
 pending work requires explicit acknowledgement before the page says it may close.
 Closing a tab does not reliably run sharing. Local decisions were already saved.
 
-To amend a saved no-data or illegible decision, select the field, enter digits and
+To amend a saved no-data or illegible decision, select the field, enter its exact value and
 choose **Save correction**. **Accept stored value** preserves the stored value
 and extraction status, including an empty or illegible value. It is disabled while
 the correction input differs from the stored value, preventing accidental
@@ -301,8 +311,9 @@ ordinary numeric-sentinel values need no label. Sentinel meanings come from the
 existing field-specific codebook, never a generic `999 => missing` rule.
 
 Identity and existing negated fields are accept-only: if wrong, leave pending.
-Missing `negated` means unknown; no false value is manufactured. Handwritten,
-person and front values remain intact during review. Negation editing and
+Missing `negated` means unknown; no false value is manufactured. Supported text preserves Unicode, whitespace and multiline content without numeric
+normalization. Empty/whitespace-only corrections use no-data instead. Person and
+ambiguous-front fields remain unresolved. Negation editing and
 multi-card shared-field reconciliation are deferred scope decisions.
 
 Undo restores the latest active decision's exact prior payload/state and appends
@@ -505,3 +516,23 @@ All physical coding cards are represented, including those outside the supplied
 queue. An unqueued card has null `first_item_id`/`next_item_id`; it grants no new
 review action or scan route. The frontend labels it “Not queued”. Queue counts,
 field ownership, routing, persistence and allowed actions are unchanged.
+
+
+## IT-113 follow-up (14 October 2026)
+
+The follow-up extends the locally available IT-115 stack, reusing its endpoints,
+dwelling summaries, retries, scan gate, history and navigation. Text corrections
+use a multiline control; code lists remain numeric-field-specific. Identity and
+negated fields stay accept-only. `damaged` remains an extraction status; there is
+no damaged action. Acceptance keeps it, and illegible explicitly replaces it.
+
+Reviewed fronts refuse rerun ownership changes. Reviewed notes follow a unique
+`front_page` across reorder/additions and refuse changed PDF/back associations or
+duplicate owners. Legacy corrected-note behavior remains intact; no automatic
+household-note migration is provided. Unsupported and stale flags stay visible.
+
+See [the verification record](review-continuation-verification.md),
+[Windows installation/operator checklist](review-windows-acceptance.md), and
+[prepared Linear wording corrections](review-linear-wording.md). Windows/user
+acceptance, IT-109 merge verification, live IT-115 base/head reconciliation and
+production provisioning remain separate delivery gates.

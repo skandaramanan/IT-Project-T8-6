@@ -431,3 +431,24 @@ two-household switching. Magnifier toggle and lens-size controls were exercised;
 native mouse-hover lens rendering was not exercised by the available browser
 controls (source/geometry are covered by component tests). All review tests used
 disposable data/local remotes; that reviewer's server/tab and viewport were cleaned up.
+
+
+## IT-113 text continuation (14 October 2026)
+
+On `eric/it-113-build-the-review-queue-data-store-follow-up`, the existing stack is
+extended to supported front dwelling fields and IT-89 interview notes. The APIs
+are reused. `field_kind: text` selects a multiline correction with exact Unicode/
+whitespace retention; code lists remain specific to numeric coding fields. Card
+metadata adds role and nullable household_index for dwelling front/back sources.
+`source` includes role and the verified note front_page. Front/note tabs appear
+only for supported supplied flags; all coding cards remain available as context.
+
+The backend rejects stale note pointers and ambiguous ownership. Fresh supplied
+pointers after a reorder recover the same physical note ID. Person and merged
+multiple-front fields remain unresolved. The synthetic helper now supplies five
+manual flags and four synthetic PDF pages, including front/address and notes.
+The Windows package ships matching built frontend assets with editable Python
+source; reviewers do not need Node. See [operator steps](review-windows-acceptance.md).
+Live PR stack freshness and IT-109's merge remain unverified; no teammate branch
+was rewritten. Developer verification is recorded separately from human acceptance
+in [the continuation record](review-continuation-verification.md).

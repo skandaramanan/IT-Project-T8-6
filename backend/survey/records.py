@@ -17,6 +17,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 
 from survey.extraction.record import FIELD_MAP
+from survey.review.fields import descriptor
 
 SCHEMA_PATH = Path(__file__).parents[2] / "schema" / "record-envelope.schema.json"
 FORMATS = FormatChecker()
@@ -73,8 +74,8 @@ def validate_records(records: list[dict], region: str) -> None:
             raise ReviewError(
                 "wrong_region", f"record {number} does not belong to {region}"
             )
-        for _, field in current_fields(record):
-            validate_history(field)
+        for path, field in current_fields(record):
+            validate_history(field, descriptor("/" + "/".join(map(str, path))))
         for household in record["dwelling"]["households"]:
             for card in household.get("cards", []):
                 if card["role"] != "coding-front":
@@ -106,7 +107,7 @@ def audit_index(regions: dict[str, list[dict]]) -> tuple[dict, dict]:
     return requests, decisions
 
 
-def validate_history(field: dict) -> None:
+def validate_history(field: dict, spec=None) -> None:
     review = field.get("review")
     if not review:
         return
@@ -173,16 +174,32 @@ def validate_history(field: dict) -> None:
                 expected_payload = deepcopy(before)
                 if event["action"] == "correct":
                     value = event["request"]["value"]
-                    if not isinstance(value, str) or not re.fullmatch(
-                        r"[0-9]{1,64}", value
-                    ):
+                    valid = (
+                        spec.valid_correction(value)
+                        if spec
+                        else (
+                            isinstance(value, str)
+                            and bool(re.fullmatch(r"[0-9]{1,64}", value))
+                        )
+                    )
+                    if not valid:
                         raise ReviewError(
-                            "invalid_history", "Correction must request exact digits"
+                            "invalid_history",
+                            "Correction request must satisfy its established field type",
                         )
                     expected_payload.update(value=value, status="ok")
                     # Decoding is field-specific; validate the preserved envelope
                     # here without imposing a closed field set on old records.
                     for key in ("code", "label"):
+                        if (
+                            spec
+                            and spec.spec.kind == "text"
+                            and after.get(key) is not None
+                        ):
+                            raise ReviewError(
+                                "invalid_history",
+                                "Text corrections cannot introduce codebook values",
+                            )
                         if key in after:
                             expected_payload[key] = after[key]
                         else:
@@ -304,6 +321,8 @@ class Reference:
     page: int
     field_path: str
     reason: str = ""
+    # Internal binding, obtained only after checking IT-89's physical ownership.
+    front_page: int | None = None
 
     def __post_init__(self):
         if not REGION.fullmatch(self.region) or not safe_pdf(self.pdf):
@@ -323,6 +342,8 @@ class Reference:
     def item_id(self) -> str:
         # Household indexes are checked at resolution but are not durable identity.
         logical = re.sub(r"/households/[0-9]+/", "/households/*/", self.field_path)
+        if self.front_page is not None:
+            logical = f"/dwelling/notes/front/{self.front_page}/text"
         return digest(json.dumps([self.card_id, logical]).encode())
 
 
@@ -334,12 +355,18 @@ class Resolved:
     group: str
     household: dict
     record_index: int
+    descriptor: Any = None
+    front_page: int | None = None
 
 
 def card_index(records: list[dict]) -> dict:
     """Physical card locations; duplicate owners remain detectable."""
     matches = {}
     for record_index, record in enumerate(records):
+        for card in record["dwelling"].get("cards", []):
+            if card["role"] in {"survey-front", "survey-back"}:
+                key = card["image"], card.get("page")
+                matches.setdefault(key, []).append((record_index, None, card["role"]))
         for index, household in enumerate(record["dwelling"]["households"]):
             cards = [
                 c for c in household.get("cards", []) if c["role"] == "coding-front"
@@ -358,11 +385,14 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
     if len(matches) != 1:
         raise ReviewError(
             "ambiguous_card" if matches else "missing_card",
-            "Physical coding card does not resolve uniquely",
+            "Physical card does not resolve uniquely",
             422 if matches else 404,
         )
     record_index, index, primary = matches[0]
     record = records[record_index]
+    spec = descriptor(ref.field_path)
+    if index is None:
+        return resolve_front_field(record, ref, record_index, primary, spec, locations)
     household = record["dwelling"]["households"][index]
     if not primary:
         raise ReviewError(
@@ -379,6 +409,7 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             "household",
             household,
             record_index,
+            spec,
         )
     for label, (key, group) in FIELD_MAP.items():
         if group == "dwelling":
@@ -407,10 +438,111 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             raise ReviewError(
                 "unsupported_source", "Only C1/C2 numeric coding fields are supported"
             )
-        return Resolved(record, node, label, group, household, record_index)
+        return Resolved(record, node, label, group, household, record_index, spec)
     raise ReviewError(
         "unsupported_field",
         "Unknown field, unsupported front field, or stale household pointer",
+    )
+
+
+def resolve_front_field(record, ref, record_index, role, spec, locations):
+    if spec is None or spec.role != role:
+        raise ReviewError(
+            "unsupported_field",
+            "Field does not resolve uniquely to this source; person columns lack physical provenance",
+        )
+    dwelling = record["dwelling"]
+    cards = dwelling.get("cards", [])
+    fronts = [card for card in cards if card["role"] == "survey-front"]
+    try:
+        node = record
+        for part in ref.field_path.split("/")[1:]:
+            node = node[int(part)] if isinstance(node, list) else node[part]
+    except (KeyError, IndexError, TypeError) as error:
+        raise ReviewError(
+            "stale_pointer", "The field is absent from its owning record"
+        ) from error
+    if not isinstance(node, dict) or node.get("source") != role:
+        raise ReviewError(
+            "unsupported_source", "Field source must match the verified physical card"
+        )
+    front_page = None
+    if role == "survey-front":
+        if len(fronts) != 1 or (fronts[0]["image"], fronts[0].get("page")) != (
+            ref.pdf,
+            ref.page,
+        ):
+            raise ReviewError(
+                "ambiguous_source",
+                "Multiple fronts can contribute to this field; exact ownership is unresolved",
+            )
+        if any(
+            event["item_id"] != ref.item_id
+            for event in node.get("review", {}).get("history", [])
+        ):
+            raise ReviewError(
+                "changed_source",
+                "Reviewed front's physical ownership changed; reconcile explicitly",
+            )
+    else:
+        note = dwelling["notes"][int(ref.field_path.split("/")[3])]
+        front_page = note["front_page"]
+        if ref.front_page is not None and ref.front_page != front_page:
+            raise ReviewError(
+                "stale_pointer",
+                "Note order changed; reload the supplied queue with verified pointers",
+            )
+        owners = [card for card in fronts if card.get("page") == front_page]
+        if (
+            len(owners) != 1
+            or owners[0]["image"] != ref.pdf
+            or note.get("page") != ref.page
+        ):
+            raise ReviewError(
+                "ambiguous_source",
+                "Note requires an unambiguous front and matching original back",
+            )
+        front = owners[0]
+        if len(locations.get((ref.pdf, front_page), [])) != 1:
+            raise ReviewError(
+                "ambiguous_source", "Note's front does not resolve uniquely"
+            )
+        at = cards.index(front)
+        if (
+            at + 1 >= len(cards)
+            or cards[at + 1].get("role") != "survey-back"
+            or (cards[at + 1]["image"], cards[at + 1].get("page"))
+            != (ref.pdf, ref.page)
+        ):
+            raise ReviewError(
+                "ambiguous_source",
+                "Note's stored front/back association changed or is missing",
+            )
+        if (
+            sum(
+                note["front_page"] == n["front_page"] for n in dwelling.get("notes", [])
+            )
+            != 1
+        ):
+            raise ReviewError("ambiguous_source", "Several notes claim the same front")
+        bound = Reference(
+            ref.region, ref.pdf, ref.page, ref.field_path, front_page=front_page
+        )
+        history = node.get("review", {}).get("history", [])
+        if history and any(event["item_id"] != bound.item_id for event in history):
+            raise ReviewError(
+                "changed_source",
+                "Reviewed note's physical association changed; reconcile explicitly",
+            )
+    return Resolved(
+        record,
+        node,
+        spec.spec.name,
+        spec.group,
+        dwelling["households"][0],
+        record_index,
+        spec,
+        front_page,
     )
 
 

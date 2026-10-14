@@ -21,7 +21,7 @@ export const HELP_KEY = 'review-help-seen';
 const tips = [
   [
     'The cards',
-    'Each dwelling has one coding card per household. The tabs above the scan switch between them. Nothing is highlighted, so find the field yourself; focus the scan and press M for a magnifier.',
+    'Each dwelling has one coding card per household. The tabs above the scan also open supplied survey-front fields and interview notes. Nothing is highlighted, so find the field yourself; focus the scan and press M for a magnifier.',
   ],
   [
     "Why it's asking",
@@ -30,7 +30,7 @@ const tips = [
   ['Accept', 'If the card shows the same value, choose Accept or press A.'],
   [
     'Correct',
-    'Choose Correct or press E and type exactly the digits on the card. Leading zeros are kept. Enter saves and Esc cancels.',
+    'Choose Correct or press E and copy the value on the card. Numeric fields keep leading zeros; text fields keep line breaks and Unicode. Enter saves numeric corrections; use Save correction for text. Esc cancels.',
   ],
   [
     "Blank or can't read it",
@@ -106,8 +106,7 @@ export default function Help({
               <p>
                 Your name isn't a password; it's saved with each decision. Type it the
                 same way each time. The scans folder is configured in the launcher. Survey
-                fronts, people and back-of-card notes are outside this version's editing
-                tools.
+                fields with one verified front and interview notes with verified front/back provenance can be reviewed. Person fields and ambiguous ownership remain unresolved.
               </p>
             </section>
           </>

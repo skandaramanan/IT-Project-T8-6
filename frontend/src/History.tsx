@@ -25,10 +25,10 @@ export default function History({ item, onClose }: { item: Item; onClose: () => 
         <b>
           {original
             ? original.origin === 'corrected'
-              ? (original.original_value ?? 'No numeric value')
+              ? (original.original_value ?? 'No readable value')
               : value(original)
             : item.field.origin === 'corrected'
-              ? (item.field.original_value ?? 'No numeric value')
+              ? (item.field.original_value ?? 'No readable value')
               : value(item.field)}
         </b>
         {' · '}

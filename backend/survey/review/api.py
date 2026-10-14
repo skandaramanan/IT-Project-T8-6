@@ -223,7 +223,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {
             "ready": startup_error is None and service is not None,
             "diagnostics": [startup_error] if startup_error else [],
-            "scope": "C1/C2 numeric flagged fields; one backend writer per checkout",
+            "scope": "Supplied coding fields, uniquely owned front dwelling fields and verified IT-89 notes; one backend writer per checkout",
             "data_branch": settings.data_branch,
         }
 
