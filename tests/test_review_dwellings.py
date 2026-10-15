@@ -186,6 +186,32 @@ def test_metadata_bom_titles_and_http_routes(tmp_path):
     assert service.region_titles == {}
 
 
+@pytest.mark.parametrize("index", [0, 1])
+def test_household_municipality_flags_have_actionable_card_context(tmp_path, index):
+    service, _ = setup_review(tmp_path)
+    ref = Reference(
+        "demo",
+        "synthetic.pdf",
+        index + 1,
+        f"/dwelling/households/{index}/municipality",
+    )
+    service.replace_queue([*refs(), ref], [])
+    item = service.item(ref.item_id)
+    field = next(field for field in item["card_fields"] if field["id"] == ref.item_id)
+    assert field["field_path"] == ref.field_path
+    assert field["label"] == "Municipality"
+    assert item["allowed_actions"] == ["accept"]
+    saved = decide(service, ref, action="accept")
+    assert saved["item"]["resolved"]
+    assert any(
+        field["id"] == ref.item_id and field["review_state"] != "pending"
+        for field in saved["item"]["card_fields"]
+    )
+    # The first card's shared alias remains actionable when separately flagged.
+    if index == 0:
+        assert any(field["id"] == refs()[3].item_id for field in item["card_fields"])
+
+
 def test_region_averages_do_not_weight_by_number_of_flags(tmp_path):
     service, _ = setup_review(tmp_path)
     record = service.store.regions["demo"][0][0]
@@ -222,6 +248,9 @@ def test_regenerated_flags_keep_last_reviewer_from_removed_decisions(tmp_path):
 
 def test_legacy_notes_are_visible_and_block_summary_completion(tmp_path):
     service, _ = setup_review(tmp_path)
+    for index, ref in enumerate(refs()):
+        decide(service, ref, action="accept", request_id=f"accept-{index}")
+    assert service.dwellings("demo")["complete"]
     record = service.store.regions["demo"][0][0]
     record["dwelling"]["households"][0]["notes"] = {"value": "legacy"}
     service.reindex_history()
@@ -230,6 +259,8 @@ def test_legacy_notes_are_visible_and_block_summary_completion(tmp_path):
     assert queue["diagnostics"][0]["code"] == "legacy_notes"
     assert not queue["complete"]
     assert queue["summary"]["completed_dwellings"] == 0
+    assert queue["total"] == queue["dwellings"][0]["total"] == len(refs())
+    assert queue["unresolved"] == len(refs())
 
 
 def test_reindex_retains_stale_flags_as_diagnostics_and_recovers(tmp_path):

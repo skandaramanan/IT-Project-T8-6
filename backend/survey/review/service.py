@@ -326,6 +326,8 @@ class ReviewService:
         for field_spec in FIELD_SCHEMA:
             label = field_spec.name
             key, group = FIELD_MAP[label]
+            if label == "Municipality" and "municipality" in resolved.household:
+                group = "household"
             if group in {"dwelling", "house"} and index != 0:
                 continue
             pointer = (
@@ -352,6 +354,24 @@ class ReviewService:
                     "field": snapshot(field),
                     "review_state": state(field),
                 }
+            )
+        # Keep supplied flags for the legacy shared alias actionable as well.
+        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
+        if (
+            index == 0
+            and shared.item_id in self.references
+            and not any(field["field_path"] == shared.field_path for field in fields)
+        ):
+            field = self.store.current(shared)[0].field
+            fields.insert(
+                0,
+                {
+                    "id": shared.item_id,
+                    "label": "Municipality",
+                    "field_path": shared.field_path,
+                    "field": snapshot(field),
+                    "review_state": state(field),
+                },
             )
         details["card_fields"] = fields
         cards = []
@@ -512,19 +532,11 @@ class ReviewService:
             resolved = sum(row["resolved"] for row in rows)
             # Dynamic diagnostics describe an existing supplied reference, never an
             # extra flag. Even references that no longer resolve remain in scope.
-            total = (
-                sum(
-                    not region or ref.region == region
-                    for ref in self.references.values()
-                )
-                + sum(
-                    not region or not d.get("region") or d["region"] == region
-                    for d in self.diagnostics
-                )
-                + sum(
-                    d["code"] == "legacy_notes" and "item_id" not in d
-                    for d in diagnostics
-                )
+            total = sum(
+                not region or ref.region == region for ref in self.references.values()
+            ) + sum(
+                not region or not d.get("region") or d["region"] == region
+                for d in self.diagnostics
             )
             summary = self.region_summary(region)
             summary["queued_dwellings"] = len(rows)
