@@ -62,6 +62,8 @@ jobs:
       - run: uv run pytest --cov=survey --cov-branch --cov-report=term-missing
       # Exercise the committed dataset too, including empty-region failures.
       - run: uv run survey validate-results results
+      # A second extractor's run sits in its own folder (D025).
+      - run: for dir in results/*/; do uv run survey validate-results "$dir" || exit 1; done
       # Same table on the run's Summary page, so nobody digs through the log.
       - run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
 
