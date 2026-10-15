@@ -152,14 +152,14 @@ def run(
         raise ValueError("reading notes needs front_extractor too")
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    previous = _read_records(out_path, region)  # fail before spending quota
+    previous = read_records(out_path, region)  # fail before spending quota
     readers = (extractor, front_extractor, notes_extractor, identity_extractor)
     for reader in filter(None, readers):
         cache_dir = raw_dir / reader.name if raw_dir else None
         if fresh and cache_dir and cache_dir.exists():
-            previous = cache_dir.with_name(cache_dir.name + ".previous")
-            shutil.rmtree(previous, ignore_errors=True)
-            cache_dir.rename(previous)
+            backup = cache_dir.with_name(cache_dir.name + ".previous")
+            shutil.rmtree(backup, ignore_errors=True)
+            cache_dir.rename(backup)
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
@@ -188,7 +188,7 @@ def run(
             MAX_FAILURE_STREAK,
         )
     # re-read: corrections may have been saved meanwhile
-    merged = _merge(_read_records(out_path, region), records)
+    merged = _merge(read_records(out_path, region), records)
     out_dir.mkdir(parents=True, exist_ok=True)
     if merged:
         _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
@@ -617,7 +617,7 @@ def _score(
         card["confidence"] = card_confidence(scores)
 
 
-def _read_records(path: Path, region: str) -> list[dict[str, Any]]:
+def read_records(path: Path, region: str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     records = []

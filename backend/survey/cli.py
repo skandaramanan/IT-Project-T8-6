@@ -15,11 +15,14 @@ Scan-verified region/PDF/page decisions default to the repository's
 Settings come from ``.env`` in the working directory.
 Exits 1 if any card or PDF failed, or any record failed the schema. An unplaced
 coding card is retained and flagged rather than treated as a failed request.
+
+    uv run survey flags results/*.jsonl > flags.jsonl  # the review queue
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -28,7 +31,8 @@ import tempfile
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
-from survey.pipeline import MergeRefused, read_verified_coding, run
+from survey.pipeline import MergeRefused, read_records, read_verified_coding, run
+from survey.review.flags import build_flags
 
 log = logging.getLogger("survey")
 
@@ -95,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         "validate-results", help="validate region JSONL without model credentials"
     )
     validate.add_argument("path", type=Path)
+    flags = commands.add_parser("flags", help="list the fields that need review")
+    flags.add_argument("records", nargs="+", type=Path, help="results .jsonl files")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
@@ -117,6 +123,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "review":
         return _review(args, parser)
+    if args.command == "flags":
+        if missing := [str(p) for p in args.records if not p.exists()]:
+            parser.error(f"no such file: {', '.join(missing)}")
+        try:
+            records = [r for p in args.records for r in read_records(p, p.stem)]
+            queue = build_flags(records)
+        except ValueError as error:  # MergeRefused is one
+            parser.error(str(error))
+        for flag in queue:
+            print(json.dumps(flag))
+        return 0
     region = args.scan_dir.resolve().name if args.region is None else args.region
     if not REGION.fullmatch(region):
         parser.error(
