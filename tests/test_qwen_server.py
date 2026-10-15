@@ -17,8 +17,15 @@ from survey.pipeline import RunSummary
 
 @pytest.fixture(autouse=True)
 def no_server_env(monkeypatch):
-    for name in ("QWEN_SERVER_URL", "QWEN_SERVER_MODEL", "QWEN_MAX_PIXELS"):
+    for name in (
+        "QWEN_SERVER_URL",
+        "QWEN_SERVER_MODEL",
+        "QWEN_MAX_PIXELS",
+        "QWEN_REPEAT_PENALTY",
+        "QWEN_STRUCK_DETECTION",
+    ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(qwen_server.time, "sleep", lambda _: None)
 
 
 class FakeResponse(io.BytesIO):
@@ -29,9 +36,17 @@ class FakeResponse(io.BytesIO):
         return False
 
 
-def fake_server(monkeypatch, models=("qwen2.5-vl-7b-instruct",), reply="{}"):
-    """Answers /models and /chat/completions; returns the chat bodies sent."""
+def fake_server(
+    monkeypatch,
+    models=("qwen2.5-vl-7b-instruct",),
+    reply="{}",
+    finish_reason="stop",
+    errors=(),
+):
+    """Answers /models and /chat/completions; returns the chat bodies sent.
+    ``errors`` are raised by the first chat requests, one each, in order."""
     sent = []
+    errors = list(errors)
 
     def urlopen(request, timeout):
         url = request if isinstance(request, str) else request.full_url
@@ -39,7 +54,13 @@ def fake_server(monkeypatch, models=("qwen2.5-vl-7b-instruct",), reply="{}"):
             payload = {"data": [{"id": m} for m in models]}
         else:
             sent.append(json.loads(request.data))
-            payload = {"choices": [{"message": {"content": reply}}]}
+            if errors:
+                raise errors.pop(0)
+            payload = {
+                "choices": [
+                    {"message": {"content": reply}, "finish_reason": finish_reason}
+                ]
+            }
         return FakeResponse(json.dumps(payload).encode())
 
     monkeypatch.setattr(qwen_server.urllib.request, "urlopen", urlopen)
@@ -173,3 +194,106 @@ def test_struck_detection_is_off_unless_asked_for(tmp_path, monkeypatch):
         sent[1]["messages"][0]["content"][1]["text"]
         == qwen_server.STRUCK_EXTRACTION_PROMPT
     )
+
+
+def _card(tmp_path):
+    image = tmp_path / "card.png"
+    Image.new("RGB", (280, 280), "white").save(image)
+    return image
+
+
+def _http_error(code, body):
+    return qwen_server.urllib.error.HTTPError(
+        "http://x/v1/chat/completions", code, "err", {}, io.BytesIO(body.encode())
+    )
+
+
+def test_a_reply_cut_off_at_max_tokens_raises_so_nothing_is_cached(
+    tmp_path, monkeypatch
+):
+    # Repaired, this half-object parses to a partial field set that looks fine.
+    fake_server(
+        monkeypatch,
+        reply='{"Municipality": "04", "Tenure": "1", "Num',
+        finish_reason="length",
+    )
+    extractor = QwenServerExtractor()
+    assert extractor.is_available()
+
+    with pytest.raises(RuntimeError, match="cut off"):
+        extractor.extract(_card(tmp_path))
+
+
+def test_a_cut_off_reply_is_a_failed_card_not_a_cached_reading(tmp_path, monkeypatch):
+    from survey.pipeline import _reading
+
+    fake_server(monkeypatch, reply='{"Municipality": "0', finish_reason="length")
+    extractor = QwenServerExtractor()
+    extractor.is_available()
+    summary = RunSummary()
+
+    result = _reading(
+        _card(tmp_path), tmp_path / "s.pdf", 1, extractor, tmp_path, summary
+    )
+
+    assert result is None and summary.failed_cards == 1
+    assert not (tmp_path / extractor.name).exists()
+
+
+def test_an_http_error_names_the_servers_reason(tmp_path, monkeypatch):
+    fake_server(
+        monkeypatch,
+        errors=[_http_error(400, '{"error":"Context size has been exceeded."}')],
+    )
+    extractor = QwenServerExtractor()
+    extractor.is_available()
+
+    with pytest.raises(RuntimeError, match="Context size has been exceeded"):
+        extractor.extract(_card(tmp_path))
+
+
+def test_a_client_error_is_not_sent_again(tmp_path, monkeypatch):
+    sent = fake_server(monkeypatch, errors=[_http_error(400, "bad")])
+    extractor = QwenServerExtractor()
+    extractor.is_available()
+
+    with pytest.raises(RuntimeError):
+        extractor.extract(_card(tmp_path))
+    assert len(sent) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TimeoutError("timed out"),
+        qwen_server.urllib.error.URLError("connection refused"),
+        _http_error(503, "loading"),
+    ],
+    ids=["timeout", "connection", "5xx"],
+)
+def test_a_transient_failure_is_tried_again(tmp_path, monkeypatch, error):
+    sent = fake_server(monkeypatch, reply='{"Municipality": "04"}', errors=[error])
+    extractor = QwenServerExtractor()
+    extractor.is_available()
+
+    assert extractor.extract(_card(tmp_path)).fields == {"Municipality": "04"}
+    assert len(sent) == 2
+
+
+def test_a_server_that_stays_down_fails_after_the_last_attempt(tmp_path, monkeypatch):
+    sent = fake_server(monkeypatch, errors=[TimeoutError("timed out")] * 3)
+    extractor = QwenServerExtractor()
+    extractor.is_available()
+
+    with pytest.raises(TimeoutError):
+        extractor.extract(_card(tmp_path))
+    assert len(sent) == qwen_server.ATTEMPTS
+
+
+@pytest.mark.parametrize(
+    "name, value", [("QWEN_MAX_PIXELS", "2MP"), ("QWEN_REPEAT_PENALTY", "high")]
+)
+def test_a_mistyped_setting_is_named(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        QwenServerExtractor()
