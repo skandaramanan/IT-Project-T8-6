@@ -369,6 +369,17 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             "unsupported_source",
             "Only the household's first coding card owns its stored fields",
         )
+    if ref.field_path == f"/dwelling/households/{index}/municipality":
+        if "municipality" not in household:
+            raise ReviewError("stale_pointer", "Legacy household has no municipality")
+        return Resolved(
+            record,
+            household["municipality"],
+            "Municipality",
+            "household",
+            household,
+            record_index,
+        )
     for label, (key, group) in FIELD_MAP.items():
         if group == "dwelling":
             pointer = f"/dwelling/{key}"

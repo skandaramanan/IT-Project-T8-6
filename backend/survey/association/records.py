@@ -97,8 +97,8 @@ def _record(
         households.append(household)
     if not households:
         return None
-    # The dwelling takes the first card's municipality; each household keeps
-    # its own in record_id.
+    # The shared municipality is the first card's; every household also keeps
+    # its own field, including when its record_id is null.
     if len({h["dwelling"]["municipality"]["value"] for h in households}) > 1:
         dwelling.flags.add(ReviewFlag.MUNICIPALITY_MISMATCH)
 
@@ -193,7 +193,8 @@ def build_dwelling_records(
     ]
     for card in strays:
         unplaced.remove(card)
-    for card in pair_by_position(dwellings, strays):
+    candidates = [(c, dwelling_number(c, results[c].fields)) for c in strays]
+    for card in pair_by_position(dwellings, candidates):
         number = dwelling_key(dwelling_number(card, results[card].fields))
         dwellings.append(Dwelling(number, [card], {ReviewFlag.UNPLACED}))
     dwellings.sort(key=lambda d: d.cards[0].page_index)

@@ -17,7 +17,7 @@ from PIL import Image
 from survey import pipeline
 from survey.association import records as association
 from survey.extraction.base import ExtractionResult
-from survey.extraction.record import build_omitted_field
+from survey.extraction.record import build_omitted_field, build_record
 from survey.pipeline import MAX_FAILURE_STREAK, MergeRefused, _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -133,7 +133,8 @@ def _stray_page(tmp_path: Path) -> Path:
 
 
 def _read(out_dir: Path, region: str = "north") -> list[dict]:
-    return [json.loads(line) for line in (out_dir / f"{region}.jsonl").open()]
+    path = out_dir / f"{region}.jsonl"
+    return [json.loads(line) for line in path.open()] if path.exists() else []
 
 
 def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
@@ -549,11 +550,23 @@ def _write(out_dir: Path, records: list[dict]) -> None:
 
 
 def _stub(*pages: int, **dwelling) -> dict:
-    households = [
-        {"cards": [{"role": "coding-front", "image": "unit.pdf", "page": p}]}
+    records = [
+        build_record(
+            {
+                "Municipality": "27",
+                "Number of Dwelling": "6",
+                "Number of Household": str(p),
+            },
+            region="north",
+            image="unit.pdf",
+            page=p,
+        )
         for p in pages
     ]
-    return {"dwelling": {"households": households, **dwelling}}
+    record = records[0]
+    record["dwelling"]["households"] = [r["dwelling"]["households"][0] for r in records]
+    record["dwelling"].update(dwelling)
+    return record
 
 
 CORRECTED = {"value": "2", "status": "ok", "origin": "corrected", "original_value": "1"}
@@ -608,6 +621,8 @@ def test_a_corrected_household_number_carries_its_record_id(tmp_path):
 
     household = _read(tmp_path)[0]["dwelling"]["households"][0]
     assert household["record_id"] == "27-0006-02"
+    other = _read(tmp_path)[1]["dwelling"]["households"][0]
+    assert other["record_id"] is None  # the uncorrected machine collision loses
     assert household["household_no"] == corrected
 
 
@@ -865,14 +880,14 @@ def test_two_regions_write_their_own_files_and_never_touch_each_other(tmp_path):
     assert not keys["north"] & keys["south"]
 
 
-def test_a_region_with_no_coding_cards_still_writes_its_empty_file(tmp_path):
+def test_a_region_with_no_coding_cards_does_not_publish_an_empty_file(tmp_path):
     pages = [FIXTURES / "r01-survey-front.jpg", FIXTURES / "r01-survey-back.jpg"]
     scan_dir = _batch(tmp_path, pages)
 
     summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
 
     assert summary.records == 0
-    assert (tmp_path / "north.jsonl").read_text() == ""
+    assert not (tmp_path / "north.jsonl").exists()
 
 
 def test_with_fronts_two_households_of_a_dwelling_share_one_line(tmp_path):
@@ -1238,14 +1253,10 @@ def test_notes_kept_from_before_name_no_household_once_a_second_joins():
         "page": 2,
         "front_page": 1,
         "text": {"value": "x", "status": "ok"},
-        "household_id": "A",
+        "household_id": "27-0006-03",
     }
     old = _stub(3, cards=[front], notes=[note])
     new = _stub(3, 7, cards=[front])
-    for record in (old, new):
-        for household, record_id in zip(record["dwelling"]["households"], "AB"):
-            household["record_id"] = record_id
-
     [merged] = _merge([old], [new])
 
     [kept] = merged["dwelling"]["notes"]

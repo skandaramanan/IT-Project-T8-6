@@ -29,6 +29,23 @@ from survey.segmentation.segmenter import CardType, SegmentedCard
 NEAR_PAGES = 8
 
 
+def similar_numbers(first: str | None, second: str | None) -> bool:
+    """Usable dwelling numbers differing by at most one insertion, deletion or
+    substitution. Letters name distinct dwellings and must agree exactly."""
+    a, b = dwelling_key(first), dwelling_key(second)
+    if a is None or b is None:
+        return False
+    if a[-1].isalpha() or b[-1].isalpha():
+        return a == b
+    if len(a) > len(b):
+        a, b = b, a
+    if len(b) - len(a) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) <= 1
+    return any(a == b[:i] + b[i + 1 :] for i in range(len(b)))
+
+
 class ReviewFlag(StrEnum):
     MISSING_DWELLING_NO = "missing_dwelling_no"
     DUPLICATE_DWELLING_NO = "duplicate_dwelling_no"
@@ -164,11 +181,14 @@ def associate(
 
 
 def pair_by_position(
-    dwellings: Sequence[Dwelling], cards: Sequence[SegmentedCard]
+    dwellings: Sequence[Dwelling],
+    cards: Sequence[tuple[SegmentedCard, str | None]],
 ) -> list[SegmentedCard]:
     """Coding cards paired with the front at the batch's usual offset, as
     dwellings that hold one front and one coding card show it. A front only
-    takes a card when its dwelling has none. Returns the cards still unpaired."""
+    takes a card when its dwelling has none and the numbers differ by at most
+    one edit. Missing numbers and different lettered dwellings stay unpaired.
+    Returns the cards still unpaired."""
     offsets = Counter(
         coding[0].page_index - fronts[0].page_index
         for d in dwellings
@@ -176,7 +196,7 @@ def pair_by_position(
         if len(fronts) == len(coding) == 1
     )
     if not offsets:
-        return list(cards)
+        return [card for card, _ in cards]
     offset = offsets.most_common(1)[0][0]
     by_page = {
         c.page_index: d
@@ -185,9 +205,9 @@ def pair_by_position(
         if c.card_type is CardType.FRONT
     }
     left = []
-    for card in cards:
+    for card, number in cards:
         d = by_page.get(card.page_index - offset)
-        if d is None or _has_coding(d):
+        if d is None or _has_coding(d) or not similar_numbers(d.dwelling_no, number):
             left.append(card)
             continue
         d.cards.append(card)

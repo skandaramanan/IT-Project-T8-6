@@ -40,6 +40,8 @@ jobs:
       # Coverage is reported, not enforced: a % gate would reward tests that
       # execute lines without checking them. See the Test Plan in Linear.
       - run: uv run pytest --cov=survey --cov-branch --cov-report=term-missing
+      # Exercise the committed dataset too, including empty-region failures.
+      - run: uv run survey validate-results results
       # Same table on the run's Summary page, so nobody digs through the log.
       - run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
 

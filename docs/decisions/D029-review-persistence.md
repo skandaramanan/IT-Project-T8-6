@@ -72,7 +72,7 @@ Conflict resolutions and integration decisions:
 - Keep accepted/corrected coding payloads and their append-only histories across
   reruns. Undo-to-pending preserves history while allowing a new extraction value.
 - Keep `0.3.0` as IT-89's notes version. Review metadata requires `0.4.0` or
-  later; the builder and example are at `0.5.0` since IT-123 (D007).
+  later; the builder and example are at `0.6.0` since IT-123 (D007).
 - Per the user's explicit decision, `0.3.0` onward rejects household-level
   notes. Only `0.1.0`/`0.2.0` retain read compatibility for that legacy shape.
   Reviewing such a record is blocked with a migration diagnostic before any write.

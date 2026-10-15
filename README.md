@@ -166,8 +166,9 @@ the region's results file. In order, it:
    skipped; the rest of the batch carries on.
 2. Has Gemini read each coding card and scores every field, and read each
    survey front (address, persons), at one more request per front. A front
-   read with no address is read as a coding card too, and is one if that
-   reading spells a record_id (a coding card the segmenter took for a front).
+   with no meaningful handwritten fields or persons can be probed as a coding
+   card. A plausible coding ID alone cannot discard existing front data.
+   Explicit scan-verified classifications can be supplied with `--verified-coding`.
    A coding card whose reading gives no usable record_id has its identity
    block read again from a crop, at one more request. Each reading is cached
    in `data/runs/<region>/<extractor>/`
@@ -180,7 +181,8 @@ the region's results file. In order, it:
    card is read again next run. The exception is an extra front with no coding
    card after it: if its request fails, the dwelling before it is written
    without it. A coding card whose number fits no front pairs with the front
-   at the batch's usual page offset, flagged `paired_by_position`. One that
+   at the batch's usual page offset only when the dwelling numbers are within
+   one digit edit (lettered dwellings must agree), flagged `paired_by_position`. One that
    still fits none, or whose identity doesn't check out, is still written,
    with `dwelling.flags` saying why and `record_id` null if it can't be
    trusted (D007). An identity completed by the second reading is flagged
@@ -190,6 +192,7 @@ the region's results file. In order, it:
    so its previous version (if any) is kept.
 5. Merges the records into `results/<region>.jsonl`, one D007 record per
    dwelling (its households nested inside), in scan order. Set `SURVEY_OUTPUT_DIR` to write somewhere else.
+   A zero-record region is reported without publishing an empty JSONL file.
 6. Logs a summary line: records written, pages skipped, cards unreadable,
    cards unplaced, cards failed, PDFs failed, records invalid. The command
    exits 1 if any card, PDF or record failed, so a scheduled run can tell.

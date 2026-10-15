@@ -83,6 +83,7 @@ def test_acceptance_of_identity_preserves_display_identity(tmp_path):
     assert all(
         h["record_id"].startswith("27-") for h in merged["dwelling"]["households"]
     )
+    validate_records([merged], "demo")
 
 
 def test_undo_to_legacy_corrected_field_does_not_unprotect_it(tmp_path):

@@ -92,9 +92,9 @@ def test_shared_dwelling_number_correction_does_not_supply_missing_municipality(
 
 def test_explicit_municipality_correction_can_resolve_missing_municipality():
     old = _records()
-    _correct(old[0]["dwelling"]["municipality"], "28")
+    _correct(old[0]["dwelling"]["households"][1]["municipality"], "28")
     merged = _merge(old, _records())
-    assert _ids(merged) == ["28-0005-01", "28-0005-02"]
+    assert _ids(merged) == ["27-0005-01", "28-0005-02"]
     assert "missing_record_id" not in merged[0]["dwelling"]["flags"]
 
 
@@ -124,7 +124,7 @@ def test_duplicate_households_with_complete_shared_identity_still_settle():
     assert "duplicate_record_id" not in merged[0]["dwelling"].get("flags", [])
 
 
-def test_unknown_duplicate_municipality_blocks_restoring_its_first_household():
+def test_mixed_municipality_duplicates_stay_null_until_resolved():
     built = _records("28", "1", third_municipality="27")
     assert _ids(built) == [None, "28-0005-01", None]
     merged = _merge([], built)
@@ -132,19 +132,22 @@ def test_unknown_duplicate_municipality_blocks_restoring_its_first_household():
     assert "duplicate_record_id" in merged[0]["dwelling"]["flags"]
 
 
-def test_unknown_duplicate_municipality_blocks_matching_id_in_another_record():
+def test_household_municipalities_prevent_cross_record_duplicate_restore():
     # Global duplicate suppression has nulled the later 27 card in the mixed
     # dwelling and the sole 27 card in a separate dwelling. The mixed dwelling
-    # retains only its first card's municipality, 28.
+    # retains each card's municipality, including for the null ID.
     mixed = _records("28", "1")[0]
     dwelling = mixed["dwelling"]
     dwelling["municipality"]["value"] = "28"
+    dwelling["households"][0]["municipality"]["value"] = "28"
+    dwelling["households"][1]["municipality"]["value"] = "27"
     dwelling["households"][0]["record_id"] = "28-0005-01"
     dwelling["households"][1]["record_id"] = None
     dwelling["flags"] = ["municipality_mismatch", "duplicate_record_id"]
     other = deepcopy(mixed)
     other_dwelling = other["dwelling"]
     other_dwelling["municipality"]["value"] = "27"
+    other_dwelling["households"][0]["municipality"]["value"] = "27"
     other_dwelling["households"] = [other_dwelling["households"][0]]
     other_dwelling["households"][0]["record_id"] = None
     other_dwelling["households"][0]["cards"][0]["image"] = "other.pdf"
@@ -161,7 +164,7 @@ def test_unknown_duplicate_municipality_blocks_matching_id_in_another_record():
 
 
 @pytest.mark.parametrize("field", ["household_no", "dwelling_no"])
-def test_identity_correction_cannot_bypass_unknown_duplicate_blocker(field):
+def test_only_a_unique_human_identity_correction_wins_a_duplicate(field):
     built = _records("28", "1", third_municipality="27")
     old = deepcopy(built)
     dwelling = old[0]["dwelling"]
@@ -170,16 +173,19 @@ def test_identity_correction_cannot_bypass_unknown_duplicate_blocker(field):
 
     merged = _merge(old, built)
 
-    assert _ids(merged) == [None, "28-0005-01", None]
+    # A shared dwelling-number correction protects both competing households;
+    # a household correction identifies just one. Neither gives the other an ID.
+    expected = "27-0005-01" if field == "household_no" else None
+    assert _ids(merged) == [expected, "28-0005-01", None]
     assert "duplicate_record_id" in merged[0]["dwelling"]["flags"]
 
 
-def test_changed_household_number_can_avoid_unknown_duplicate_collision():
+def test_changed_household_number_resolves_both_duplicates():
     built = _records("28", "1", third_municipality="27")
     old = deepcopy(built)
     _correct(old[0]["dwelling"]["households"][0]["household_no"], "2")
 
     merged = _merge(old, built)
 
-    assert _ids(merged) == ["27-0005-02", "28-0005-01", None]
-    assert "duplicate_record_id" in merged[0]["dwelling"]["flags"]
+    assert _ids(merged) == ["27-0005-02", "28-0005-01", "27-0005-01"]
+    assert "duplicate_record_id" not in merged[0]["dwelling"]["flags"]

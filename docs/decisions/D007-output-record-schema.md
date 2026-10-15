@@ -212,6 +212,32 @@ written, so a reviewer can fix it rather than lose it.
 This is the fallback IT-75 asked for when the number is missing or illegible.
 Anything keyed on `record_id` must expect null.
 
+### Household municipality is retained (0.6.0, IT-123 review)
+
+Every household now carries its own `municipality` field object, including a
+blank or malformed reading. `dwelling.municipality` remains the first coding
+household's shared alias for compatibility; correcting it changes that
+household only. Correct a later household at its own municipality path.
+Review history stays on the field that was reviewed, never duplicated onto
+the alias. This avoids duplicate audit IDs.
+
+Identity settlement uses each household's actual reading instead of guessing
+municipalities or blocking unrelated identities in a region. Versions through
+0.5.0 remain readable. A rewrite encountering a legacy null identity whose
+municipality was discarded refuses to guess and requests a cache rebuild.
+The IT-123 results are rebuilt from cached readings into 0.6.0.
+
+Positional pairing requires usable dwelling numbers within one insertion,
+deletion or substitution. Lettered dwellings must agree exactly. Otherwise
+the coding card stays `unplaced`, retaining its coding fields and source page.
+Empty crop values have no opinion about a valid first reading; explicit
+disagreements and incomplete identities still fail the fill.
+
+Automatic front recovery requires no meaningful front fields or persons.
+Explicit classifications verified against the original scans can override a
+segmentation error using `--verified-coding`; those decisions are auditable
+region/PDF/page metadata, not an inference from a plausible record ID.
+
 ## Alternatives considered
 
 **XML.** Stronger schema validation via XSD, and the better answer if a legacy

@@ -30,7 +30,26 @@ about 1 MB per region, well under GitHub's 100 MB file limit.
 through a reviewed PR. A correction that could change the schema would make
 every downstream validation meaningless.
 
-## Open question: protected `main` (D002)
+## Sharing branch: resolved by D029
+
+[D029](D029-review-persistence.md) selects the same repository's `review-data`
+branch and a separate checkout for the authoritative review dataset. Code and
+schema changes continue through reviewed PRs to `main`. Corpus results may be
+included in an extraction PR as a reproducible baseline, then handed to the
+review-data owner; reruns must preserve reviewed fields rather than overwrite
+that branch with a fresh baseline. Do not run extraction in the active review
+checkout concurrently with its writer.
+
+Raw responses and scan images remain in the restricted shared archive, outside
+Git. Small region/PDF/page classification decisions and run summaries in
+`docs/runs/` document how the baseline was built. This does not move scans,
+raw prompts or model responses into Git. Git LFS or external dataset hosting
+would be a new team decision, not a prerequisite imposed by this PR.
+
+The previous alternatives below are retained as historical context; D029
+resolved the open question.
+
+### Original alternatives: protected `main` (D002)
 
 `main` rejects direct pushes, so the review tool cannot commit corrections to
 it. Options:

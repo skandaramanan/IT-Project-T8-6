@@ -40,12 +40,13 @@ Deliberately not done here:
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.6.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)
@@ -325,15 +326,15 @@ _IDENTITY_PARTS = (r"\d{1,2}", r"\d{1,4}[A-Z]?", r"\d{1,2}")
 def fill_identity(first: dict[str, str], second: dict[str, str]) -> dict[str, str]:
     """``first`` with the identity parts it lacks (blank, or malformed like a
     struck number read with its replacement) taken from ``second``, a second
-    reading of the same card. Raises ValueError unless ``second`` agrees with
-    every part ``first`` has and the result builds a record_id: a second read
-    may fill a gap, never overrule the first."""
+    reading of the same card. A blank second part has no opinion about a valid
+    first part. Explicit disagreements or an incomplete combined identity
+    raise ValueError: a second read may fill a gap, never overrule the first."""
     filled = dict(first)
     for label, pattern in zip(IDENTITY_LABELS, _IDENTITY_PARTS):
         had, now = (normalise(fields.get(label)).upper() for fields in (first, second))
         if not re.fullmatch(pattern, had):
             filled[label] = now
-        elif had.lstrip("0") != now.lstrip("0"):
+        elif now and had.lstrip("0") != now.lstrip("0"):
             raise ValueError(f"second reading disagrees on {label}: {had} vs {now}")
     identity_of(filled)
     return filled
@@ -407,6 +408,7 @@ def build_record(
 
     household: dict[str, Any] = {
         "record_id": record_id,
+        "municipality": deepcopy(groups["dwelling"]["municipality"]),
         "household_no": groups["household"]["household_no"],
         "head": groups["head"],
         "counts": groups["counts"],

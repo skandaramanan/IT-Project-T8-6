@@ -10,9 +10,10 @@ reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun
 Gemini request each. ``--notes`` reads each front's back for its interview notes
 (FR-05), at one more request per back; a run without it keeps the notes an
 earlier run read.
-Settings come from ``.env`` in the working directory. Exits 1 if any card or
-PDF failed, any coding card fit no dwelling, or any record failed the schema,
-so a scheduled run can tell.
+``--verified-coding`` supplies explicit region/PDF/page decisions inspected
+against the source scans. Settings come from ``.env`` in the working directory.
+Exits 1 if any card or PDF failed, or any record failed the schema. An unplaced
+coding card is retained and flagged rather than treated as a failed request.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import tempfile
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
-from survey.pipeline import MergeRefused, run
+from survey.pipeline import MergeRefused, read_verified_coding, run
 
 log = logging.getLogger("survey")
 
@@ -65,6 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="read every card again instead of replaying cached readings; "
         "reviewer corrections are still kept",
+    )
+    extract.add_argument(
+        "--verified-coding",
+        type=Path,
+        help="JSON list of region/pdf/page coding cards verified against the scans",
     )
     extract.add_argument(
         "--notes",
@@ -133,6 +139,11 @@ def main(argv: list[str] | None = None) -> int:
             front_extractor=GeminiExtractor(survey_front=True),
             notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
             identity_extractor=GeminiExtractor(identity=True),
+            verified_coding=(
+                read_verified_coding(args.verified_coding, region)
+                if args.verified_coding
+                else ()
+            ),
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
