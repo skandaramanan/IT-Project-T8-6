@@ -236,7 +236,7 @@ def _run_pdf(
                 readings[card] = result
         if front_extractor:
             cards = recover_coding_cards(
-                cards, readings, page_numbers, pdf, extractor, raw_dir
+                cards, readings, page_numbers, pdf, extractor, raw_dir, summary
             )
 
         def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
@@ -314,6 +314,7 @@ def recover_coding_cards(
     pdf: Path,
     extractor: Extractor,
     raw_dir: Path | None,
+    summary: RunSummary,
 ) -> list[SegmentedCard]:
     """``cards``, with a coding card the segmenter took for a front put back.
 
@@ -321,18 +322,26 @@ def recover_coding_cards(
     reads with the front prompt as nothing, or as its codes in front fields,
     but never with an address. Each front with no address is read with the
     coding prompt, and is a coding card if that reading spells a record_id; a
-    blank front, a back or a narrative sheet does not. The probe's failures
-    aren't the run's: a page that stays a front is not one.
+    blank front, a back or a narrative sheet does not. Empty probe responses
+    are expected, but API failures count toward the run's shared failure cap.
     """
     out = []
     for card in cards:
         result = readings.get(card)
-        if card.card_type is CardType.FRONT and (
-            result is not None and not normalise(result.fields.get("Address"))
+        if (
+            card.card_type is CardType.FRONT
+            and (result is not None and not normalise(result.fields.get("Address")))
+            and summary.failure_streak < MAX_FAILURE_STREAK
         ):
             number = page_numbers[card.page_index]
             coding = _reading(
-                card.image_path, pdf, number, extractor, raw_dir, RunSummary()
+                card.image_path,
+                pdf,
+                number,
+                extractor,
+                raw_dir,
+                summary,
+                expected_empty=True,
             )
             try:
                 identity_of(coding.fields if coding else {})
@@ -416,11 +425,14 @@ def _reading(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
+    *,
+    expected_empty: bool = False,
 ) -> ExtractionResult | None:
     """The card's cached reading, or a new one; None if the extractor failed.
 
     A reading with no usable fields is still returned (and stays cached, so it
-    is not paid for again), but counts as a failed card.
+    is not paid for again), but counts as a failed card unless an empty
+    response is expected from a recovery probe.
     """
     where = f"{pdf.name} p{number}"
     cache = (
@@ -444,6 +456,9 @@ def _reading(
             cache.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(cache, json.dumps(asdict(result)))
     if not result.fields:
+        if expected_empty:
+            summary.failure_streak = 0
+            return result
         log.error("%s: no usable reading", where)
         summary.failed_cards += 1
         return result
@@ -593,6 +608,29 @@ def _settle_identities(records: list[dict[str, Any]]) -> None:
         for household in dwelling["households"]
         if household["record_id"] is None
     ]
+    # A later duplicate in a mismatched dwelling lost its municipality when
+    # grouping discarded that card's fields. It may still share any candidate
+    # with the same dwelling/household suffix, including in another record.
+    uncertain_suffixes = set()
+    for dwelling in flagged:
+        if ReviewFlag.DUPLICATE_RECORD_ID not in dwelling.get("flags", []):
+            continue
+        for household in dwelling["households"]:
+            if (
+                household["record_id"]
+                or _identity_parts(dwelling, household) is not None
+            ):
+                continue
+            try:
+                identity = build_record_id(
+                    "00",
+                    dwelling["dwelling_no"]["value"] or "",
+                    household["household_no"]["value"] or "",
+                )
+            except ValueError:
+                uncertain_suffixes.add(None)
+            else:
+                uncertain_suffixes.add(identity.partition("-")[2])
     taken = Counter(
         household.get("record_id")
         for record in records
@@ -600,7 +638,12 @@ def _settle_identities(records: list[dict[str, Any]]) -> None:
     )
     taken.update(record_id for _, record_id in pending)
     for household, record_id in pending:
-        if record_id and taken[record_id] == 1:
+        if (
+            record_id
+            and taken[record_id] == 1
+            and None not in uncertain_suffixes
+            and record_id.partition("-")[2] not in uncertain_suffixes
+        ):
             household["record_id"] = record_id
     for dwelling in flagged:
         ids = [
@@ -609,7 +652,7 @@ def _settle_identities(records: list[dict[str, Any]]) -> None:
         flags = set(dwelling.pop("flags"))
         if all(readable for _, readable in ids):
             flags.discard(ReviewFlag.MISSING_RECORD_ID)
-        if not any(readable and not record_id for record_id, readable in ids):
+        if all(record_id for record_id, _ in ids):
             flags.discard(ReviewFlag.DUPLICATE_RECORD_ID)
         if flags:
             dwelling["flags"] = sorted(flags)
@@ -618,14 +661,38 @@ def _settle_identities(records: list[dict[str, Any]]) -> None:
 _IDENTITY_FLAGS = {ReviewFlag.MISSING_RECORD_ID, ReviewFlag.DUPLICATE_RECORD_ID}
 
 
+def _identity_parts(
+    dwelling: dict[str, Any], household: dict[str, Any]
+) -> tuple[str, str, str] | None:
+    """Use only municipality evidence belonging to this household.
+
+    Later cards' municipality fields are discarded when households are grouped.
+    An existing ID retains that evidence; a null ID in a mismatched dwelling
+    does not. Only an explicit municipality correction can replace it safely.
+    """
+    municipality = dwelling["municipality"]
+    value = municipality["value"] or ""
+    if municipality.get("origin") != "corrected":
+        if household["record_id"]:
+            value = household["record_id"].split("-")[0]
+        else:
+            mismatch = ReviewFlag.MUNICIPALITY_MISMATCH in dwelling.get("flags", [])
+            if mismatch and household is not dwelling["households"][0]:
+                return None
+    return (
+        value,
+        dwelling["dwelling_no"]["value"] or "",
+        household["household_no"]["value"] or "",
+    )
+
+
 def _readable_id(dwelling: dict[str, Any], household: dict[str, Any]) -> str | None:
-    """The record_id the household's identity fields spell, if they spell one."""
+    """The record_id supported by this household's available identity evidence."""
+    parts = _identity_parts(dwelling, household)
+    if parts is None:
+        return None
     try:
-        return build_record_id(
-            dwelling["municipality"]["value"] or "",
-            dwelling["dwelling_no"]["value"] or "",
-            household["household_no"]["value"] or "",
-        )
+        return build_record_id(*parts)
     except ValueError:
         return None
 
@@ -741,25 +808,36 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             ) from error
     # A corrected identity rebuilds record_id, which the reviewer never saw.
     # Nothing else does: that would undo the null a duplicate was given.
-    if any(_is_identity(path) for path, _ in corrections):
+    identity_paths = {path for path, _ in corrections if _is_identity(path)}
+    if identity_paths:
         dwelling = new["dwelling"]
-        for kept, household in zip(
-            old["dwelling"]["households"], dwelling["households"]
+        shared_identity = any(len(path) == 2 for path in identity_paths)
+        for index, (kept, household) in enumerate(
+            zip(old["dwelling"]["households"], dwelling["households"])
         ):
-            identity = (
-                dwelling["municipality"]["value"],
-                dwelling["dwelling_no"]["value"],
-                household["household_no"]["value"],
-            )
+            if (
+                not shared_identity
+                and ("dwelling", "households", index, "household_no")
+                not in identity_paths
+            ):
+                continue
+            identity = _identity_parts(dwelling, household)
+            if identity is None:
+                # The shared fields cannot recover a later card's lost reading.
+                continue
             if not all(identity):  # a blanked identity can't form an id
                 household["record_id"] = kept["record_id"]
                 continue
             try:
-                household["record_id"] = build_record_id(*identity)
+                record_id = build_record_id(*identity)
             except ValueError as error:
                 raise MergeRefused(
                     f"{image} p{page}: corrected identity: {error}"
                 ) from error
+            # Null IDs still need global duplicate checks after corrections.
+            # Settlement restores them once their candidate is unambiguous.
+            if household["record_id"] is not None:
+                household["record_id"] = record_id
     if errors := _schema_errors(new):
         raise MergeRefused(
             f"{image} p{page}: reviewed record fails the schema once its "
