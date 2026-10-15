@@ -17,7 +17,7 @@ from PIL import Image
 from survey import pipeline
 from survey.association import records as association
 from survey.extraction.base import ExtractionResult
-from survey.extraction.record import build_omitted_field
+from survey.extraction.record import build_omitted_field, build_record
 from survey.pipeline import MAX_FAILURE_STREAK, MergeRefused, _merge, run
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -31,6 +31,9 @@ class FakeExtractor:
     """Reads every coding card as municipality 27, dwelling 6, next household."""
 
     name = model_id = "gemini-3.5-flash-lite"
+    # A survey front (page 1 or 5 of a two-record batch) read with the coding
+    # prompt spells no record_id, as on the real cards.
+    reads_fronts = False
 
     def __init__(self, fail_on: int | None = None) -> None:
         self.calls = 0
@@ -40,6 +43,8 @@ class FakeExtractor:
         return True
 
     def extract(self, image_path: Path) -> ExtractionResult:
+        if not self.reads_fronts and image_path.name in ("p0001.png", "p0005.png"):
+            return ExtractionResult(raw_text="{}")
         self.calls += 1
         if self.calls == self.fail_on:
             raise RuntimeError("503 from the API")
@@ -118,16 +123,18 @@ def _fixture_pages(*records: str) -> list[Path]:
 
 
 def _stray_page(tmp_path: Path) -> Path:
-    """Inked but unruled, landing third in a reverse/coding run (FR-21)."""
+    """Faintly inked (bleed-through) and unruled, landing third in a
+    reverse/coding run (FR-21): too faint to be another coding card."""
     rng = np.random.default_rng(0)
-    pixels = np.where(rng.random((500, 800)) < 0.06, 0, 255).astype("uint8")
+    pixels = np.where(rng.random((500, 800)) < 0.01, 0, 255).astype("uint8")
     path = tmp_path / "stray.jpg"
     Image.fromarray(pixels, mode="L").save(path)
     return path
 
 
 def _read(out_dir: Path, region: str = "north") -> list[dict]:
-    return [json.loads(line) for line in (out_dir / f"{region}.jsonl").open()]
+    path = out_dir / f"{region}.jsonl"
+    return [json.loads(line) for line in path.open()] if path.exists() else []
 
 
 def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
@@ -228,7 +235,7 @@ class NoHouseholdExtractor(FakeExtractor):
         return result
 
 
-def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
+def test_a_card_with_no_readable_identity_is_written_flagged(tmp_path, caplog):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
 
     with caplog.at_level(logging.WARNING):
@@ -240,12 +247,157 @@ def test_a_card_with_no_readable_identity_is_skipped(tmp_path, caplog):
         )
 
     assert summary.unreadable_cards == 1
-    assert [r["dwelling"]["households"][0]["record_id"] for r in _read(tmp_path)] == [
-        "27-0006-02"
-    ]
-    assert "unit.pdf p3: cannot build record_id without Number of Household" in (
-        caplog.text
+    first, second = _read(tmp_path)
+    assert first["dwelling"]["households"][0]["record_id"] is None
+    assert "missing_record_id" in first["dwelling"]["flags"]
+    assert second["dwelling"]["households"][0]["record_id"] == "27-0006-02"
+    assert "unit.pdf p3: no record_id from 27-6-?" in caplog.text
+
+
+class IdentityExtractor(FakeExtractor):
+    """Reads a card's identity block as 27-6-1."""
+
+    name = "gemini-3.5-flash-lite-identity"
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        self.calls += 1
+        fields = {
+            "Municipality": "27",
+            "Number of Dwelling": "6",
+            "Number of Household": "1",
+        }
+        return ExtractionResult(fields=fields, raw_text=json.dumps(fields))
+
+
+def test_a_second_reading_fills_a_blank_identity_part_flagged(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    identity = IdentityExtractor()
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=NoHouseholdExtractor(),
+        out_dir=tmp_path,
+        identity_extractor=identity,
     )
+
+    first, second = _read(tmp_path)
+    assert identity.calls == 1  # only the card with no record_id
+    assert first["dwelling"]["households"][0]["record_id"] == "27-0006-01"
+    assert "identity_reread" in first["dwelling"]["flags"]
+    assert "missing_record_id" not in first["dwelling"]["flags"]
+    assert second["dwelling"]["households"][0]["record_id"] == "27-0006-02"
+    assert "identity_reread" not in second["dwelling"]["flags"]
+
+
+class EmptySecondFrontExtractor(FrontExtractor):
+    """Reads r02's "front" as nothing: it is a coding card taken for one."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        return ExtractionResult(raw_text="{}") if self.calls == 2 else result
+
+
+class CardOnFrontExtractor(FakeExtractor):
+    reads_fronts = True
+
+
+def test_a_coding_card_taken_for_a_front_is_read_as_one(tmp_path, caplog):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+
+    with caplog.at_level(logging.WARNING):
+        run(
+            scan_dir,
+            region="north",
+            extractor=CardOnFrontExtractor(),
+            front_extractor=EmptySecondFrontExtractor(),
+            out_dir=tmp_path,
+        )
+
+    assert "unit.pdf p5: a coding card, not a front" in caplog.text
+    pages = [
+        card["page"]
+        for record in _read(tmp_path)
+        for household in record["dwelling"]["households"]
+        for card in household["cards"]
+    ]
+    assert 5 in pages
+
+
+class SameHouseholdExtractor(FakeExtractor):
+    """Reads household 1 off both of dwelling 6's cards."""
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        result.fields["Number of Household"] = "1"
+        return result
+
+
+def test_a_shared_record_id_stays_null_until_a_correction_settles_it(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+
+    def rerun(records):
+        _write(tmp_path, records)
+        run(
+            scan_dir,
+            region="north",
+            extractor=SameHouseholdExtractor(),
+            out_dir=tmp_path,
+        )
+        return _read(tmp_path)
+
+    def ids(records):
+        return [r["dwelling"]["households"][0]["record_id"] for r in records]
+
+    records = rerun([])
+    assert ids(records) == [None, None]
+    assert all("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+
+    # A correction elsewhere leaves the identity unsettled.
+    head = records[0]["dwelling"]["households"][0]["head"]
+    key = next(iter(head))
+    head[key] = {**head[key], **CORRECTED}
+    records = rerun(records)
+    assert ids(records) == [None, None]
+
+    # Correcting one household's number settles both.
+    household = records[1]["dwelling"]["households"][0]
+    household["household_no"] = {**household["household_no"], **CORRECTED}
+    records = rerun(records)
+    assert ids(records) == ["27-0006-01", "27-0006-02"]
+    assert not any("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+
+
+def test_a_shared_record_id_comes_back_once_the_other_is_corrected():
+    def dwelling(page: int, municipality: str, **household) -> dict:
+        field = {"value": None, "status": "ok", "confidence": None}
+        return {
+            "dwelling": {
+                "municipality": {**field, "value": municipality},
+                "dwelling_no": {**field, "value": "6"},
+                "flags": ["duplicate_record_id"],
+                "households": [
+                    {
+                        "record_id": None,
+                        "household_no": {**field, "value": "1"},
+                        "cards": [
+                            {"role": "coding-front", "image": "unit.pdf", "page": page}
+                        ],
+                        **household,
+                    }
+                ],
+            }
+        }
+
+    corrected = dwelling(5, "28")  # was 27, the shared 27-0006-01
+    corrected["dwelling"]["municipality"]["origin"] = "corrected"
+    merged = _merge([], [dwelling(3, "27"), corrected])
+
+    assert [r["dwelling"]["households"][0]["record_id"] for r in merged] == [
+        "27-0006-01",
+        "28-0006-01",
+    ]
+    assert not any("flags" in r["dwelling"] for r in merged)
 
 
 def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
@@ -398,11 +550,23 @@ def _write(out_dir: Path, records: list[dict]) -> None:
 
 
 def _stub(*pages: int, **dwelling) -> dict:
-    households = [
-        {"cards": [{"role": "coding-front", "image": "unit.pdf", "page": p}]}
+    records = [
+        build_record(
+            {
+                "Municipality": "27",
+                "Number of Dwelling": "6",
+                "Number of Household": str(p),
+            },
+            region="north",
+            image="unit.pdf",
+            page=p,
+        )
         for p in pages
     ]
-    return {"dwelling": {"households": households, **dwelling}}
+    record = records[0]
+    record["dwelling"]["households"] = [r["dwelling"]["households"][0] for r in records]
+    record["dwelling"].update(dwelling)
+    return record
 
 
 CORRECTED = {"value": "2", "status": "ok", "origin": "corrected", "original_value": "1"}
@@ -457,6 +621,8 @@ def test_a_corrected_household_number_carries_its_record_id(tmp_path):
 
     household = _read(tmp_path)[0]["dwelling"]["households"][0]
     assert household["record_id"] == "27-0006-02"
+    other = _read(tmp_path)[1]["dwelling"]["households"][0]
+    assert other["record_id"] is None  # the uncorrected machine collision loses
     assert household["household_no"] == corrected
 
 
@@ -714,14 +880,14 @@ def test_two_regions_write_their_own_files_and_never_touch_each_other(tmp_path):
     assert not keys["north"] & keys["south"]
 
 
-def test_a_region_with_no_coding_cards_still_writes_its_empty_file(tmp_path):
+def test_a_region_with_no_coding_cards_does_not_publish_an_empty_file(tmp_path):
     pages = [FIXTURES / "r01-survey-front.jpg", FIXTURES / "r01-survey-back.jpg"]
     scan_dir = _batch(tmp_path, pages)
 
     summary = run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
 
     assert summary.records == 0
-    assert (tmp_path / "north.jsonl").read_text() == ""
+    assert not (tmp_path / "north.jsonl").exists()
 
 
 def test_with_fronts_two_households_of_a_dwelling_share_one_line(tmp_path):
@@ -1087,14 +1253,10 @@ def test_notes_kept_from_before_name_no_household_once_a_second_joins():
         "page": 2,
         "front_page": 1,
         "text": {"value": "x", "status": "ok"},
-        "household_id": "A",
+        "household_id": "27-0006-03",
     }
     old = _stub(3, cards=[front], notes=[note])
     new = _stub(3, 7, cards=[front])
-    for record in (old, new):
-        for household, record_id in zip(record["dwelling"]["households"], "AB"):
-            household["record_id"] = record_id
-
     [merged] = _merge([old], [new])
 
     [kept] = merged["dwelling"]["notes"]

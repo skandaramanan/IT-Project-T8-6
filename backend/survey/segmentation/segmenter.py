@@ -25,6 +25,7 @@ _RULED_STRIPS = 4  # rules are counted per strip, so a tilted scan still shows t
 _BLANK_INK_MAX = 0.002  # below this, page is blank
 _REVERSE_CODING_SPLIT = 0.035  # reverse vs. numeric_coding, by ink fraction
 _REVERSE_OVERRIDE_MAX = 0.10  # ceiling for trusting position over content -- FR-21
+_CARD_INK_MAX = 0.5  # above this, a cover or divider sheet, not a card
 _ANALYSIS_MAX_DIM = 900  # downscale target for feature extraction
 _EDGE_TRIM_FRACTION = 0.03  # trims scan-bed borders before analysis
 
@@ -136,8 +137,14 @@ def _resolve_page_roles(pages: list[Path]) -> list[CardType | None]:
         else:
             roles[run[0]] = CardType.REVERSE
             roles[run[1]] = CardType.NUMERIC_CODING
-            # A third-plus page (e.g. an FR-21 stray doc) stays unclassified
-            # rather than clobbering the slot above.
+            # A third-plus page with a coding card's ink is another
+            # household's coding card (216447 p468-469, IT-123). Anything
+            # else (bleed-through, a cover, an FR-21 stray doc) stays
+            # unclassified.
+            for idx in run[2:]:
+                ink = features[idx].ink_fraction
+                if _REVERSE_CODING_SPLIT <= ink < _CARD_INK_MAX:
+                    roles[idx] = CardType.NUMERIC_CODING
         run.clear()
 
     for i, f in enumerate(features):
@@ -172,12 +179,13 @@ def segment_pages(pages: list[Path], source_scan: Path) -> list[SegmentedCard]:
 def segment_scan(
     pages: list[Path], source_scan: Path
 ) -> dict[CardType, SegmentedCard | None]:
-    """Card inputs for one scan; ``pages`` must be in scan order."""
+    """Card inputs for one scan, the first of each type; ``pages`` must be in
+    scan order."""
     result: dict[CardType, SegmentedCard | None] = {
         CardType.FRONT: None,
         CardType.REVERSE: None,
         CardType.NUMERIC_CODING: None,
     }
     for card in segment_pages(pages, source_scan):
-        result[card.card_type] = card
+        result[card.card_type] = result[card.card_type] or card
     return result

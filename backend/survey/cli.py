@@ -10,9 +10,11 @@ reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun
 Gemini request each. ``--notes`` reads each front's back for its interview notes
 (FR-05), at one more request per back; a run without it keeps the notes an
 earlier run read.
-Settings come from ``.env`` in the working directory. Exits 1 if any card or
-PDF failed, any coding card fit no dwelling, or any record failed the schema,
-so a scheduled run can tell.
+Scan-verified region/PDF/page decisions default to the repository's
+``docs/runs/it123-verified-coding.json``; ``--verified-coding`` overrides it.
+Settings come from ``.env`` in the working directory.
+Exits 1 if any card or PDF failed, or any record failed the schema. An unplaced
+coding card is retained and flagged rather than treated as a failed request.
 
     uv run survey flags results/*.jsonl > flags.jsonl  # the review queue
 """
@@ -29,7 +31,7 @@ import tempfile
 from pathlib import Path
 
 from survey.extraction.gemini import GeminiExtractor
-from survey.pipeline import MergeRefused, read_records, run
+from survey.pipeline import MergeRefused, read_records, read_verified_coding, run
 from survey.review.flags import build_flags
 
 log = logging.getLogger("survey")
@@ -69,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="read every card again instead of replaying cached readings; "
         "reviewer corrections are still kept",
+    )
+    extract.add_argument(
+        "--verified-coding",
+        type=Path,
+        default=Path(__file__).resolve().parents[2]
+        / "docs/runs/it123-verified-coding.json",
+        help="JSON list of region/pdf/page coding cards verified against the scans "
+        "(default: repository docs/runs/it123-verified-coding.json)",
     )
     extract.add_argument(
         "--notes",
@@ -149,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
             fresh=args.fresh,
             front_extractor=GeminiExtractor(survey_front=True),
             notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
+            identity_extractor=GeminiExtractor(identity=True),
+            verified_coding=read_verified_coding(args.verified_coding, region),
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)
@@ -166,12 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         summary.invalid_records,
         summary.unattached_notes,
     )
-    failed = (
-        summary.failed_cards
-        or summary.failed_pdfs
-        or summary.invalid_records
-        or summary.unplaced_cards  # a household that fits no dwelling isn't written
-    )
+    failed = summary.failed_cards or summary.failed_pdfs or summary.invalid_records
     return 1 if failed else 0
 
 

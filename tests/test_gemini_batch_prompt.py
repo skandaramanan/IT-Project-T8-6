@@ -29,7 +29,7 @@ class _FakeClient:
 def _run_extract_batch(monkeypatch, banded, outer_json):
     response = SimpleNamespace(text=json.dumps(outer_json), usage_metadata=None)
     fake_client = _FakeClient(response)
-    monkeypatch.setattr("google.genai.Client", lambda: fake_client)
+    monkeypatch.setattr("google.genai.Client", lambda **kwargs: fake_client)
     monkeypatch.setattr(GeminiExtractor, "_part", lambda self, path: "IMAGE")
     monkeypatch.setenv("GEMINI_CONFIDENCE_BAND", "1" if banded else "")
     extractor = GeminiExtractor()

@@ -75,6 +75,20 @@ REVERSE_NOTES_PROMPT = (
     f'{{"{REVERSE_NOTES_LABEL}": null}} if this side is blank.'
 )
 
+# The identity block alone, cropped and so larger, for a coding card whose
+# first reading gave no usable record_id (D007).
+IDENTITY_PROMPT = (
+    "This is the top-left corner of a coding card from a 1941-43 social "
+    "survey. Return ONLY a JSON object with exactly these three keys (no "
+    "markdown fences, no commentary), each value a JSON string: "
+    '"Municipality" (2 digits), "Number of Dwelling" (digits, sometimes '
+    'followed by one capital letter, e.g. 487A) and "Number of Household" '
+    "(1 or 2 digits). Give the handwritten value at the end of each dotted "
+    "line, digits only. If a number is struck through and another written "
+    "beside it, give only the one not struck through. Use null for a blank "
+    "or unreadable value."
+)
+
 # The bands a model may self-report against a value. Categorical rather than a
 # percentage, per Standup #7: raw LLM confidence numbers were judged too
 # unreliable to drive an automated accept/reject, while a three-way banding is

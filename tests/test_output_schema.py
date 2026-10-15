@@ -190,6 +190,24 @@ def test_notes_are_no_longer_kept_per_household():
         jsonschema.validate(record, SCHEMA)
 
 
+@pytest.mark.parametrize("record_id", [None, "21-0487A-01"])
+def test_a_record_id_can_be_null_or_lettered(record_id):
+    """0.5.0: a household whose identity doesn't check out is written with a
+    null record_id, and a dwelling numbered 487A keeps its letter."""
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["households"][0]["record_id"] = record_id
+    record["dwelling"]["flags"] = ["missing_record_id"]
+    jsonschema.validate(record, SCHEMA)
+
+
+@pytest.mark.parametrize("record_id", ["06-276303-01", "21-0487a-01", "27-6-1"])
+def test_a_malformed_record_id_is_rejected(record_id):
+    record = json.loads(json.dumps(EXAMPLE))
+    record["dwelling"]["households"][0]["record_id"] = record_id
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, SCHEMA)
+
+
 def test_example_is_the_current_schema_version():
     from survey.extraction.record import SCHEMA_VERSION
 

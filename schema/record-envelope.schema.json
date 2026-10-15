@@ -10,7 +10,7 @@
     "schema_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "enum": ["0.1.0", "0.2.0", "0.3.0", "0.4.0"],
+      "enum": ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"],
       "description": "Envelope version. The field set moves independently of this."
     },
     "region": {
@@ -137,7 +137,12 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/household" }
         },
-        "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Why this dwelling needs a look, e.g. unplaced, duplicate_record_id. Absent when there is nothing to check."
+        }
       }
     },
 
@@ -171,7 +176,7 @@
             "string",
             "null"
           ],
-          "pattern": "^\\d{2}-\\d{4}-\\d{2}$",
+          "pattern": "^\\d{2}-\\d{4}[A-Z]?-\\d{2}$",
           "description": "The household's record_id when the dwelling has exactly one; null otherwise, since the card does not say whose note it is."
         },
         "flags": {
@@ -190,10 +195,11 @@
       "additionalProperties": false,
       "properties": {
         "record_id": {
-          "type": "string",
-          "pattern": "^\\d{2}-\\d{4}-\\d{2}$",
-          "description": "municipality-dwelling-household, zero padded. Dwelling number alone is not unique across municipalities."
+          "type": ["string", "null"],
+          "pattern": "^\\d{2}-\\d{4}[A-Z]?-\\d{2}$",
+          "description": "municipality-dwelling-household, zero padded; a lettered dwelling keeps its letter (21-0487A-01). Dwelling number alone is not unique across municipalities. Null when the card's identity is blank, unreadable or shared with another household; the dwelling's flags say which."
         },
+        "municipality": { "$ref": "#/$defs/field", "description": "Municipality read from this household’s own coding card (0.6.0)." },
         "household_no": { "$ref": "#/$defs/field" },
         "head": {
           "$ref": "#/$defs/field_map",
@@ -502,7 +508,13 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "schema_version": { "enum": ["0.3.0", "0.4.0"] } } },
+      "if": { "properties": { "schema_version": { "const": "0.6.0" } } },
+      "then": { "properties": { "dwelling": { "properties": {
+        "households": { "items": { "required": ["municipality"] } }
+      } } } }
+    },
+    {
+      "if": { "properties": { "schema_version": { "enum": ["0.3.0", "0.4.0", "0.5.0", "0.6.0"] } } },
       "then": {
         "properties": {
           "dwelling": {

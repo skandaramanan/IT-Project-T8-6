@@ -41,6 +41,7 @@ though ``self.name`` still carries the ``-struck`` suffix.
 
 from __future__ import annotations
 
+import io
 import json
 import mimetypes
 import os
@@ -60,12 +61,14 @@ from survey.extraction.json_extraction import (
     BANDED_EXTRACTION_PROMPT,
     BANDED_STRUCK_EXTRACTION_PROMPT,
     EXTRACTION_PROMPT,
+    IDENTITY_PROMPT,
     REVERSE_NOTES_PROMPT,
     STRUCK_EXTRACTION_PROMPT,
     SURVEY_FRONT_PROMPT,
     parse_json_fields,
     parse_struck_fields,
 )
+from survey.extraction.record import IDENTITY_LABELS
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
@@ -83,9 +86,15 @@ PRICE_PER_MTOK = {
 # Free tier is ~10-15 RPM; --workers above 2 mostly spends time in backoff.
 RATE_LIMIT_BACKOFF_SECONDS = 30
 
-# 429/503/500 are worth retrying with different waits (quota clears on the
-# minute, capacity clears in seconds); anything else is our problem, not transient.
+# A request that never answers would otherwise hang the run (IT-123); a card
+# takes seconds, so this only cuts off a stalled connection.
+REQUEST_TIMEOUT_SECONDS = 120
+
+# 429/503/500 and a timeout are worth retrying with different waits (quota
+# clears on the minute, capacity clears in seconds); anything else is our
+# problem, not transient.
 RETRYABLE = {
+    "timed out": 5,
     "429": RATE_LIMIT_BACKOFF_SECONDS,
     "RESOURCE_EXHAUSTED": RATE_LIMIT_BACKOFF_SECONDS,
     "503": 5,
@@ -93,6 +102,15 @@ RETRYABLE = {
     "500": 5,
     "INTERNAL": 5,
 }
+
+
+def _client():
+    """A Gemini client (reads GEMINI_API_KEY) that gives up on a stalled request."""
+    from google import genai
+    from google.genai import types
+
+    timeout = types.HttpOptions(timeout=REQUEST_TIMEOUT_SECONDS * 1000)
+    return genai.Client(http_options=timeout)
 
 
 def _retry_wait(error: Exception, attempt: int) -> float | None:
@@ -190,11 +208,15 @@ def _call_with_retry(call, attempts: int = 3):
 
 class GeminiExtractor:
     def __init__(
-        self, *, survey_front: bool = False, reverse_notes: bool = False
+        self,
+        *,
+        survey_front: bool = False,
+        reverse_notes: bool = False,
+        identity: bool = False,
     ) -> None:
-        if survey_front and reverse_notes:
+        if survey_front + reverse_notes + identity > 1:
             raise ValueError(
-                "one card side per extractor: survey_front or reverse_notes"
+                "one reading per extractor: survey_front, reverse_notes or identity"
             )
         # name is the results directory; must carry the model id since every
         # Gemini model shares one CLI key, or 3.5-flash overwrites 3.6-flash's output.
@@ -224,6 +246,13 @@ class GeminiExtractor:
             self.field_names = REVERSE_NOTES_SCHEMA_BY_NAME
             self.name = f"{self.model_id}-reverse-notes"
             self.banded = self.struck_detection = False
+        # A coding card's identity block alone, read again from a crop when
+        # the whole card gave no usable record_id (D007).
+        self.identity = identity
+        if identity:
+            self.field_names = IDENTITY_LABELS
+            self.name = f"{self.model_id}-identity"
+            self.banded = self.struck_detection = False
 
     def is_available(self) -> bool:
         try:
@@ -238,6 +267,19 @@ class GeminiExtractor:
 
         mime = mimetypes.types_map.get(image_path.suffix.lower(), "image/jpeg")
         return types.Part.from_bytes(data=image_path.read_bytes(), mime_type=mime)
+
+    @staticmethod
+    def _identity_part(image_path: Path):
+        """The card's top-left corner, where its identity is written."""
+        from google.genai import types
+        from PIL import Image
+
+        with Image.open(image_path) as image:
+            width, height = image.size
+            corner = image.convert("L").crop((0, 0, width // 2, int(height * 0.22)))
+            buffer = io.BytesIO()
+            corner.save(buffer, format="PNG")
+        return types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/png")
 
     @staticmethod
     def _config():
@@ -263,14 +305,13 @@ class GeminiExtractor:
         Ignores ``self.struck_detection``: every result's ``struck`` stays None
         regardless of ``GEMINI_STRUCK_DETECTION`` (see the module docstring).
         """
-        from google import genai
 
         prompt = banded_batch_prompt if self.banded else batch_prompt
         contents: list = [prompt(len(image_paths))]
         for index, path in enumerate(image_paths, start=1):
             contents += [f"CARD {index}:", self._part(path)]
 
-        client = genai.Client()
+        client = _client()
         # Retry an unusable answer (same as _generate) so a bad first response
         # doesn't cost the whole batch.
         outer: dict = {}
@@ -302,13 +343,14 @@ class GeminiExtractor:
         return results
 
     def extract(self, image_path: Path) -> ExtractionResult:
-        from google import genai
 
         model = self.model_id
         if self.survey_front:
             prompt = SURVEY_FRONT_PROMPT
         elif self.reverse_notes:
             prompt = REVERSE_NOTES_PROMPT
+        elif self.identity:
+            prompt = IDENTITY_PROMPT
         elif self.struck_detection and self.banded:
             prompt = BANDED_STRUCK_EXTRACTION_PROMPT
         elif self.struck_detection:
@@ -317,10 +359,11 @@ class GeminiExtractor:
             prompt = BANDED_EXTRACTION_PROMPT
         else:
             prompt = EXTRACTION_PROMPT
-        contents = [self._part(image_path), prompt]
+        part = self._identity_part(image_path) if self.identity else None
+        contents = [part or self._part(image_path), prompt]
         config = self._config()
 
-        client = genai.Client()  # reads GEMINI_API_KEY
+        client = _client()
         response = self._generate(client, model, contents, config, self.field_names)
         raw_output = response.text or ""
         return ExtractionResult(

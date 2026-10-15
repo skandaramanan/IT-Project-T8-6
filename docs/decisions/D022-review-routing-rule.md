@@ -86,6 +86,11 @@ here: this rule never sees the band.
 - **NFR-03's threshold (IT-63).** If it lands per field, it and this cutoff
   should be one number.
 - Building the check: IT-108.
+- **Dwelling flags.** D007 0.5.0 writes `dwelling.flags` and can leave
+  `record_id` null. This rule is per field and doesn't read them, so a
+  flagged household whose fields both extractors agree on would clear. The
+  queue (IT-109) should route a flagged dwelling's identity fields whatever
+  they score.
 
 ## Consequences
 

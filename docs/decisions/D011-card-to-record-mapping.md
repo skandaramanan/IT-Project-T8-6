@@ -30,12 +30,18 @@ path:
   transcriber wrote `-`; the 1940s coder voided cells with one `B` per column.
 - Fold digit lookalikes: `O`, `o`, `Q` → `0`; `I`, `l`, `L`, `!`, `|` → `1`.
   Handwritten 0 and 1 come back as letters.
+- The word `null`, in any case, is empty (added 2026-10-13, IT-123). The prompt
+  asks for every value as a JSON string and for null on a blank cell, so
+  Flash-Lite sometimes quotes it: 319 of 5,771 coding cards in the full run.
+  Folded as a code it became `nu11`, written as `ok`. Handwritten fields get
+  the same rule.
 - **Leading zeros are kept.** `04` and `4` are two different codes in a
   fixed-width scheme.
 
-Both substitutions are safe because every value on this card is a number — the
-code book defines no code containing a letter or a period — so neither can turn
-one valid code into another.
+Both substitutions are safe because every value on this card is a number (bar
+a dwelling number's letter, 487A, which in the corpus is A to E, none of them
+a lookalike) — the code book defines no code containing a letter or a period —
+so neither can turn one valid code into another.
 
 The record stores the cleaned value. The literal string the model returned is
 not persisted anywhere.

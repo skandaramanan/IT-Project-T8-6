@@ -208,11 +208,20 @@ def test_segment_pages_keeps_every_record_in_a_multi_record_scan_in_order():
     assert [c.image_path for c in cards] == [pages[i] for i in (0, 1, 2, 4, 5, 6)]
 
 
-def test_segment_pages_leaves_out_a_stray_third_page(tmp_path):
-    """The unrecognised page is absent, so the pipeline can log and skip it."""
+def test_segment_pages_reads_a_later_household_and_leaves_out_a_stray_page(tmp_path):
+    """After the reverse and coding card, a page with a coding card's ink is
+    the next household's card (216447 p468, IT-123); a faint page (bleed-
+    through) or a solid one (a cover) is absent, so the pipeline can log and
+    skip it."""
     rng = np.random.default_rng(0)
     paths = []
-    for name, ink in [("rev.jpg", 0.03), ("cod.jpg", 0.06), ("stray.jpg", 0.06)]:
+    for name, ink in [
+        ("rev.jpg", 0.03),
+        ("cod.jpg", 0.06),
+        ("cod2.jpg", 0.06),
+        ("faint.jpg", 0.01),
+        ("cover.jpg", 0.95),
+    ]:
         pixels = np.where(rng.random((500, 800)) < ink, 0, 255).astype("uint8")
         Image.fromarray(pixels, mode="L").save(tmp_path / name)
         paths.append(tmp_path / name)
@@ -220,4 +229,9 @@ def test_segment_pages_leaves_out_a_stray_third_page(tmp_path):
 
     cards = segment_pages(pages, source_scan=Path("stray.pdf"))
 
-    assert [c.page_index for c in cards] == [0, 1, 2]
+    assert [(c.card_type, c.page_index) for c in cards] == [
+        ("front", 0),
+        ("reverse", 1),
+        ("numeric_coding", 2),
+        ("numeric_coding", 3),
+    ]

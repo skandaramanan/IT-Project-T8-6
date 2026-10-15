@@ -42,3 +42,16 @@ def test_retry_waits_are_terminal_for_our_own_mistakes():
     assert _retry_wait(RuntimeError("429 RESOURCE_EXHAUSTED"), 1) == 30
     assert _retry_wait(RuntimeError("503 UNAVAILABLE"), 1) == 5
     assert _retry_wait(RuntimeError("503 UNAVAILABLE"), 3) == 15  # backs off
+    # A stalled request cut off by the client's timeout is retried, not fatal.
+    assert _retry_wait(RuntimeError("The read operation timed out"), 1) == 5
+
+
+def test_the_client_gives_up_on_a_stalled_request(monkeypatch):
+    from google import genai
+
+    from survey.extraction.gemini import REQUEST_TIMEOUT_SECONDS, _client
+
+    seen = {}
+    monkeypatch.setattr(genai, "Client", lambda **kwargs: seen.update(kwargs))
+    _client()
+    assert seen["http_options"].timeout == REQUEST_TIMEOUT_SECONDS * 1000

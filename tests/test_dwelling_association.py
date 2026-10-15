@@ -85,6 +85,20 @@ def test_out_of_order_coding_card_joins_its_dwelling_flagged():
     )
 
 
+def test_a_far_card_does_not_join_a_dwelling_that_has_its_card():
+    """Page 12 reads 21, which is dwelling 30's card misread: joining 21 would
+    give two 21s and drop both. Dwelling 9 has no card, so its far one joins."""
+    pages = [(F, "9"), (F, "21"), (C, "21")]
+    for n in ("22", "23", "24", "25"):
+        pages += [(F, n), (C, n)]
+    pages += [(F, "30"), (C, "21"), (C, "9")]
+    dwellings, unplaced = _run(*pages)
+    assert dwellings[0] == ([0, 13], {Flag.OUT_OF_ORDER})
+    assert dwellings[1] == ([1, 2], set())
+    assert dwellings[-1] == ([11], {Flag.NO_CODING_CARD})
+    assert unplaced == [12]
+
+
 def test_unchecked_cards_are_flagged_or_unplaced_not_guessed():
     dwellings, unplaced = _run(
         (R, None),  # no front before it
@@ -199,16 +213,21 @@ def test_a_later_front_fills_blanks_and_flags_disagreement():
     assert dwellings[0].flags == {Flag.FRONTS_DISAGREE}
 
 
-def test_coding_cards_from_two_municipalities_yield_no_record():
-    records, dwellings, _ = _records(
+def test_coding_cards_from_two_municipalities_are_written_flagged():
+    records, _, _ = _records(
         (F, _front("5")), (C, _coding("5")), (C, _coding("5", "2", municipality="28"))
     )
-    assert records == []
-    assert Flag.MUNICIPALITY_MISMATCH in dwellings[0].flags
+    dwelling = records[0]["dwelling"]
+    assert [h["record_id"] for h in dwelling["households"]] == [
+        "27-0005-01",
+        "28-0005-02",
+    ]
+    assert dwelling["flags"] == ["municipality_mismatch"]
+    jsonschema.validate(records[0], SCHEMA)
 
 
-def test_a_repeated_record_id_yields_no_record_for_either_dwelling():
-    records, dwellings, _ = _records(
+def test_a_repeated_record_id_is_written_null_in_both_dwellings():
+    records, _, _ = _records(
         (F, _front("5")),
         (C, _coding("5")),
         (F, _front("8")),
@@ -217,13 +236,102 @@ def test_a_repeated_record_id_yields_no_record_for_either_dwelling():
         (C, _coding("5")),
     )
     assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
-        "27-0008-01"
+        None,
+        "27-0008-01",
+        None,
     ]
-    assert [Flag.DUPLICATE_RECORD_ID in d.flags for d in dwellings] == [
-        True,
-        False,
-        True,
+    assert [r["dwelling"].get("flags") for r in records] == [
+        ["duplicate_dwelling_no", "duplicate_record_id"],
+        None,
+        ["duplicate_dwelling_no", "duplicate_record_id"],
     ]
+    for record in records:
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_an_unplaced_card_is_its_own_dwelling_and_a_blank_one_is_left_out():
+    blank = ExtractionResult(fields={"Municipality": "", "Number of Dwelling": "null"})
+    records, _, unplaced = _records(
+        (F, _front("5")), (C, _coding("5")), (C, _coding("9")), (C, blank)
+    )
+    assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
+        "27-0005-01",
+        "27-0009-01",
+    ]
+    lone = records[1]["dwelling"]
+    assert (lone["flags"], "cards" in lone) == (["unplaced"], False)
+    assert [c.page_index for c in unplaced] == [3]
+    jsonschema.validate(records[1], SCHEMA)
+
+
+def test_a_card_no_number_fits_pairs_with_the_front_at_the_usual_offset():
+    """Coding cards here follow their front; page 3's number is misread, so it
+    pairs with page 2's front by position. Page 5 sits after a front that
+    already has its card, so it stays unplaced."""
+    records, _, _ = _records(
+        (F, _front("5")),
+        (C, _coding("5")),
+        (F, _front("6")),
+        (C, _coding("8")),
+        (F, _front("7")),
+        (C, _coding("7")),
+        (C, _coding("9")),
+    )
+    paired, lone = records[1]["dwelling"], records[3]["dwelling"]
+    assert paired["households"][0]["record_id"] == "27-0008-01"
+    assert paired["handwritten"]["dwelling_no"]["value"] == "6"
+    assert paired["flags"] == ["paired_by_position"]
+    assert lone["flags"] == ["unplaced"]
+    for record in records:
+        jsonschema.validate(record, SCHEMA)
+
+
+def test_a_card_with_its_front_keeps_a_record_id_a_lone_card_also_claims():
+    """Page 10 reads 5, far from dwelling 5, which has its card: the lone card
+    is the likelier misread, so only it loses the record_id."""
+    pages = []
+    for n in ("5", "6", "7", "8", "9"):
+        pages += [(F, _front(n)), (C, _coding(n))]
+    records, _, _ = _records(*pages, (C, _coding("5")))
+    first, lone = records[0]["dwelling"], records[-1]["dwelling"]
+    assert first["households"][0]["record_id"] == "27-0005-01"
+    assert "flags" not in first
+    assert lone["households"][0]["record_id"] is None
+    assert lone["flags"] == ["duplicate_record_id", "unplaced"]
+
+
+def test_a_card_read_whole_keeps_a_record_id_a_reread_card_also_claims():
+    """Page 5's identity was filled by a second reading and now matches page
+    1's, read whole: the filled one is the likelier misread."""
+    pages = [(F, "5"), (C, "5"), (F, "6"), (C, "6"), (F, "5"), (C, "5")]
+    cards = [
+        (
+            SegmentedCard(kind, Path(f"{i}.jpg"), Path("b.pdf"), i),
+            _front(n) if kind is F else _coding(n),
+        )
+        for i, (kind, n) in enumerate(pages)
+    ]
+    records, _, _ = build_dwelling_records(
+        cards, region="williamstown", batch="b", reread={cards[5][0]}
+    )
+    whole, filled = records[0]["dwelling"], records[2]["dwelling"]
+    assert whole["households"][0]["record_id"] == "27-0005-01"
+    assert filled["households"][0]["record_id"] is None
+    assert {"duplicate_record_id", "identity_reread"} <= set(filled["flags"])
+
+
+def test_a_lettered_dwelling_is_not_the_numbered_one():
+    records, _, _ = _records(
+        (F, _front("487")),
+        (C, _coding("487")),
+        (F, _front("487a")),
+        (C, _coding("487 A")),
+    )
+    assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
+        "27-0487-01",
+        "27-0487A-01",
+    ]
+    assert not any("flags" in r["dwelling"] for r in records)
 
 
 def test_two_households_leave_people_unassigned_and_flagged():
@@ -237,13 +345,15 @@ def test_two_households_leave_people_unassigned_and_flagged():
     jsonschema.validate(records[0], SCHEMA)
 
 
-def test_dwellings_without_an_identity_yield_no_record():
+def test_a_card_without_an_identity_is_written_null_and_a_front_alone_is_not():
     records, dwellings, _ = _records(
         (F, _front("9", "Head")), (R, None), (F, _front("4")), (C, _coding("4", ""))
     )
-    assert records == []
+    [record] = records
+    assert record["dwelling"]["households"][0]["record_id"] is None
+    assert record["dwelling"]["flags"] == ["missing_record_id"]
     assert Flag.NO_CODING_CARD in dwellings[0].flags
-    assert Flag.MISSING_RECORD_ID in dwellings[1].flags
+    jsonschema.validate(record, SCHEMA)
 
 
 def test_each_card_goes_to_the_extractor_for_its_type():

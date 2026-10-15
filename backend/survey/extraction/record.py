@@ -39,12 +39,14 @@ Deliberately not done here:
 
 from __future__ import annotations
 
+import re
+from copy import deepcopy
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.6.0"
 
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)
@@ -166,6 +168,13 @@ _DIGIT_LOOKALIKES = str.maketrans(
 )
 
 
+def _is_null_word(value: str) -> bool:
+    """The prompt asks for every value as a JSON string and for null on a blank
+    cell, so Flash-Lite sometimes sends the string "null" (319 of 5,771 coding
+    cards in the IT-123 run). Read as a code it folds to "nu11"."""
+    return value.strip().lower() == "null"
+
+
 def normalise(value: str | None) -> str:
     """Strip print/OCR artefacts. Leading zeros are left alone.
 
@@ -182,7 +191,7 @@ def normalise(value: str | None) -> str:
     definitions of "the same value" would let a pair of readings count as
     agreeing while scoring as a mismatch.
     """
-    if value is None:
+    if value is None or _is_null_word(value):
         return ""
     stripped = value.strip().translate(_PUNCTUATION)
     # all-void-marks (or empty) means no code, however it was written. Checked
@@ -194,9 +203,9 @@ def normalise(value: str | None) -> str:
 
 def clean_text(value: str | None) -> str:
     """Handwriting is kept as written. A cell holding only dashes, dots,
-    underscores or spaces is blank."""
+    underscores or spaces, or the word "null", is blank."""
     text = (value or "").strip()
-    return "" if set(text) <= set("-–—_ .") else text
+    return "" if set(text) <= set("-–—_ .") or _is_null_word(text) else text
 
 
 # --- 3. one field -----------------------------------------------------------
@@ -283,7 +292,8 @@ def build_omitted_field(*, source: str | None = None) -> dict[str, Any]:
 
 def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> str:
     """Dwelling number alone repeats across municipalities, so identity is the
-    three of them together, zero padded: 27-0006-01."""
+    three of them together, zero padded: 27-0006-01. A dwelling numbered with a
+    letter keeps it: 487A is 21-0487A-01, a different dwelling from 487."""
     missing = [
         name
         for name, value in (
@@ -295,7 +305,44 @@ def build_record_id(municipality: str, dwelling_no: str, household_no: str) -> s
     ]
     if missing:
         raise ValueError(f"cannot build record_id without {', '.join(missing)}")
-    return f"{municipality:0>2}-{dwelling_no:0>4}-{household_no:0>2}"
+    match = re.fullmatch(r"(\d{1,4})([A-Z]?)", dwelling_no.upper())
+    if not (
+        re.fullmatch(r"\d{1,2}", municipality)
+        and match
+        and re.fullmatch(r"\d{1,2}", household_no)
+    ):
+        # A struck number read together with its replacement: 276303, 1.01.
+        raise ValueError(
+            f"cannot build record_id from {municipality}-{dwelling_no}-{household_no}"
+        )
+    number, suffix = match.groups()
+    return f"{municipality:0>2}-{number:0>4}{suffix}-{household_no:0>2}"
+
+
+IDENTITY_LABELS = ("Municipality", "Number of Dwelling", "Number of Household")
+_IDENTITY_PARTS = (r"\d{1,2}", r"\d{1,4}[A-Z]?", r"\d{1,2}")
+
+
+def fill_identity(first: dict[str, str], second: dict[str, str]) -> dict[str, str]:
+    """``first`` with the identity parts it lacks (blank, or malformed like a
+    struck number read with its replacement) taken from ``second``, a second
+    reading of the same card. A blank second part has no opinion about a valid
+    first part. Explicit disagreements or an incomplete combined identity
+    raise ValueError: a second read may fill a gap, never overrule the first."""
+    filled = dict(first)
+    for label, pattern in zip(IDENTITY_LABELS, _IDENTITY_PARTS):
+        had, now = (normalise(fields.get(label)).upper() for fields in (first, second))
+        if not re.fullmatch(pattern, had):
+            filled[label] = now
+        elif now and had.lstrip("0") != now.lstrip("0"):
+            raise ValueError(f"second reading disagrees on {label}: {had} vs {now}")
+    identity_of(filled)
+    return filled
+
+
+def identity_of(fields: dict[str, str]) -> str:
+    """The record_id a coding card's reading spells; ValueError if none."""
+    return build_record_id(*(normalise(fields.get(label)) for label in IDENTITY_LABELS))
 
 
 def build_record(
@@ -350,14 +397,18 @@ def build_record(
             ),
         )
 
-    record_id = build_record_id(
-        groups["dwelling"]["municipality"]["value"] or "",
-        groups["dwelling"]["dwelling_no"]["value"] or "",
-        groups["household"]["household_no"]["value"] or "",
-    )
+    try:
+        record_id: str | None = build_record_id(
+            groups["dwelling"]["municipality"]["value"] or "",
+            groups["dwelling"]["dwelling_no"]["value"] or "",
+            groups["household"]["household_no"]["value"] or "",
+        )
+    except ValueError:  # still written; association flags the dwelling (D007)
+        record_id = None
 
     household: dict[str, Any] = {
         "record_id": record_id,
+        "municipality": deepcopy(groups["dwelling"]["municipality"]),
         "household_no": groups["household"]["household_no"],
         "head": groups["head"],
         "counts": groups["counts"],

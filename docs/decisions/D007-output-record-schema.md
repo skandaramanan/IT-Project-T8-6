@@ -65,7 +65,8 @@ that ticket carry a level the schema does not have.
 (municipality, dwelling_no, household_no)
 ```
 
-Rendered as `record_id`, zero-padded: `27-0006-01`.
+Rendered as `record_id`, zero-padded: `27-0006-01`. A lettered dwelling keeps
+its letter, and an identity that can't be trusted is null (0.5.0, below).
 
 Observed on the fixtures — `r01` reads municipality 27, dwelling 6, household 1;
 `r03` reads 27, 12, 1. Municipality 27 is Williamstown in the code book, and
@@ -176,6 +177,66 @@ PDF `front_page` of its front, and a `household_id`.
 
 This replaces `household.notes`. That slot held a bare string, which could not
 tell a blank back from an unread one, and it sat at the wrong level.
+
+### Every card read is written (0.5.0, IT-123)
+
+A coding card used to be dropped when it had no usable identity. In the
+IT-123 run that was 1,595 of the 5,313 cards with any value. Now each is
+written, so a reviewer can fix it rather than lose it.
+
+- `record_id` is null when the identity can't be trusted: a part is blank, a
+  part is malformed (a struck number read with its replacement, such as
+  `276303`), or another household in the batch has the same one. A household
+  placed with its front by number keeps a record_id that only cards placed by
+  position, or not placed at all, share; they are the likelier misreads.
+- A coding card that gives no usable record_id has its identity block read
+  again from a crop. That reading may only fill what the first left blank or
+  malformed, and must agree with every part the first read has. The
+  household is then flagged `identity_reread`: a second machine read can
+  still be wrong, and it isn't a correction (NFR-05).
+- `dwelling.flags` says why: `identity_reread`, `paired_by_position` (a
+  coding card whose number fits no front, paired with the front at the
+  batch's usual page offset), `unplaced` (a coding card that still fits no
+  front, written as a dwelling of its own), `missing_record_id`,
+  `duplicate_record_id` or `municipality_mismatch`, along with the grouping
+  flags association already raised, which were only logged before. Absent
+  when there is nothing to check.
+- A dwelling number can end in a letter, which names another dwelling: 487A
+  is `21-0487A-01`, not 487.
+- A corrected identity rebuilds `record_id` on the next run. If that leaves a
+  nulled record_id unshared, the other household gets it back. Nothing else
+  rebuilds it, so an unrelated correction can't undo a null.
+- A coding card with no value at all is still skipped: it is a blank page or
+  a reverse taken for a card.
+
+This is the fallback IT-75 asked for when the number is missing or illegible.
+Anything keyed on `record_id` must expect null.
+
+### Household municipality is retained (0.6.0, IT-123 review)
+
+Every household now carries its own `municipality` field object, including a
+blank or malformed reading. `dwelling.municipality` remains the first coding
+household's shared alias for compatibility; correcting it changes that
+household only. Correct a later household at its own municipality path.
+Review history stays on the field that was reviewed, never duplicated onto
+the alias. This avoids duplicate audit IDs.
+
+Identity settlement uses each household's actual reading instead of guessing
+municipalities or blocking unrelated identities in a region. Versions through
+0.5.0 remain readable. A rewrite encountering a legacy null identity whose
+municipality was discarded refuses to guess and requests a cache rebuild.
+The IT-123 results are rebuilt from cached readings into 0.6.0.
+
+Positional pairing requires usable dwelling numbers within one insertion,
+deletion or substitution. Lettered dwellings must agree exactly. Otherwise
+the coding card stays `unplaced`, retaining its coding fields and source page.
+Empty crop values have no opinion about a valid first reading; explicit
+disagreements and incomplete identities still fail the fill.
+
+Automatic front recovery requires no meaningful front fields or persons.
+Explicit classifications verified against the original scans can override a
+segmentation error using `--verified-coding`; those decisions are auditable
+region/PDF/page metadata, not an inference from a plausible record ID.
 
 ## Alternatives considered
 

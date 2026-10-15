@@ -13,8 +13,8 @@ previous file by the coding cards they were read from, and a reviewer's
 the D007 envelope (IT-66): a new one that fails is logged and not written, and
 a previous one that fails stops the run.
 
-A page the segmenter cannot place, a card with no readable identity and a card
-the extractor fails on are each logged and skipped; the run carries on unless
+A page the segmenter cannot place, a blank coding card and a card the
+extractor fails on are each logged and skipped; the run carries on unless
 3 cards in a row get no answer (the daily cap or an outage).
 
 Stopgaps until the work they stand in for lands:
@@ -30,9 +30,10 @@ import json
 import logging
 import shutil
 import tempfile
-from collections.abc import Iterator
+from collections import defaultdict
+from collections.abc import Collection, Iterator
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import reduce
 from operator import getitem
 from pathlib import Path
@@ -40,7 +41,7 @@ from typing import Any
 
 from pypdf import PdfReader
 
-from survey.association.dwelling import ReviewFlag
+from survey.association.dwelling import FRONT_FLAGS, ReviewFlag
 from survey.association.notes import (
     FRONT,
     ReverseSlot,
@@ -57,8 +58,16 @@ from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
 from survey.extraction.json_extraction import parse_confidence_bands
-from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION, build_record_id
-from survey.records import current_fields, schema_errors, write_atomic
+from survey.extraction.record import (
+    FIELD_MAP,
+    SCHEMA_VERSION,
+    build_record_id,
+    fill_identity,
+    identity_of,
+    normalise,
+)
+from survey.extraction.survey_front import build_survey_front
+from survey.records import current_fields, safe_pdf, schema_errors, write_atomic
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import (
     CardType,
@@ -72,6 +81,30 @@ log = logging.getLogger(__name__)
 MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing off each
 
 
+def read_verified_coding(path: Path, region: str) -> frozenset[tuple[str, int]]:
+    """Read explicit scan-inspection decisions, scoped to one archive region."""
+    try:
+        entries = json.loads(path.read_text())
+        if not isinstance(entries, list):
+            raise TypeError("expected a list of region/pdf/page decisions")
+        for entry in entries:
+            if (
+                not isinstance(entry, dict)
+                or set(entry) != {"region", "pdf", "page"}
+                or not isinstance(entry["region"], str)
+                or not isinstance(entry["pdf"], str)
+                or not safe_pdf(entry["pdf"])
+                or type(entry["page"]) is not int
+                or entry["page"] < 1
+            ):
+                raise ValueError("expected region, PDF basename and positive page")
+        return frozenset(
+            (e["pdf"], e["page"]) for e in entries if e["region"] == region
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise MergeRefused(f"cannot read verified coding decisions: {error}") from error
+
+
 class MergeRefused(ValueError):
     """The previous results can't be merged safely, so nothing was written."""
 
@@ -79,9 +112,9 @@ class MergeRefused(ValueError):
 @dataclass
 class RunSummary:
     records: int = 0
-    skipped_pages: int = 0  # not a card the segmenter recognises
-    unreadable_cards: int = 0  # no municipality or household number
-    unplaced_cards: int = 0  # read, but fits no dwelling
+    skipped_pages: int = 0  # not a card the segmenter recognises, or a blank one
+    unreadable_cards: int = 0  # dwellings with a household identity blank or unreadable
+    unplaced_cards: int = 0  # read, but fits no dwelling: written on its own
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
     failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
@@ -99,12 +132,16 @@ def run(
     fresh: bool = False,
     front_extractor: Extractor | None = None,
     notes_extractor: Extractor | None = None,
+    identity_extractor: Extractor | None = None,
+    verified_coding: Collection[tuple[str, int]] = (),
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
 
     ``front_extractor`` reads the survey fronts too; without it they are not
     read. ``notes_extractor`` reads each front's back; without it a record
-    keeps the notes a previous run read. ``fresh`` sets the cached readings
+    keeps the notes a previous run read. ``identity_extractor`` reads again
+    the identity block of a coding card that gave no usable record_id.
+    ``fresh`` sets the cached readings
     aside (``<extractor>.previous``) and reads every card again; corrections
     are still kept. Set aside once, at
     the start, so a fresh run cut short resumes with a plain rerun.
@@ -115,13 +152,14 @@ def run(
         raise ValueError("reading notes needs front_extractor too")
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    read_records(out_path, region)  # fail fast: a damaged file must cost no quota
-    for reader in filter(None, (extractor, front_extractor, notes_extractor)):
+    previous = read_records(out_path, region)  # fail before spending quota
+    readers = (extractor, front_extractor, notes_extractor, identity_extractor)
+    for reader in filter(None, readers):
         cache_dir = raw_dir / reader.name if raw_dir else None
         if fresh and cache_dir and cache_dir.exists():
-            previous = cache_dir.with_name(cache_dir.name + ".previous")
-            shutil.rmtree(previous, ignore_errors=True)
-            cache_dir.rename(previous)
+            backup = cache_dir.with_name(cache_dir.name + ".previous")
+            shutil.rmtree(backup, ignore_errors=True)
+            cache_dir.rename(backup)
     records: list[dict[str, Any]] = []
     for pdf in sorted(scan_dir.glob("*.pdf")):
         if summary.failure_streak >= MAX_FAILURE_STREAK:
@@ -134,8 +172,11 @@ def run(
                 extractor,
                 front_extractor,
                 notes_extractor,
+                identity_extractor,
                 raw_dir,
                 summary,
+                verified_coding=verified_coding,
+                previous=previous,
             )
         except Exception:  # without this, one damaged PDF loses the whole batch
             log.exception("%s: unreadable PDF, skipped", pdf.name)
@@ -149,7 +190,12 @@ def run(
     # re-read: corrections may have been saved meanwhile
     merged = _merge(read_records(out_path, region), records)
     out_dir.mkdir(parents=True, exist_ok=True)
-    _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
+    if merged:
+        _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
+    else:
+        # An empty region is reported in the summary, not published as an
+        # invalid dataset file. Existing populated output is kept by _merge.
+        out_path.unlink(missing_ok=True)
     summary.records = len(merged)
     log.info(
         "wrote %d records to %s, %d kept from the previous run",
@@ -166,8 +212,12 @@ def _run_pdf(
     extractor: Extractor,
     front_extractor: Extractor | None,
     notes_extractor: Extractor | None,
+    identity_extractor: Extractor | None,
     raw_dir: Path | None,
     summary: RunSummary,
+    *,
+    verified_coding: Collection[tuple[str, int]] = (),
+    previous: Collection[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     with tempfile.TemporaryDirectory() as tmp:
         pages: list[Path] = []
@@ -191,6 +241,14 @@ def _run_pdf(
             page_numbers.append(number)
 
         cards = segment_pages(pages, source_scan=pdf)
+        # Explicit scan inspection can settle a disputed classification. The
+        # automatic recovery below must never discard meaningful front data.
+        cards = [
+            replace(card, card_type=CardType.NUMERIC_CODING)
+            if (pdf.name, page_numbers[card.page_index]) in verified_coding
+            else card
+            for card in cards
+        ]
         placed = {card.page_index for card in cards}
         for index, page in enumerate(pages):
             # Every record has a blank coding-card back; only non-blank pages
@@ -224,12 +282,27 @@ def _run_pdf(
         def locate(card: SegmentedCard) -> tuple[str, int]:  # D026: scan and page
             return pdf.name, page_numbers[card.page_index]
 
+        apply_identity_corrections(readings, locate, previous)
+        if front_extractor:
+            cards = recover_coding_cards(
+                cards, readings, page_numbers, pdf, extractor, raw_dir, summary
+            )
+
+        reread = (
+            reread_identities(
+                readings, locate, pdf, identity_extractor, raw_dir, summary
+            )
+            if identity_extractor
+            else set()
+        )
+
         records, dwellings, unplaced = build_dwelling_records(
             [(card, readings.get(card)) for card in cards],
             region=region,
             batch=pdf.name,
             locate=locate,
             fronts_read=front_extractor is not None,
+            reread=reread,
         )
         # Inside the block: a back is read off the page images, which go with it.
         if notes_extractor:
@@ -246,11 +319,12 @@ def _run_pdf(
                 ", ".join(sorted(flags)),
             )
         summary.unreadable_cards += ReviewFlag.MISSING_RECORD_ID in dwelling.flags
+        summary.unplaced_cards += ReviewFlag.UNPLACED in dwelling.flags
     for card in unplaced:
         # An unread card is already counted as failed.
         if card.card_type is CardType.NUMERIC_CODING and card in readings:
-            log.warning("%s p%d: coding card fits no dwelling, skipped", *locate(card))
-            summary.unplaced_cards += 1
+            log.warning("%s p%d: blank coding card, skipped", *locate(card))
+            summary.skipped_pages += 1
 
     by_place = {locate(card): result for card, result in readings.items()}
     # The Gemini extractor's `name` carries -banded/-struck suffixes; the
@@ -262,7 +336,10 @@ def _run_pdf(
         if errors := _schema_errors(record):
             # Not written, so the merge keeps this dwelling's previous record.
             image, page = min(_coding_cards(record))
-            ids = ", ".join(h["record_id"] for h in record["dwelling"]["households"])
+            ids = ", ".join(
+                h["record_id"] or "no record_id"
+                for h in record["dwelling"]["households"]
+            )
             log.error(
                 "%s p%d: %s fails the schema, not written: %s",
                 image,
@@ -274,6 +351,145 @@ def _run_pdf(
         else:
             valid.append(record)
     return valid
+
+
+def recover_coding_cards(
+    cards: list[SegmentedCard],
+    readings: dict[SegmentedCard, ExtractionResult],
+    page_numbers: list[int],
+    pdf: Path,
+    extractor: Extractor,
+    raw_dir: Path | None,
+    summary: RunSummary,
+) -> list[SegmentedCard]:
+    """``cards``, with a coding card the segmenter took for a front put back.
+
+    A coding card whose ruled lines sit on the front threshold (216414 p194)
+    may read as nothing with the front prompt. Only a front with no meaningful
+    handwritten fields or persons can be probed and converted when the coding
+    reading spells a record_id. A populated front is retained even when its
+    address is blank. Empty probe responses
+    are expected, but API failures count toward the run's shared failure cap.
+    """
+    out = []
+    for card in cards:
+        result = readings.get(card)
+        if (
+            card.card_type is CardType.FRONT
+            and result is not None
+            and not _has_front_data(result)
+            and summary.failure_streak < MAX_FAILURE_STREAK
+        ):
+            number = page_numbers[card.page_index]
+            coding = _reading(
+                card.image_path,
+                pdf,
+                number,
+                extractor,
+                raw_dir,
+                summary,
+                expected_empty=True,
+            )
+            try:
+                identity_of(coding.fields if coding else {})
+            except ValueError:
+                pass
+            else:
+                log.warning("%s p%d: a coding card, not a front", pdf.name, number)
+                del readings[card]
+                card = replace(card, card_type=CardType.NUMERIC_CODING)
+                readings[card] = coding
+        out.append(card)
+    return out
+
+
+def _has_front_data(result: ExtractionResult) -> bool:
+    """Any person or handwritten value is evidence that this is a real front."""
+    front = build_survey_front(result.fields)
+    return bool(front.pop("persons")) or any(
+        field["value"] is not None for field in front.values()
+    )
+
+
+def apply_identity_corrections(
+    readings: dict[SegmentedCard, ExtractionResult],
+    locate: Locate,
+    previous: Collection[dict[str, Any]],
+) -> None:
+    """Use protected identity values for association, without changing caches.
+
+    Waiting until the final merge can detach the very front or household a
+    correction belongs to. The merge still preserves its complete audit payload.
+    """
+    by_place = {locate(card): card for card in readings}
+    labels = {
+        "municipality": "Municipality",
+        "dwelling_no": "Number of Dwelling",
+        "household_no": "Number of Household",
+    }
+    for record in previous:
+        dwelling = record["dwelling"]
+        for path, field in _corrected_fields(record):
+            if (
+                field.get("origin") != "corrected"
+                and field.get("review", {}).get("state") == "pending"
+            ):
+                continue
+            if path == ("dwelling", "handwritten", "dwelling_no"):
+                cards = dwelling.get("cards", [])[:1]
+                label = "Dwelling Number (top-left corner)"
+            elif _is_identity(path):
+                households = dwelling["households"]
+                if len(path) == 4:
+                    households = [households[path[2]]]
+                elif path[-1] == "municipality":
+                    households = households[:1]
+                cards = [h["cards"][0] for h in households]
+                label = labels[path[-1]]
+            else:
+                continue
+            for source in cards:
+                card = by_place.get((source["image"], source["page"]))
+                if card is not None:
+                    result = readings[card]
+                    readings[card] = replace(
+                        result, fields={**result.fields, label: field["value"]}
+                    )
+
+
+def reread_identities(
+    readings: dict[SegmentedCard, ExtractionResult],
+    locate: Locate,
+    pdf: Path,
+    extractor: Extractor,
+    raw_dir: Path | None,
+    summary: RunSummary,
+) -> set[SegmentedCard]:
+    """Each coding card with values but no usable record_id has its identity
+    block read again; where that reading only fills what the first left blank
+    or malformed, it is taken (D007). Returns the cards filled."""
+    filled = set()
+    for card, result in list(readings.items()):
+        if card.card_type is not CardType.NUMERIC_CODING or not any(
+            map(normalise, result.fields.values())
+        ):
+            continue
+        try:
+            identity_of(result.fields)
+            continue
+        except ValueError:
+            pass
+        if summary.failure_streak >= MAX_FAILURE_STREAK:
+            break
+        _, number = locate(card)
+        second = _reading(card.image_path, pdf, number, extractor, raw_dir, summary)
+        try:
+            fields = fill_identity(result.fields, second.fields if second else {})
+        except ValueError:
+            continue
+        readings[card] = replace(result, fields=fields)
+        filled.add(card)
+    return filled
 
 
 def _add_notes(
@@ -310,11 +526,14 @@ def _reading(
     extractor: Extractor,
     raw_dir: Path | None,
     summary: RunSummary,
+    *,
+    expected_empty: bool = False,
 ) -> ExtractionResult | None:
     """The card's cached reading, or a new one; None if the extractor failed.
 
     A reading with no usable fields is still returned (and stays cached, so it
-    is not paid for again), but counts as a failed card.
+    is not paid for again), but counts as a failed card unless an empty
+    response is expected from a recovery probe.
     """
     where = f"{pdf.name} p{number}"
     cache = (
@@ -338,6 +557,9 @@ def _reading(
             cache.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(cache, json.dumps(asdict(result)))
     if not result.fields:
+        if expected_empty:
+            summary.failure_streak = 0
+            return result
         log.error("%s: no usable reading", where)
         summary.failed_cards += 1
         return result
@@ -384,6 +606,14 @@ def _score(
                 score = confidence_for(NO_SECOND_OPINION, model, bands.get(label))
             field["confidence"] = score
             scores.append(score)
+        municipality = household["municipality"]
+        municipality["confidence"] = (
+            0.0
+            if municipality["status"] == "omitted"
+            else confidence_for(NO_SECOND_OPINION, model, bands.get("Municipality"))
+        )
+        if index:
+            scores.append(municipality["confidence"])
         card["confidence"] = card_confidence(scores)
 
 
@@ -434,9 +664,9 @@ def _merge(
 ) -> list[dict[str, Any]]:
     """Rebuilt records replace the previous ones whose cards they all cover.
 
-    A previous record this run rebuilt only in part (a card unread, unplaced or
-    with no record_id) is kept, and the rebuilt records sharing its cards are
-    dropped, so no household goes missing.
+    A previous record this run rebuilt only in part (a card unread) is kept,
+    and the rebuilt records sharing its cards are dropped, so no household goes
+    missing.
     """
     while True:
         built = {card for record in records for card in _coding_cards(record)}
@@ -463,12 +693,107 @@ def _merge(
             _keep_front(old, new)
             _keep_notes(old, new)
             _keep_corrections(old, new)
-            # Last: kept notes and a corrected identity both outdate household_id.
-            for note in new["dwelling"].get("notes", []):
-                assign_household(note, new["dwelling"]["households"])
         else:
             merged.append(old)
+    _settle_identities(merged)
+    # Last: kept notes and a corrected identity both outdate household_id.
+    for record in merged:
+        for note in record["dwelling"].get("notes", []):
+            assign_household(note, record["dwelling"]["households"])
     return sorted(merged, key=lambda record: min(_coding_cards(record)))
+
+
+def _settle_identities(records: list[dict[str, Any]]) -> None:
+    """Resolve complete identities across the region, keeping every household.
+
+    A unique human correction wins a collision; otherwise retain the one ID
+    association trusted, or leave conflicting candidates null for review.
+    """
+    identities = [
+        (
+            record["dwelling"],
+            household,
+            household["record_id"] or _readable_id(record["dwelling"], household),
+        )
+        for record in records
+        for household in record["dwelling"]["households"]
+    ]
+    by_id = defaultdict(list)
+    for dwelling, household, candidate in identities:
+        if candidate:
+            by_id[candidate].append((dwelling, household))
+    for candidate, members in by_id.items():
+        corrected = [
+            h
+            for d, h in members
+            if any(
+                f.get("origin") == "corrected"
+                for f in (
+                    h.get("municipality", d["municipality"]),
+                    d["dwelling_no"],
+                    h["household_no"],
+                )
+            )
+        ]
+        preferred = corrected or [h for _, h in members if h["record_id"] == candidate]
+        winner = (
+            members[0][1]
+            if len(members) == 1
+            else (preferred[0] if len(preferred) == 1 else None)
+        )
+        for _, household in members:
+            household["record_id"] = candidate if household is winner else None
+    candidates = {id(household): candidate for _, household, candidate in identities}
+    for record in records:
+        dwelling = record["dwelling"]
+        flags = set(dwelling.get("flags", [])) - _IDENTITY_FLAGS
+        for household in dwelling["households"]:
+            candidate = candidates[id(household)]
+            if candidate is None:
+                flags.add(ReviewFlag.MISSING_RECORD_ID)
+            elif household["record_id"] is None:
+                flags.add(ReviewFlag.DUPLICATE_RECORD_ID)
+        dwelling.pop("flags", None)
+        if flags:
+            dwelling["flags"] = sorted(flags)
+
+
+_IDENTITY_FLAGS = {ReviewFlag.MISSING_RECORD_ID, ReviewFlag.DUPLICATE_RECORD_ID}
+
+
+def _identity_parts(
+    dwelling: dict[str, Any], household: dict[str, Any]
+) -> tuple[str, str, str]:
+    """A household owns its municipality; legacy records retain read support.
+
+    A later legacy card with a null ID and conflicting municipalities has lost
+    evidence. Refuse a rewrite rather than guessing; rebuild it from its cache.
+    """
+    municipality = household.get("municipality")
+    if municipality is not None:
+        value = municipality["value"] or ""
+    elif household["record_id"]:
+        value = household["record_id"].split("-")[0]
+    elif household is not dwelling["households"][
+        0
+    ] and ReviewFlag.MUNICIPALITY_MISMATCH in dwelling.get("flags", []):
+        raise MergeRefused("legacy household lost its municipality; rebuild from cache")
+    else:
+        value = dwelling["municipality"]["value"] or ""
+    return (
+        value,
+        dwelling["dwelling_no"]["value"] or "",
+        household["household_no"]["value"] or "",
+    )
+
+
+def _readable_id(dwelling: dict[str, Any], household: dict[str, Any]) -> str | None:
+    """The record_id supported by this household's available identity evidence."""
+    parts = _identity_parts(dwelling, household)
+    try:
+        return build_record_id(*parts)
+    except ValueError:
+        return None
 
 
 def _front_read(dwelling: dict[str, Any]) -> bool:
@@ -495,6 +820,12 @@ def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
         now[key] = before[key]
     if len(before["households"]) == len(now["households"]) == 1:
         now["households"][0]["persons"] = before["households"][0].get("persons", [])
+    # Flags the unusable reading set give way to the kept reading's.
+    flags = {f for f in now.get("flags", []) if f not in FRONT_FLAGS}
+    flags |= {f for f in before.get("flags", []) if f in FRONT_FLAGS}
+    now.pop("flags", None)
+    if flags:
+        now["flags"] = sorted(flags)
     image, page = now["cards"][0]["image"], now["cards"][0]["page"]
     log.warning("%s p%d: front unusable, previous reading kept", image, page)
 
@@ -574,22 +905,72 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
                 f"{image} p{page}: corrected field {where} has no place in the "
                 "rebuilt record"
             ) from error
-    dwelling = new["dwelling"]
-    for kept, household in zip(old["dwelling"]["households"], dwelling["households"]):
-        try:
-            household["record_id"] = build_record_id(
-                dwelling["municipality"]["value"] or "",
-                dwelling["dwelling_no"]["value"] or "",
-                household["household_no"]["value"] or "",
-            )
-        except ValueError:  # a blanked identity can't form an id
-            household["record_id"] = kept["record_id"]
     # A corrected identity rebuilds record_id, which the reviewer never saw.
+    # Nothing else does: that would undo the null a duplicate was given.
+    identity_paths = {path for path, _ in corrections if _is_identity(path)}
+    if identity_paths:
+        dwelling = new["dwelling"]
+        # The old shared path belongs to the first coding household (D029).
+        if ("dwelling", "municipality") in identity_paths:
+            dwelling["households"][0]["municipality"] = _mirror_municipality(
+                dwelling["municipality"],
+                dwelling["households"][0].get("municipality", {}),
+            )
+        elif ("dwelling", "households", 0, "municipality") in identity_paths:
+            dwelling["municipality"] = _mirror_municipality(
+                dwelling["households"][0]["municipality"], dwelling["municipality"]
+            )
+        shared_identity = any(len(path) == 2 for path in identity_paths)
+        for index, (kept, household) in enumerate(
+            zip(old["dwelling"]["households"], dwelling["households"])
+        ):
+            if not shared_identity and not any(
+                ("dwelling", "households", index, key) in identity_paths
+                for key in ("household_no", "municipality")
+            ):
+                continue
+            identity = _identity_parts(dwelling, household)
+            if not all(identity):  # a blanked identity can't form an id
+                household["record_id"] = kept["record_id"]
+                continue
+            try:
+                record_id = build_record_id(*identity)
+            except ValueError as error:
+                raise MergeRefused(
+                    f"{image} p{page}: corrected identity: {error}"
+                ) from error
+            # Null IDs still need global duplicate checks after corrections.
+            # Settlement restores them once their candidate is unambiguous.
+            if household["record_id"] is not None:
+                household["record_id"] = record_id
     if errors := _schema_errors(new):
         raise MergeRefused(
             f"{image} p{page}: reviewed record fails the schema once its "
             f"corrections are applied: {'; '.join(errors)}"
         )
+
+
+def _mirror_municipality(source: dict, target: dict) -> dict:
+    """Mirror the first household's shared alias without duplicating audit IDs."""
+    field = deepcopy(source)
+    field.pop("review", None)
+    if review := target.get("review"):
+        if review["state"] != "pending" and any(
+            source.get(k) != target.get(k) for k in ("value", "status")
+        ):
+            raise MergeRefused("reviewed municipality aliases disagree")
+        field["review"] = deepcopy(review)
+    return field
+
+
+def _is_identity(path: tuple) -> bool:
+    """Municipality, dwelling number or a household number: what record_id is
+    built from. The front's handwritten dwelling number is not."""
+    return path in (("dwelling", "municipality"), ("dwelling", "dwelling_no")) or (
+        len(path) == 4
+        and path[:2] == ("dwelling", "households")
+        and path[3] in {"household_no", "municipality"}
+    )
 
 
 def _note_by_front(path: tuple, old: dict[str, Any], new: dict[str, Any]) -> tuple:
