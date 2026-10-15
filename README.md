@@ -168,7 +168,8 @@ the region's results file. In order, it:
    survey front (address, persons), at one more request per front. A front
    with no meaningful handwritten fields or persons can be probed as a coding
    card. A plausible coding ID alone cannot discard existing front data.
-   Explicit scan-verified classifications can be supplied with `--verified-coding`.
+   Scan-verified classifications load from `docs/runs/it123-verified-coding.json`
+   by default; `--verified-coding` supplies an alternative registry.
    A coding card whose reading gives no usable record_id has its identity
    block read again from a crop, at one more request. Each reading is cached
    in `data/runs/<region>/<extractor>/`

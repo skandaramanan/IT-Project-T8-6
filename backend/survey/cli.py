@@ -10,8 +10,9 @@ reading is cached in ``data/runs/<region>/<extractor>/`` and replayed on a rerun
 Gemini request each. ``--notes`` reads each front's back for its interview notes
 (FR-05), at one more request per back; a run without it keeps the notes an
 earlier run read.
-``--verified-coding`` supplies explicit region/PDF/page decisions inspected
-against the source scans. Settings come from ``.env`` in the working directory.
+Scan-verified region/PDF/page decisions default to the repository's
+``docs/runs/it123-verified-coding.json``; ``--verified-coding`` overrides it.
+Settings come from ``.env`` in the working directory.
 Exits 1 if any card or PDF failed, or any record failed the schema. An unplaced
 coding card is retained and flagged rather than treated as a failed request.
 """
@@ -70,7 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     extract.add_argument(
         "--verified-coding",
         type=Path,
-        help="JSON list of region/pdf/page coding cards verified against the scans",
+        default=Path(__file__).resolve().parents[2]
+        / "docs/runs/it123-verified-coding.json",
+        help="JSON list of region/pdf/page coding cards verified against the scans "
+        "(default: repository docs/runs/it123-verified-coding.json)",
     )
     extract.add_argument(
         "--notes",
@@ -139,11 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             front_extractor=GeminiExtractor(survey_front=True),
             notes_extractor=GeminiExtractor(reverse_notes=True) if args.notes else None,
             identity_extractor=GeminiExtractor(identity=True),
-            verified_coding=(
-                read_verified_coding(args.verified_coding, region)
-                if args.verified_coding
-                else ()
-            ),
+            verified_coding=read_verified_coding(args.verified_coding, region),
         )
     except MergeRefused as error:
         log.error("%s; nothing written", error)

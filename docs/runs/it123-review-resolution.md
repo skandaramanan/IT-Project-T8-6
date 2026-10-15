@@ -152,6 +152,3 @@ cannot. Original files are backed up locally in
 - `uv run survey validate-results results`: all 44 nonempty region files passed.
 - Offline rerun: all 44 output files byte-identical.
 - Physical-card inventory and original protected-payload comparisons passed.
-
-These are local results. No commit, push, GitHub reply, thread resolution or
-Linear status change was performed.

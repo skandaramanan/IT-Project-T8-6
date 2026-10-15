@@ -1,5 +1,6 @@
 """The extract command: .env loading, and the exit code a scheduled run reads."""
 
+import json
 import os
 from pathlib import Path
 
@@ -78,6 +79,39 @@ def test_extract_reports_a_refused_merge_as_one_line_and_exits_1(
 
     assert cli.main(["extract", str(tmp_path), "--region", "north"]) == 1
     assert "x.jsonl line 3: not a valid record; nothing written" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "override", [None, [], [{"region": "216413", "pdf": "custom.pdf", "page": 7}]]
+)
+def test_extract_loads_verified_coding_by_default_and_allows_an_override(
+    tmp_path, monkeypatch, override
+):
+    monkeypatch.chdir(tmp_path)  # the default registry must not depend on cwd
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    (tmp_path / "scan.pdf").touch()
+    calls = {}
+
+    def fake_run(scan_dir, **kwargs):
+        calls.update(kwargs)
+        return RunSummary()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = ["extract", str(tmp_path), "--region", "216413"]
+    if override is not None:
+        registry = tmp_path / "verified.json"
+        registry.write_text(json.dumps(override))
+        args.extend(["--verified-coding", str(registry)])
+
+    assert cli.main(args) == 0
+    assert calls["verified_coding"] == (
+        {
+            ("423447_1973-0002-00002-00001.pdf", 3),
+            ("423447_1973-0002-00002-00001.pdf", 43),
+        }
+        if override is None
+        else {(entry["pdf"], entry["page"]) for entry in override}
+    )
 
 
 def test_extract_lets_an_unexpected_error_through(tmp_path, monkeypatch):
