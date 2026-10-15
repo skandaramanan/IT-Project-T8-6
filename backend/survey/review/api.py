@@ -22,6 +22,8 @@ from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
 from survey.review.sync import GitSync
 
+FRONTEND_DIST = Path(__file__).parents[3] / "frontend" / "dist"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -344,6 +346,10 @@ def create_app(settings: Settings) -> FastAPI:
         reviewer(request)
         return sync.sync(service.reindex_history)
 
-    static = Path(__file__).with_name("static")
-    app.mount("/", StaticFiles(directory=static, html=True), name="test-page")
+    static = (
+        FRONTEND_DIST
+        if (FRONTEND_DIST / "index.html").is_file()
+        else Path(__file__).with_name("static")
+    )
+    app.mount("/", StaticFiles(directory=static, html=True), name="review-page")
     return app

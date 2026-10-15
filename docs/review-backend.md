@@ -165,7 +165,9 @@ resetting stored decisions. Existing region versions still protect mid-edit save
 
 ## Frontend HTTP contract
 
-The plain page at `/` is an integration test page; production React is separate.
+When `frontend/dist/index.html` exists, `/` serves the IT-115 React reviewer and
+its built assets. Otherwise it serves the original integration test page.
+See [reviewer-ui.md](reviewer-ui.md) for build and disposable-test instructions.
 Use the same loopback origin. No wildcard CORS is enabled. For React development,
 proxy `/api` through this origin, or serve a built frontend on this origin. Another
 origin requires an explicit backend change and security review. Typed names are
