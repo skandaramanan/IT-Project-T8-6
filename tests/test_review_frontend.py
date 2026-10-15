@@ -1,19 +1,53 @@
 """Exercise the shipped undo handler across an uncertain response, without a browser."""
 
 import json
+import platform
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
 
-@pytest.mark.parametrize("failure", ["network", "server", "conflict"])
-def test_undo_handler_retries_original_body_or_refreshes_definite_conflict(failure):
+def run_node(script, *args):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is only needed for this frontend regression test")
     source = Path(__file__).parents[1] / "backend/survey/review/static/app.js"
+    # stderr distinguishes a stalled startup from a harness that began executing.
+    script = (
+        "console.error('Harness started:', process.version, process.platform, process.arch);\n"
+        + script
+    )
+    timeout = 60
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [node, "-e", script, str(source), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+        reason = (
+            f"exceeded the {timeout}s deadline"
+            if isinstance(error, subprocess.TimeoutExpired)
+            else f"exited with code {error.returncode}"
+        )
+        pytest.fail(
+            f"Node harness {reason} after {time.monotonic() - started:.2f}s\n"
+            f"Executable: {node}\nPlatform: {platform.platform()}\n"
+            f"Case: {args}\nstdout: {error.stdout!r}\nstderr: {error.stderr!r}",
+            pytrace=False,
+        )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize("failure", ["network", "server", "conflict"])
+def test_undo_handler_retries_original_body_or_refreshes_definite_conflict(failure):
     script = r"""
 const fs=require('fs'), vm=require('vm');
 const source=fs.readFileSync(process.argv[1],'utf8'), failure=process.argv[2];
@@ -45,14 +79,7 @@ vm.createContext(context);vm.runInContext(functions,context);
   console.log(JSON.stringify({calls,opens,history,retained,cleared:context.pendingUndo===null}));
 })().catch(e=>{console.error(e);process.exitCode=1});
 """
-    result = subprocess.run(
-        [node, "-e", script, str(source), failure],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=15,
-    )
-    evidence = json.loads(result.stdout)
+    evidence = run_node(script, failure)
     assert evidence["history"] == 1 and evidence["cleared"]
     first, second = evidence["calls"]
     if failure == "conflict":
@@ -66,10 +93,6 @@ vm.createContext(context);vm.runInContext(functions,context);
 
 
 def test_entered_amendment_disables_accept_and_submits_correction():
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node is only needed for this frontend regression test")
-    source = Path(__file__).parents[1] / "backend/survey/review/static/app.js"
     script = r"""
 const fs=require('fs'),vm=require('vm'),source=fs.readFileSync(process.argv[1],'utf8');
 const functions=source.slice(source.indexOf('function hasUnsavedCorrection('),source.indexOf('function showSync('))+
@@ -95,14 +118,7 @@ vm.createContext(context);vm.runInContext(functions,context);
   console.log(JSON.stringify({acceptDisabled,correctDisabled,acceptanceCalls,calls,messages}));
 })().catch(e=>{console.error(e);process.exitCode=1});
 """
-    result = subprocess.run(
-        [node, "-e", script, str(source)],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=15,
-    )
-    evidence = json.loads(result.stdout)
+    evidence = run_node(script)
     assert evidence["acceptDisabled"] and not evidence["correctDisabled"]
     assert evidence["acceptanceCalls"] == 0
     assert evidence["calls"][0]["action"] == "correct"
