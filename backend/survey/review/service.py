@@ -1,17 +1,21 @@
 """Review policy independent of HTTP. Every decision is embedded in JSONL."""
 
+import csv
+import json
 import re
 from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
+from survey.extraction.card_fields import FIELD_SCHEMA, FIELD_SCHEMA_BY_NAME
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from survey.extraction.record import SCHEMA_VERSION
+from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
 from survey.records import (
     RecordStore,
     Reference,
     ReviewError,
+    current_fields,
+    digest,
     resolve_field,
 )
 from survey.review.scans import ScanSource
@@ -48,6 +52,7 @@ class ReviewService:
         scans: ScanSource,
     ):
         self.store, self.scans = store, scans
+        self.region_titles = self.load_region_titles()
         self.replace_queue(references, diagnostics)
         self.requests, self.decisions = self.store.requests, self.store.decisions
 
@@ -71,6 +76,7 @@ class ReviewService:
                             "item_id": ref.item_id,
                             "region": ref.region,
                             "batch": ref.pdf,
+                            "page": ref.page,
                             "field_path": ref.field_path,
                             "code": error.code,
                             "message": str(error),
@@ -100,6 +106,7 @@ class ReviewService:
             self.progress = {}
             self.item_resolved = {}
             self.batch_revisions = {}
+            self.progress_diagnostics = {}
             selected = self.references.values()
         else:
             selected = (
@@ -107,6 +114,9 @@ class ReviewService:
                 for region in regions
                 for ref in self.region_references.get(region, [])
             )
+            for item_id, diagnostic in list(self.progress_diagnostics.items()):
+                if diagnostic["region"] in regions:
+                    del self.progress_diagnostics[item_id]
             for key in list(self.progress):
                 if key[0] in regions:
                     del self.progress[key]
@@ -117,13 +127,33 @@ class ReviewService:
             try:
                 resolved, _ = self.store.current(ref)
                 # Probe only decided fields: pending entries cannot complete a batch.
-                done = state(resolved.field) != "pending"
+                done = state(resolved.field) != "pending" and not any(
+                    "notes" in household
+                    for household in resolved.record["dwelling"]["households"]
+                )
                 if done:
                     self.scans.probe(ref)
-            except ReviewError:
+            except ReviewError as error:
                 done = False
+                self.progress_diagnostics[ref.item_id] = {
+                    "item_id": ref.item_id,
+                    "region": ref.region,
+                    "batch": ref.pdf,
+                    "page": ref.page,
+                    "field_path": ref.field_path,
+                    "code": error.code,
+                    "message": str(error),
+                }
             self.item_resolved[ref.item_id] = done
             counts[1] += int(done)
+        self.dwelling_references = {}
+        for ref in self.references.values():
+            try:
+                record = self.store.current(ref)[0].record
+            except ReviewError:
+                continue
+            identity = self.dwelling_id(ref.region, record)
+            self.dwelling_references.setdefault(identity, []).append(ref)
         revision = getattr(self.scans, "revision", None)
         if revision:
             for region, batch in self.progress:
@@ -164,7 +194,7 @@ class ReviewService:
                 "missing_item", "Item is not in the supplied flagged set", 404
             ) from error
 
-    def item(self, item_id: str) -> dict:
+    def item(self, item_id: str, *, context: bool = True) -> dict:
         with self.store.lock:
             ref = self.reference(item_id)
             resolved, version = self.store.current(ref)
@@ -207,7 +237,7 @@ class ReviewService:
                 )
             history = field.get("review", {}).get("history", [])
             active = active_decisions(history)
-            return {
+            item = {
                 "id": item_id,
                 "region": ref.region,
                 "batch": ref.pdf,
@@ -231,6 +261,396 @@ class ReviewService:
                 "undo_decision_id": active[-1]["id"] if active else None,
             }
 
+            item.update(self.item_context(ref, resolved, context))
+            return item
+
+    def load_region_titles(self):
+        root = getattr(self.scans, "root", None)
+        if root is None:
+            return {}
+        try:
+            with (root / "metadata.csv").open(
+                encoding="utf-8-sig", newline=""
+            ) as stream:
+                return {
+                    row["Node ID"].strip(): (
+                        row.get("Node Title") or row.get("Title") or ""
+                    ).strip()
+                    for row in csv.DictReader(stream)
+                    if row.get("Node ID")
+                }
+        except (OSError, UnicodeError, csv.Error):
+            return {}
+
+    @staticmethod
+    def coding_cards(record):
+        return [
+            card
+            for household in record["dwelling"]["households"]
+            for card in household.get("cards", [])
+            if card["role"] == "coding-front"
+        ]
+
+    @classmethod
+    def dwelling_id(cls, region, record):
+        locations = sorted(
+            ((card["image"], card.get("page")) for card in cls.coding_cards(record)),
+            key=lambda location: (location[0], location[1] or 0),
+        )
+        return digest(json.dumps([region, locations]).encode())
+
+    def item_context(self, ref, resolved, context):
+        spec = FIELD_SCHEMA_BY_NAME[resolved.label]
+        codes = CLOSED_CATEGORIES.get(spec.code_book_category, {}) | SENTINEL_CODES.get(
+            spec.code_book_category, {}
+        )
+        card = next(
+            card
+            for card in resolved.household["cards"]
+            if card["role"] == "coding-front"
+        )
+        details = {
+            "dwelling_id": self.dwelling_id(ref.region, resolved.record),
+            "address": resolved.record["dwelling"].get("address", {}).get("value"),
+            "region_title": self.region_titles.get(ref.region) or None,
+            "card_score": card.get("confidence"),
+            "field_kind": spec.kind,
+            "code_list": [
+                {"value": value, "label": label} for value, label in codes.items()
+            ],
+        }
+        if not context:
+            return details
+        fields = []
+        index = resolved.record["dwelling"]["households"].index(resolved.household)
+        for field_spec in FIELD_SCHEMA:
+            label = field_spec.name
+            key, group = FIELD_MAP[label]
+            if label == "Municipality" and "municipality" in resolved.household:
+                group = "household"
+            if group in {"dwelling", "house"} and index != 0:
+                continue
+            pointer = (
+                f"/dwelling/{key}"
+                if group == "dwelling"
+                else f"/dwelling/house/{key}"
+                if group == "house"
+                else f"/dwelling/households/{index}/{key}"
+                if group == "household"
+                else f"/dwelling/households/{index}/{group}/{key}"
+            )
+            field_ref = Reference(ref.region, ref.pdf, ref.page, pointer)
+            try:
+                field = self.store.current(field_ref)[0].field
+            except ReviewError:
+                continue
+            fields.append(
+                {
+                    "id": field_ref.item_id
+                    if field_ref.item_id in self.references
+                    else None,
+                    "label": label,
+                    "field_path": pointer,
+                    "field": snapshot(field),
+                    "review_state": state(field),
+                }
+            )
+        # Keep supplied flags for the legacy shared alias actionable as well.
+        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
+        if (
+            index == 0
+            and shared.item_id in self.references
+            and not any(field["field_path"] == shared.field_path for field in fields)
+        ):
+            field = self.store.current(shared)[0].field
+            fields.insert(
+                0,
+                {
+                    "id": shared.item_id,
+                    "label": "Municipality",
+                    "field_path": shared.field_path,
+                    "field": snapshot(field),
+                    "review_state": state(field),
+                },
+            )
+        details["card_fields"] = fields
+        cards = []
+        dwelling_refs = self.dwelling_references.get(details["dwelling_id"], [])
+        for index, household in enumerate(resolved.record["dwelling"]["households"]):
+            for card in household.get("cards", []):
+                if card["role"] != "coding-front":
+                    continue
+                refs = [
+                    candidate
+                    for candidate in dwelling_refs
+                    if candidate.pdf == card["image"]
+                    and candidate.page == card.get("page")
+                ]
+                if refs:
+                    cards.append(
+                        {
+                            "card_id": refs[0].card_id,
+                            "household_index": index,
+                            "household_no": household.get("household_no", {}).get(
+                                "value"
+                            ),
+                            "record_id": household.get("record_id"),
+                            "page": card.get("page"),
+                            "first_item_id": refs[0].item_id,
+                            "next_item_id": next(
+                                (
+                                    candidate.item_id
+                                    for candidate in refs
+                                    if not self.item_resolved.get(
+                                        candidate.item_id, False
+                                    )
+                                ),
+                                None,
+                            ),
+                        }
+                    )
+        details["cards"] = cards
+        return details
+
+    def dwelling_groups(self, region=None):
+        # Keep first occurrence in the supplied flags; no frontend reranking.
+        groups = {}
+        for identity, refs in self.dwelling_references.items():
+            if region and refs[0].region != region:
+                continue
+            try:
+                record = self.store.current(refs[0])[0].record
+            except ReviewError:
+                continue
+            groups[identity] = (record, refs)
+        return groups
+
+    def region_summary(self, region=None):
+        records = [
+            record
+            for key, (entries, _) in self.store.regions.items()
+            if not region or key == region
+            for record in entries
+        ]
+        cards = [card for record in records for card in self.coding_cards(record)]
+        scores = [
+            card["confidence"] for card in cards if card.get("confidence") is not None
+        ]
+        return {
+            "dwellings": len(records),
+            "average_card_score": sum(scores) / len(scores) if scores else None,
+            "scored_cards": len(scores),
+            "unscored_cards": len(cards) - len(scores),
+        }
+
+    def dwellings(self, region=None):
+        with self.store.lock:
+            for key in list(self.progress):
+                self.batch_complete(*key)
+            diagnostics = [
+                deepcopy(d)
+                for d in [*self.diagnostics, *self.progress_diagnostics.values()]
+                if not region or not d.get("region") or d["region"] == region
+            ]
+            rows = []
+            for identity, (record, refs) in self.dwelling_groups(region).items():
+                cards = self.coding_cards(record)
+                scores = [card.get("confidence") for card in cards]
+                count = sum(self.item_resolved.get(ref.item_id, False) for ref in refs)
+                errors = [
+                    d
+                    for d in diagnostics
+                    if (not d.get("region") or d["region"] == refs[0].region)
+                    and (
+                        not d.get("batch")
+                        or d["batch"] in {card["image"] for card in cards}
+                    )
+                    and (
+                        not d.get("page")
+                        or any(
+                            card["image"] == d.get("batch")
+                            and card.get("page") == d["page"]
+                            for card in cards
+                        )
+                    )
+                ]
+                histories = [
+                    event
+                    for _, field in current_fields(record)
+                    for event in field.get("review", {}).get("history", [])
+                ]
+                if any(
+                    "notes" in household
+                    for household in record["dwelling"]["households"]
+                ):
+                    legacy = {
+                        "region": refs[0].region,
+                        "batch": refs[0].pdf,
+                        "page": refs[0].page,
+                        "code": "legacy_notes",
+                        "message": "Migrate legacy household notes before review. No notes were discarded.",
+                    }
+                    errors.append(legacy)
+                    diagnostics.append(legacy)
+                latest = max(
+                    histories, key=lambda event: event["timestamp"], default=None
+                )
+                rows.append(
+                    {
+                        "id": identity,
+                        "region": refs[0].region,
+                        "record_id": record["dwelling"]["households"][0].get(
+                            "record_id"
+                        ),
+                        "address": record["dwelling"].get("address", {}).get("value"),
+                        "score": min(scores) if scores and None not in scores else None,
+                        "card_count": len(cards),
+                        "total": len(refs),
+                        "resolved": count,
+                        "unresolved": len(refs) - count,
+                        "status": "blocked"
+                        if errors
+                        else "complete"
+                        if count == len(refs)
+                        else "in_progress"
+                        if count
+                        else "pending",
+                        "next_item_id": next(
+                            (
+                                ref.item_id
+                                for ref in refs
+                                if not self.item_resolved.get(ref.item_id, False)
+                            ),
+                            None,
+                        ),
+                        "first_item_id": refs[0].item_id,
+                        "last_reviewer": latest["reviewer"] if latest else None,
+                        "last_reviewed_at": latest["timestamp"] if latest else None,
+                        "diagnostics": errors,
+                    }
+                )
+            resolved = sum(row["resolved"] for row in rows)
+            # Dynamic diagnostics describe an existing supplied reference, never an
+            # extra flag. Even references that no longer resolve remain in scope.
+            total = sum(
+                not region or ref.region == region for ref in self.references.values()
+            ) + sum(
+                not region or not d.get("region") or d["region"] == region
+                for d in self.diagnostics
+            )
+            summary = self.region_summary(region)
+            summary["queued_dwellings"] = len(rows)
+            summary["completed_dwellings"] = sum(
+                row["status"] == "complete" for row in rows
+            )
+            all_regions = self.region_summary()
+            all_regions["queued_dwellings"] = len(self.dwelling_groups())
+            all_regions["completed_dwellings"] = sum(
+                all(self.item_resolved.get(ref.item_id, False) for ref in refs)
+                and not any(
+                    (
+                        not diagnostic.get("region")
+                        or diagnostic["region"] == refs[0].region
+                    )
+                    and (
+                        not diagnostic.get("batch")
+                        or diagnostic["batch"] in {ref.pdf for ref in refs}
+                    )
+                    and (
+                        not diagnostic.get("page")
+                        or any(
+                            ref.pdf == diagnostic.get("batch")
+                            and ref.page == diagnostic["page"]
+                            for ref in refs
+                        )
+                    )
+                    for diagnostic in [
+                        *self.diagnostics,
+                        *self.progress_diagnostics.values(),
+                    ]
+                )
+                for _, refs in self.dwelling_groups().values()
+            )
+            return {
+                "dwellings": rows,
+                "diagnostics": diagnostics,
+                "total": total,
+                "resolved": resolved,
+                "unresolved": total - resolved,
+                "complete": total > 0 and total == resolved,
+                "summary": summary,
+                "all_regions": all_regions,
+                "region_title": self.region_titles.get(region) or None,
+                "scope": {"region": region, "basis": "supplied flagged fields only"},
+            }
+
+    def dwelling_items(self, dwelling_id, region=None):
+        with self.store.lock:
+            group = self.dwelling_groups(region).get(dwelling_id)
+            if group is None:
+                raise ReviewError(
+                    "missing_dwelling",
+                    "Dwelling is not in the supplied flagged set for this region",
+                    404,
+                )
+            order = {
+                label: index
+                for index, label in enumerate(spec.name for spec in FIELD_SCHEMA)
+            }
+            refs = sorted(
+                group[1],
+                key=lambda ref: (
+                    next(
+                        index
+                        for index, household in enumerate(
+                            group[0]["dwelling"]["households"]
+                        )
+                        if any(
+                            card["role"] == "coding-front"
+                            and card["image"] == ref.pdf
+                            and card.get("page") == ref.page
+                            for card in household.get("cards", [])
+                        )
+                    ),
+                    order[self.store.current(ref)[0].label],
+                ),
+            )
+            items = [self.item(ref.item_id, context=False) for ref in refs]
+            for item in items:
+                self.update_progress(item)
+            resolved = sum(item["resolved"] for item in items)
+            cards = self.coding_cards(group[0])
+            diagnostics = [
+                deepcopy(d)
+                for d in [*self.diagnostics, *self.progress_diagnostics.values()]
+                if (not d.get("region") or d["region"] == refs[0].region)
+                and (
+                    not d.get("batch")
+                    or d["batch"] in {card["image"] for card in cards}
+                )
+                and (
+                    not d.get("page")
+                    or any(
+                        card["image"] == d.get("batch")
+                        and card.get("page") == d["page"]
+                        for card in cards
+                    )
+                )
+            ]
+            item_ids = {item["id"] for item in items}
+            total = len(items) + sum(
+                d.get("item_id") not in item_ids for d in diagnostics
+            )
+            return {
+                "items": items,
+                "diagnostics": diagnostics,
+                "total": total,
+                "resolved": resolved,
+                "unresolved": total - resolved,
+                "complete": bool(items) and resolved == total,
+                "scope": {"region": region, "basis": "supplied flagged fields only"},
+            }
+
     def queue(self, region: str | None = None, batch: str | None = None) -> dict:
         with self.store.lock:
             items = []
@@ -244,7 +664,7 @@ class ReviewService:
                 if (region and region != ref.region) or (batch and batch != ref.pdf):
                     continue
                 try:
-                    item = self.item(item_id)
+                    item = self.item(item_id, context=False)
                     self.update_progress(item)
                     items.append(item)
                 except ReviewError as error:
@@ -422,8 +842,10 @@ class ReviewService:
             )
             self.requests[request_id] = event
             self.decisions[event["id"]] = event
-            saved_item = self.item(item_id)
+            saved_item = self.item(item_id, context=False)
             self.update_progress(saved_item)
+            # Navigation metadata must reflect the decision just recorded.
+            saved_item = self.item(item_id)
             return {
                 "item": saved_item,
                 "decision": deepcopy(event),

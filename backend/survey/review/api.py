@@ -254,6 +254,7 @@ def create_app(settings: Settings) -> FastAPI:
             "regions": [
                 {
                     "region": region,
+                    "title": review.region_titles.get(region) or None,
                     "has_records": region in review.store.regions,
                     "has_scan_folder": (settings.scan_root / region).is_dir(),
                     "batches": sorted(
@@ -274,6 +275,14 @@ def create_app(settings: Settings) -> FastAPI:
                 for region in regions
             ]
         }
+
+    @app.get("/api/dwellings")
+    def dwellings(region: str | None = None):
+        return ready().dwellings(region)
+
+    @app.get("/api/dwellings/{dwelling_id}/items")
+    def dwelling_items(dwelling_id: str, region: str | None = None):
+        return ready().dwelling_items(dwelling_id, region)
 
     @app.get("/api/queue")
     def queue(region: str | None = None, batch: str | None = None):

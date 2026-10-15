@@ -180,8 +180,10 @@ Mutation requests must be JSON and use an allowed loopback host/origin.
 | `GET /api/health` | readiness, startup diagnostics, supported scope |
 | `POST /api/session` | `{ "name": "Jane Smith" }`; sets session cookie |
 | `GET /api/regions` | regions with record/scan-folder availability and batches |
+| `GET /api/dwellings?region=demo` | lightweight dwelling rows, scores, progress, attribution, region/global averages |
+| `GET /api/dwellings/{id}/items?region=demo` | flagged items for one dwelling, in printed card order |
 | `GET /api/queue?region=demo&batch=synthetic.pdf` | items, diagnostics, totals, completion, explicit scope |
-| `GET /api/review-items/{id}` | current field, label, allowed actions, warnings, version, scan URL |
+| `GET /api/review-items/{id}` | current field, label, actions, version, scan URL, dwelling/card metadata and readonly field context |
 | `GET /api/scans/{card_id}` | exact original scan image; opaque identifier only |
 | `POST /api/review-items/{id}/decisions` | versioned/idempotent decision; response below |
 | `GET /api/review-items/{id}/history` | embedded audit events |
@@ -478,3 +480,17 @@ failures. Lint, formatting and whitespace pass. Combined rerun tests preserve
 corrected note text by `front_page`, active coding review history, and pending
 undo history. Strict modern-schema tests reject household notes; legacy-record
 migration refusal retains source bytes. Decisions are recorded in D029.
+
+## IT-115 dwelling API (PR 2)
+
+The production frontend uses dwelling summaries and loads detailed items for just
+one selected dwelling. The legacy `/api/queue` remains available to the integration
+page. Summary membership follows supplied flag order; it never generates or ranks
+flags. Physical dwelling IDs, confidence/progress basis, codebook context, diagnostics
+and upstream schema boundaries are documented in [reviewer-ui.md](reviewer-ui.md#pr-2-dwelling-queue-and-review-context).
+
+Only supported supplied flag IDs are actionable. `card_fields` includes lightweight
+snapshots in `FIELD_SCHEMA` printed order, with `id: null` for read-only context;
+these snapshots omit audit history. Detailed selected fields retain their normal
+history, version and allowed actions. Household 0 owns shared fields. Summary rows
+omit field values/history and do not render scans. Unknown confidences remain null.

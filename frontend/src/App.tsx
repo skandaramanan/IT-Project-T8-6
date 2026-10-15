@@ -1,7 +1,7 @@
 // A bounded review slice over IT-113: saves are confirmed before advancing.
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, dwellingKey, groupDwellings } from './api';
-import type { Action, Item, Queue, Region, Saved, Sync } from './api';
+import { useEffect, useRef, useState } from 'react';
+import { api, ApiError, dwellingKey, reviewSummaryCsv } from './api';
+import type { Action, Dwelling, DwellingQueue, Item, Queue, Region, Saved, Sync } from './api';
 
 const statuses = {
   ok: 'Readable',
@@ -23,7 +23,7 @@ const stopCodes = new Set([
 const PAGE_SIZE = 12;
 
 function Confidence({ score }: { score: number | null }) {
-  const band = score === null ? 'none' : score === 0.97 ? 'high' : score < 0.6 ? 'low' : 'med';
+  const band = score === null ? 'none' : score >= 0.97 ? 'high' : score < 0.6 ? 'low' : 'med';
   const label = { none: 'Not scored', high: 'High', low: 'Low', med: 'Medium' }[band];
   return (
     <span className={`badge ${band}`}>
@@ -50,7 +50,8 @@ export default function App() {
   const [name, setName] = useState('');
   const [reviewer, setReviewer] = useState('');
   const [region, setRegion] = useState('');
-  const [queue, setQueue] = useState<Queue | null>(null);
+  const [queue, setQueue] = useState<DwellingQueue | null>(null);
+  const [dwellingItems, setDwellingItems] = useState<Queue | null>(null);
   const [item, setItem] = useState<Item | null>(null);
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -74,8 +75,13 @@ export default function App() {
     decisionId: string;
     text: string;
   } | null>(null);
+  const activeFieldRef = useRef<HTMLElement>(null);
   const [zoom, setZoom] = useState(1);
   const [exited, setExited] = useState(false);
+
+  useEffect(() => {
+    activeFieldRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [item?.id]);
 
   useEffect(() => {
     function warnBeforeClose(event: BeforeUnloadEvent) {
@@ -161,7 +167,8 @@ export default function App() {
         e instanceof ApiError
           ? e
           : new ApiError(e instanceof Error ? e.message : 'Request failed.');
-      if (failure.code === 'no_op') setNotice('Already saved. To amend the value, choose Correct.');
+      if (failure.code === 'no_op')
+        setNotice('Already saved. To amend the value, choose Correct.');
       else setError(failure.message);
       if (stopCodes.has(failure.code)) setStopped(true);
       if (failure.status === 409) setNeedsReload(true);
@@ -177,7 +184,10 @@ export default function App() {
     setItem(null);
     setPage(0);
     setLastSaved(null);
-    const data = await api<Queue>(`/api/queue?${new URLSearchParams({ region: id })}`);
+    setDwellingItems(null);
+    const data = await api<DwellingQueue>(
+      `/api/dwellings?${new URLSearchParams({ region: id })}`,
+    );
     setQueue(data);
   }
   async function openItem(id: string, retainDraft = false) {
@@ -185,6 +195,13 @@ export default function App() {
     setScanLoaded('');
     setScanFailed(false);
     const next = await api<Item>(`/api/review-items/${id}`);
+    if (retainDraft) {
+      setDwellingItems(
+        await api<Queue>(
+          `/api/dwellings/${next.dwelling_id}/items?${new URLSearchParams({ region: next.region })}`,
+        ),
+      );
+    }
     setItem(next);
     setScanAttempt((attempt) => attempt + 1);
     setNeedsReload(false);
@@ -200,8 +217,24 @@ export default function App() {
     setReviewer(data.reviewer);
     if (!queue && region) await loadRegion(region);
   }
+  async function refreshQueue() {
+    setQueue(await api<DwellingQueue>(`/api/dwellings?${new URLSearchParams({ region })}`));
+  }
+  async function openDwelling(row: Dwelling) {
+    setLastSaved(null);
+    const data = await api<Queue>(
+      `/api/dwellings/${row.id}/items?${new URLSearchParams({ region })}`,
+    );
+    setDwellingItems(data);
+    const next = data.items.find((i) => !i.resolved) ?? data.items[0];
+    if (next) await openItem(next.id);
+    else {
+      await refreshQueue();
+      setNotice('This dwelling has no supported fields to open. Check the queue messages.');
+    }
+  }
   function updateQueue(saved: Item) {
-    setQueue((previous) => {
+    setDwellingItems((previous) => {
       if (!previous) return previous;
       const items = previous.items.map((i) => (i.id === saved.id ? saved : i));
       const resolved = items.filter((i) => i.resolved).length;
@@ -247,7 +280,7 @@ export default function App() {
       setScanFailed(false);
       setNotice('Undo saved on this computer. The original decision stays in the history.');
     } else {
-      const next = queue?.items.find(
+      const next = dwellingItems?.items.find(
         (i) =>
           i.id !== result.item.id && !i.resolved && dwellingKey(i) === dwellingKey(result.item),
       );
@@ -290,12 +323,14 @@ export default function App() {
     showSync(await api<Sync>('/api/sync', {}));
   }
 
-  const groups = useMemo(() => groupDwellings(queue?.items ?? []), [queue]);
-  const dwelling = item
-    ? (groups.find((g) => dwellingKey(g[0]) === dwellingKey(item)) ?? [item])
+  const groups = queue?.dwellings ?? [];
+  const continueDwelling = groups.find((d) => d.unresolved > 0 && d.first_item_id);
+  const dwelling = dwellingItems?.items ?? [];
+  const cardItems = item
+    ? dwelling.filter((i) => i.source.card_id === item.source.card_id)
     : [];
-  const cardItems = item ? dwelling.filter((i) => i.source.card_id === item.source.card_id) : [];
-  const cards = [...new Map(dwelling.map((i) => [i.source.card_id, i])).values()];
+  const cardFields = item?.card_fields ?? cardItems;
+  const cards = item?.cards ?? [];
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
   const canNavigate = !busy && !pending && !correcting;
   const canDecide =
@@ -320,7 +355,10 @@ export default function App() {
           upload_failed: "Saved here · couldn't share yet",
         }[sync.state];
   const time = sync?.pushed_at
-    ? new Date(sync.pushed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    ? new Date(sync.pushed_at).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
     : '';
 
   return (
@@ -328,11 +366,26 @@ export default function App() {
       <header className="top">
         {item && reviewer ? (
           <>
-            <button className="btn ghost sm" disabled={!canNavigate} onClick={() => setItem(null)}>
+            <button
+              className="btn ghost sm"
+              disabled={!canNavigate}
+              onClick={() =>
+                void run(async () => {
+                  setItem(null);
+                  setScanLoaded('');
+                  await refreshQueue();
+                })
+              }
+            >
               ← Queue
             </button>
-            <strong className="rid">{item.record_id}</strong>
-            <span className="meta">{item.region}</span>
+            <strong className="rid">{item.record_id ?? 'Number not identified'}</strong>
+            <span className="cardscore">
+              This card <Confidence score={item.card_score} />
+            </span>
+            <span className="meta">
+              {item.address ?? 'Address not available'} · {item.region_title ?? item.region}
+            </span>
           </>
         ) : (
           <strong className="prod">Survey Card Review</strong>
@@ -340,7 +393,10 @@ export default function App() {
         <span className="sp" />
         {reviewer && (
           <>
-            <span role="status" className={`sync ${sync?.state === 'upload_failed' ? 'fail' : ''}`}>
+            <span
+              role="status"
+              className={`sync ${sync?.state === 'upload_failed' ? 'fail' : ''}`}
+            >
               {sync?.state === 'uploaded' && !syncUnknown ? '✓ ' : ''}
               {syncText}
               {!syncUnknown && sync?.state === 'uploaded' && time ? ` ${time}` : ''}
@@ -390,8 +446,8 @@ export default function App() {
             'Saving on this computer…'
           ) : (
             <>
-              Saving has not been confirmed. Try again before moving on; your correction is still
-              here.{' '}
+              Saving has not been confirmed. Try again before moving on; your correction is
+              still here.{' '}
               <button className="btn" onClick={() => void run(() => submit(pending))}>
                 Try again
               </button>
@@ -401,8 +457,8 @@ export default function App() {
       )}
       {stopped && (
         <div className="errbox" role="alert">
-          Stop reviewing and ask the team to reconcile this region. Local decisions are retained.
-          Restart the tool after the team has resolved the problem.
+          Stop reviewing and ask the team to reconcile this region. Local decisions are
+          retained. Restart the tool after the team has resolved the problem.
         </div>
       )}
       {sync?.state === 'upload_failed' && !stopped && (
@@ -419,7 +475,9 @@ export default function App() {
       {!ready ? (
         <main className="signin">
           <div className="sicol">
-            <h1>{startupError ? 'The review tool could not open' : 'Loading the review tool…'}</h1>
+            <h1>
+              {startupError ? 'The review tool could not open' : 'Loading the review tool…'}
+            </h1>
             <p role="status">
               {startupError || 'Opening the results and checking them. This may take a minute.'}
             </p>
@@ -454,7 +512,9 @@ export default function App() {
                 autoFocus
                 disabled={busy}
               />
-              <p className="small muted">Not a password. Your name is saved with each decision.</p>
+              <p className="small muted">
+                Not a password. Your name is saved with each decision.
+              </p>
             </div>
             <button className="btn primary lg" disabled={busy || !name.trim()}>
               {busy ? 'Opening…' : 'Start reviewing'}
@@ -492,6 +552,7 @@ export default function App() {
                 {regions.map((r) => (
                   <option key={r.region} value={r.region}>
                     {r.region}
+                    {r.title ? ` · ${r.title}` : ''}
                     {!r.has_records
                       ? ' · no records'
                       : !r.has_scan_folder
@@ -504,12 +565,78 @@ export default function App() {
             <div className="prog">
               <b>
                 {queue
-                  ? `${queue.resolved} of ${queue.total} flagged fields decided`
-                  : 'Loading flagged fields…'}
+                  ? `${region}: ${queue.summary.completed_dwellings} of ${queue.summary.queued_dwellings} queued dwellings`
+                  : 'Loading dwellings…'}
               </b>
-              <span>Progress covers the supplied coding-card flags only.</span>
+              {queue && (
+                <>
+                  <span>
+                    All regions {queue.all_regions.completed_dwellings} of{' '}
+                    {queue.all_regions.queued_dwellings} queued dwellings
+                  </span>
+                  <progress
+                    aria-label="Region progress"
+                    value={queue.summary.completed_dwellings}
+                    max={Math.max(1, queue.summary.queued_dwellings)}
+                  />
+                </>
+              )}
             </div>
+            {queue && (
+              <div className="averages small">
+                <span>{queue.unresolved.toLocaleString()} fields to review</span>
+                <span>
+                  Average <Confidence score={queue.summary.average_card_score} /> · all so far{' '}
+                  {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
+                </span>
+                <span className="muted">
+                  {queue.summary.scored_cards} scored coding cards ·{' '}
+                  {queue.summary.unscored_cards} not scored
+                </span>
+              </div>
+            )}
             <span className="sp" />
+            <button
+              className="btn ghost sm"
+              disabled={busy || !!pending}
+              onClick={() => void run(refreshQueue)}
+            >
+              Refresh queue
+            </button>
+            <button
+              className="btn"
+              disabled={!queue || busy}
+              onClick={() => {
+                if (!queue) return;
+                const url = URL.createObjectURL(
+                  new Blob([reviewSummaryCsv(queue)], {
+                    type: 'text/csv;charset=utf-8',
+                  }),
+                );
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `review-summary-${region}.csv`;
+                link.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Review summary (.csv)
+            </button>
+            {continueDwelling && (
+              <button
+                className="btn primary"
+                disabled={!canNavigate}
+                onClick={() =>
+                  void run(() =>
+                    openDwelling(continueDwelling!),
+                  )
+                }
+              >
+                Continue{' '}
+                {continueDwelling.record_id ?? 'review'}{' '}
+                →
+              </button>
+            )}
             <button
               className="btn"
               disabled={busy || !!pending || stopped}
@@ -523,6 +650,11 @@ export default function App() {
               Save and Exit
             </button>
           </div>
+          <p className="queue-scope small muted">
+            Progress covers supplied coding-card flags only. Rows keep the queue's
+            lowest-confidence order. Averages cover available coding-card scores, including
+            cards outside this queue.
+          </p>
           {queue?.diagnostics.length ? (
             <div className="warnbox">
               <strong>Some fields need the team's attention.</strong>
@@ -548,55 +680,68 @@ export default function App() {
                   <tr>
                     <th>Dwelling</th>
                     <th>Cards</th>
+                    <th>Confidence</th>
                     <th>To review</th>
                     <th>Status</th>
+                    <th>Last reviewed by</th>
                     <th>
                       <span className="sr-only">Action</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((group) => {
-                    const resolved = group.filter((i) => i.resolved).length;
-                    const next = group.find((i) => !i.resolved) ?? group[0];
-                    return (
-                      <tr key={dwellingKey(group[0])}>
-                        <td>
-                          <strong>{group[0].record_id.slice(0, -3)}</strong>
-                          <span className="sub">{group[0].batch}</span>
-                        </td>
-                        <td>
-                          {new Set(group.map((i) => i.source.card_id)).size} coding{' '}
-                          {new Set(group.map((i) => i.source.card_id)).size === 1
-                            ? 'card'
-                            : 'cards'}
-                        </td>
-                        <td>
-                          {group.length} fields · {resolved} decided
-                        </td>
-                        <td>
-                          {resolved === group.length
+                  {groups.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((row) => (
+                    <tr key={row.id}>
+                      <td className="rid">
+                        <strong>{row.record_id ?? 'Number not identified'}</strong>
+                        <span className="sub">{row.address ?? 'Address not available'}</span>
+                        {row.diagnostics?.map((d, i) => (
+                          <span className="sub" key={i}>
+                            {d.message}
+                          </span>
+                        ))}
+                      </td>
+                      <td>
+                        {row.card_count} coding {row.card_count === 1 ? 'card' : 'cards'}
+                      </td>
+                      <td>
+                        <Confidence score={row.score} />
+                      </td>
+                      <td>
+                        {row.total} fields · {row.resolved} decided
+                      </td>
+                      <td>
+                        {row.status === 'blocked'
+                          ? 'Needs the team’s attention'
+                          : row.status === 'complete'
                             ? '● Done'
-                            : resolved
+                            : row.status === 'in_progress'
                               ? '◐ In progress'
                               : '○ Not started'}
-                        </td>
-                        <td className="act">
-                          <button
-                            className="btn sm"
-                            disabled={!canNavigate}
-                            onClick={() => void run(() => openItem(next.id))}
-                          >
-                            {resolved === group.length
-                              ? 'Reopen'
-                              : resolved
-                                ? 'Continue'
-                                : 'Review'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      </td>
+                      <td>
+                        {row.last_reviewer ?? 'Nobody yet'}
+                        {row.last_reviewed_at && (
+                          <span className="sub">
+                            {new Date(row.last_reviewed_at).toLocaleString('en-AU')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="act">
+                        <button
+                          className="btn sm"
+                          disabled={!canNavigate || !row.first_item_id}
+                          onClick={() => void run(() => openDwelling(row))}
+                        >
+                          {row.status === 'complete'
+                            ? 'Reopen'
+                            : row.status === 'in_progress'
+                              ? 'Continue'
+                              : 'Review'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
               <div className="pager">
@@ -632,14 +777,21 @@ export default function App() {
             <nav className="tabs" aria-label="Coding cards in this dwelling">
               {cards.map((c) => (
                 <button
-                  key={c.source.card_id}
-                  className={`tab ${c.source.card_id === item.source.card_id ? 'on' : ''}`}
-                  aria-current={c.source.card_id === item.source.card_id ? 'page' : undefined}
-                  disabled={!canNavigate}
-                  onClick={() => void run(() => openItem(c.id))}
+                  key={c.card_id}
+                  className={`tab ${c.card_id === item.source.card_id ? 'on' : ''}`}
+                  aria-current={c.card_id === item.source.card_id ? 'page' : undefined}
+                  disabled={!canNavigate || !c.first_item_id}
+                  onClick={() => void run(() => openItem((c.next_item_id ?? c.first_item_id)!))}
                 >
-                  Coding card · household {Number(c.record_id.slice(-2))}
-                  <span className="pg">p.{c.source.page}</span>
+                  Coding card · household {c.household_no ?? 'not identified'}
+                  {c.page && <span className="pg">p.{c.page}</span>}
+                  <span className="ct">
+                    {
+                      dwelling.filter((i) => i.source.card_id === c.card_id && !i.resolved)
+                        .length
+                    }{' '}
+                    to review
+                  </span>
                 </button>
               ))}
             </nav>
@@ -670,7 +822,10 @@ export default function App() {
                   className="scan"
                   src={item.scan_url}
                   alt={`Original coding card: ${item.source.pdf}, page ${item.source.page}`}
-                  style={{ width: `${zoom * 100}%`, maxHeight: zoom === 1 ? '100%' : undefined }}
+                  style={{
+                    width: `${zoom * 100}%`,
+                    maxHeight: zoom === 1 ? '100%' : undefined,
+                  }}
                   onLoad={() => {
                     setScanLoaded(scanKey);
                     setScanFailed(false);
@@ -726,13 +881,14 @@ export default function App() {
             <div className="p-head">
               <h2>Needs your review ({cardItems.length})</h2>
               <span className="small muted">
-                {cardItems.filter((i) => i.resolved).length} of {cardItems.length} decided
+                {cardItems.filter((i) => i.resolved).length} of {cardItems.length} decided · in
+                card order
               </span>
             </div>
             <div className="p-list">
-              {cardItems.map((row) =>
+              {cardFields.map((row) =>
                 row.id === item.id ? (
-                  <article className="open" key={row.id}>
+                  <article className="open" key={row.field_path} ref={activeFieldRef}>
                     <h3>{item.label}</h3>
                     <p className="where">
                       Find this printed label on the card. Nothing is highlighted.
@@ -814,6 +970,36 @@ export default function App() {
                         {draft && !validDigits && (
                           <p className="errbox">Digits only. If the card shows a 1, type 1.</p>
                         )}
+                        {item.code_list.length > 0 && (
+                          <>
+                            <p className="lbl">
+                              {item.field_kind === 'numeric_sentinel'
+                                ? 'Special codes for this field'
+                                : 'Codes for this field, from the code book'}
+                            </p>
+                            <p className="mean-live" aria-live="polite">
+                              {item.code_list.find((code) => code.value === draft)?.label ??
+                                (item.field_kind === 'categorical'
+                                  ? 'Code not in this list. Check the card; exact digits can still be saved.'
+                                  : 'an amount or count')}
+                            </p>
+                            <ul className="codes" aria-label="Codes for this field">
+                              {item.code_list.map((code) => (
+                                <li
+                                  key={code.value}
+                                  className={code.value === draft ? 'hit' : ''}
+                                >
+                                  <b>{code.value}</b> {code.label}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                        {item.field_kind === 'unknown' && (
+                          <p className="small muted">
+                            This field has no confirmed code list. Copy the digits exactly.
+                          </p>
+                        )}
                         {item.field.value?.startsWith('0') && draft !== item.field.value && (
                           <p className="warnbox">
                             Check the leading zero. The machine read {item.field.value}. We save
@@ -890,7 +1076,9 @@ export default function App() {
                             </button>
                             <button
                               className="btn"
-                              disabled={!canDecide || !item.allowed_actions.includes('illegible')}
+                              disabled={
+                                !canDecide || !item.allowed_actions.includes('illegible')
+                              }
                               onClick={() => void run(() => decide('illegible'))}
                             >
                               Something's there but I can't read it
@@ -917,19 +1105,21 @@ export default function App() {
                 ) : (
                   <button
                     className="r"
-                    key={row.id}
-                    disabled={!canNavigate}
-                    onClick={() => void run(() => openItem(row.id))}
+                    key={row.field_path}
+                    disabled={!canNavigate || !row.id}
+                    onClick={() => row.id && void run(() => openItem(row.id!))}
                   >
                     <span className="nm">{row.label}</span>
-                    <b className="val">
-                      <Value item={row} />
-                    </b>
+                    <b className="val">{row.field.value ?? statuses[row.field.status]}</b>
                     <Confidence score={row.field.confidence} />
                     <span
                       className={`tag ${row.review_state === 'pending' ? 'machine' : row.review_state}`}
                     >
-                      {row.review_state === 'pending' ? 'MACHINE' : row.review_state.toUpperCase()}
+                      {!row.id
+                        ? 'NOT QUEUED'
+                        : row.review_state === 'pending'
+                          ? 'MACHINE'
+                          : row.review_state.toUpperCase()}
                     </span>
                   </button>
                 ),
@@ -950,7 +1140,8 @@ export default function App() {
               </button>
             </div>
             <p className="agreed small muted">
-              Only supplied coding-card flags are listed, in queue order.
+              Fields follow the printed card order. Fields outside the supplied queue are shown
+              for context only.
             </p>
           </section>
         </main>
