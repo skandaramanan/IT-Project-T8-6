@@ -115,7 +115,7 @@ def run(
         raise ValueError("reading notes needs front_extractor too")
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    _read_records(out_path, region)  # fail fast: a damaged file must cost no quota
+    read_records(out_path, region)  # fail fast: a damaged file must cost no quota
     for reader in filter(None, (extractor, front_extractor, notes_extractor)):
         cache_dir = raw_dir / reader.name if raw_dir else None
         if fresh and cache_dir and cache_dir.exists():
@@ -147,7 +147,7 @@ def run(
             MAX_FAILURE_STREAK,
         )
     # re-read: corrections may have been saved meanwhile
-    merged = _merge(_read_records(out_path, region), records)
+    merged = _merge(read_records(out_path, region), records)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
     summary.records = len(merged)
@@ -387,7 +387,7 @@ def _score(
         card["confidence"] = card_confidence(scores)
 
 
-def _read_records(path: Path, region: str) -> list[dict[str, Any]]:
+def read_records(path: Path, region: str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     records = []
