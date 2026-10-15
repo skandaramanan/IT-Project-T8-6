@@ -3,7 +3,8 @@
 **Status:** Accepted as a conditional go — route pending follow-ups with the
 subject coordinator and the client. Figures provisional pending NFR-03
 calibration against source images.
-**Date:** 2026-09-16
+**Date:** 2026-09-16 (amended 2026-10-16 by IT-124: the route taken, see the
+addendum)
 **Decided by:** Skanda Ramanan (Design Lead)
 **Linear issue:** IT-100, closing IT-84
 
@@ -299,3 +300,80 @@ uv run python benchmark/run_benchmark.py --model gemini --workers 5 --results-ro
 ```
 
 Working for every confidence constant and the band tables: [D016](D016-agreement-to-confidence.md).
+
+## Addendum: the route taken (IT-124, 2026-10-16)
+
+**None of the three.** The second arm ran on a team member's own machine, an
+AMD Radeon RX 9070 XT (16 GB), through LM Studio's llama.cpp server. It went
+through `survey extract --model qwen2.5-vl-server`
+(`backend/survey/extraction/qwen_server.py`). `qwen.py` could not run there,
+because bitsandbytes needs CUDA. Spartan and OpenRouter were never cleared,
+and the Kaggle split was not needed once one machine could do the whole corpus.
+
+**Configuration**, chosen on the 30 benchmark cards before the full run:
+
+| Setting | Value |
+| -- | -- |
+| Weights | Qwen2.5-VL-7B-Instruct, Q6_K GGUF, with the f16 vision projector |
+| Image | 2 MP (`QWEN_MAX_PIXELS=2000000`), resized client-side to multiples of 28 |
+| Decoding | greedy (temperature 0, top-k 1), repeat penalty 1.05, the model's own default |
+| Prompt | the plain extraction prompt; no struck detection (8 of 28 labelled strikes found, 7 false flags) |
+| Server | `--gpu max`, 3 parallel slots, 24,576 tokens of context (8,192 a request) |
+
+Every sampler setting is sent with each request. Left unset, LM Studio's
+presets apply instead, and they scored 68.2%.
+
+**AC1: time and agreement on the 30 cards.** Coded-field accuracy against the
+hand-typed sheet:
+
+| Setup | Accuracy | Time per card |
+| -- | -- | -- |
+| `qwen2.5-vl`, bitsandbytes 4-bit on a T4 (D016's calibration) | 75.0% | ~142 s |
+| Q4_K_M, 1 MP / 2 MP | 76.9% / 81.8% | |
+| Q6_K, 1 MP | 78.6% | 11.8–12.7 s |
+| **Q6_K, 2 MP (the run)** | **84.1%** | 15.8 s alone, 12.6 s with 3 slots |
+| Q8_0, 2 MP | 84.2% | spilled into system RAM mid-run |
+
+Q6_K at 2 MP against Q6_K at 1 MP is +5.5 points (95% interval +2.8 to +8.1).
+Against Q4_K_M at 2 MP it is +2.3 (+1.1 to +3.6). Q8_0 adds nothing (+0.1).
+3 MP and 4 MP scored about the same as 2 MP but spilled out of VRAM.
+
+D016's classes, re-derived the way `test_constants_still_match_the_benchmark`
+does it (Flash-Lite primary, 1,860 fields):
+
+| Class | Constant | T4 4-bit: n, measured | Q6_K 2 MP: n, measured |
+| -- | -- | -- | -- |
+| `agree` | 0.97 | 1,343, 97.0% | **1,487, 97.6%** |
+| `disagree` | 0.75 | 395, 75.7% | **285, 63.9%** |
+| `one_blank` | 0.74 | 121, 73.6% | **88, 64.8%** |
+| `both_blank` | 0.97 | 1, — | 0, — |
+
+- **`agree` holds, and covers more.** 1,487 fields agree instead of 1,343, and
+  35 of them are wrong instead of 40. Flash-Lite errors caught (any class
+  but `agree`) go from 129 of 169 to 134 of 169: 79.3% against 76.3%.
+- **`disagree` and `one_blank` sit about 0.1 under their constants.** A
+  better second arm disagrees less often, and when it does, it is right more
+  often. That leaves Flash-Lite right less often, so the constants overstate
+  these two classes. Both are below D022's cutoff whatever their value, so
+  this changes no routing. It does matter wherever the numbers are used as
+  probabilities (D018's card-level score). The test's 0.03 tolerance would
+  fail on this pairing.
+- **Not recalibrated here.** IT-124 only flags a disagreement (out of scope:
+  "re-calibrating D016's constants"). `model_id` stays `qwen2.5-vl`, so the
+  constants above apply as they stand. IT-125 should either recalibrate
+  `disagree` and `one_blank` on this pairing or accept the overstatement on
+  purpose.
+
+**The run.** All 45 folders: 5,626 coding cards read and 5,617 dwelling
+records written to `results/qwen2.5-vl-server-2000000px/` (D025). Survey
+fronts, backs and identity re-reads are Gemini's alone. The skipped and failed
+pages are in `docs/runs/it124-qwen-run.md`.
+
+**Reproducing.** The benchmark readings are in `data/benchmark/results/`
+(`q6-2mp-rp1.05` and the other configurations). The run's readings are cached
+in `data/runs/<region>/qwen2.5-vl-server-2000000px/`.
+
+```
+QWEN_MAX_PIXELS=2000000 uv run python benchmark/run_benchmark.py --model qwen2.5-vl-server
+QWEN_MAX_PIXELS=2000000 uv run survey extract <scan folder> --model qwen2.5-vl-server
+```
