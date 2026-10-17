@@ -30,6 +30,24 @@ about 1 MB per region, well under GitHub's 100 MB file limit.
 through a reviewed PR. A correction that could change the schema would make
 every downstream validation meaningless.
 
+### A second extractor's results (IT-124, 2026-10-16)
+
+A second extractor's run is committed beside the primary one, under
+`results/<extractor>/<region>.jsonl`. The folder is the extractor's cache name,
+for example `results/qwen2.5-vl-server-2000000px/`. Same schema, same
+validation: CI runs `survey validate-results` on every folder under
+`results/`, not only the top level. Beside the region files, `extractor.json`
+records the configuration the run was made with: model, weights, pixel budget,
+decoding and a hash of the prompt. A run with any other configuration refuses
+to write into the folder, so two configurations' records never merge into one
+file.
+
+The two arms are kept apart on purpose. Nothing reads the subfolder as the
+dataset: the review tool and `survey flags` use `results/<region>.jsonl`.
+IT-125 merges the arms by card (D026), and the merged output replaces the
+top-level files. The Qwen run is 38 MB, at most 2 MB a file, beside the
+primary run's 110 MB, so each file stays well under GitHub's 100 MB limit.
+
 ## Sharing branch: resolved by D029
 
 [D029](D029-review-persistence.md) selects the same repository's `review-data`

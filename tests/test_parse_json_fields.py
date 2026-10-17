@@ -5,7 +5,8 @@ field empty, which scores well on a card that is mostly empty cells -- so the
 parser has to reject it rather than let it through as a partial answer.
 """
 
-from survey.extraction.json_extraction import parse_json_fields
+from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
+from survey.extraction.json_extraction import parse_confidence_bands, parse_json_fields
 
 
 def test_placeholder_object_is_rejected():
@@ -52,3 +53,80 @@ def test_unbanded_output_reports_no_bands():
 
     assert parse_confidence_bands('{"Municipality": "56"}') == {}
     assert parse_confidence_bands(None) == {}
+
+
+# --- IT-124: labels written another way -------------------------------------
+
+
+def test_every_alias_names_a_schema_field():
+    from survey.extraction.json_extraction import FIELD_ALIASES
+
+    assert set(FIELD_ALIASES.values()) <= set(FIELD_SCHEMA_BY_NAME)
+    assert not set(FIELD_ALIASES) & set(FIELD_SCHEMA_BY_NAME)
+
+
+def test_a_known_misspelling_is_read_under_the_schemas_label():
+    fields = parse_json_fields(
+        '{"Washhouse": "1", "Number 5 - 10": "2", "Number of Households": "01"}'
+    )
+    assert fields["Washouse"] == "1"
+    assert fields["Number 5-10"] == "2"
+    assert fields["Number of Household"] == "01"
+
+
+def test_children_nested_under_their_heading_are_read():
+    fields = parse_json_fields(
+        '{"Children of H. or wife": {"Living": "3", "Dead": "0", "Total": "3"}}'
+    )
+    assert fields["Children of H. or wife: Living"] == "3"
+    assert fields["Children of H. or wife: Total"] == "3"
+
+
+def test_a_nested_string_is_not_guessed_at():
+    fields = parse_json_fields(
+        '{"Municipality": "04", "Children of H. or wife": "Total: 0"}'
+    )
+    assert "Children of H. or wife: Total" not in fields
+
+
+def test_the_schemas_own_label_wins_even_blank():
+    fields = parse_json_fields('{"Washouse": null, "Washhouse": "1"}')
+    assert fields["Washouse"] == ""
+
+
+def test_two_misspellings_that_disagree_are_left_omitted():
+    text = (
+        '{"Municipality": "04", "Children of H. or wife Living": "1", '
+        '"Children of H. or Wife: Living": "2"}'
+    )
+    assert "Children of H. or wife: Living" not in parse_json_fields(text)
+
+
+def test_a_misspelt_fields_own_band_and_strike_go_with_it():
+    from survey.extraction.json_extraction import parse_struck_fields
+
+    text = (
+        '{"Washouse": {"value": "1", "confidence": "high"}, '
+        '"Washhouse": {"value": "2", "confidence": "low"}, '
+        '"Pre-war Occupation": {"value": "07", "confidence": "low", "struck": true}}'
+    )
+    bands = parse_confidence_bands(text)
+    assert bands["Washouse"] == "high"  # the explicit field's, not the alias's
+    assert bands["Pre-War Occupation"] == "low"
+    assert parse_struck_fields(text)["Pre-War Occupation"] is True
+
+
+def test_a_cached_reading_gains_its_misspelt_fields_and_keeps_its_own():
+    from survey.extraction.base import ExtractionResult
+    from survey.extraction.json_extraction import with_canonical_labels
+
+    cached = ExtractionResult(
+        fields={"Municipality": "04", "Washhouse": "1", "Number 5-10": ""},
+        raw_text='{"Municipality": "04", "Washhouse": "1", "Number 5-10": null, '
+        '"Number 5 - 10": "3"}',
+    )
+    result = with_canonical_labels(cached)
+    assert result.fields["Washouse"] == "1"
+    assert result.fields["Number 5-10"] == ""
+    assert result.struck is None  # still "nobody looked"
+    assert with_canonical_labels(result) == result

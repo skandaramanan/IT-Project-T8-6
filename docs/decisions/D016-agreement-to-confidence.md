@@ -510,3 +510,30 @@ addendum records that a better-quality configuration now exists and what it
 would cost — the choice belongs to IT-100 and any revision of D012, not here.
 Taking it would mean recalibrating these constants a third time, and retiring
 most of §6 along with them.
+
+## Addendum C — the constants predate reading Qwen's misspelt labels (IT-124, 17/10/2026)
+
+Every saved Qwen reply, on the benchmark and across the corpus, writes
+`Washhouse` for the card's `Washouse`. Some also write `Pre-war Occupation`,
+`Number 5 - 10`, expanded income labels, or the three children counts nested
+under one heading. Until IT-124 those fields were simply missing from the Qwen
+arm, so wherever Flash-Lite read a value they landed in `one_blank`. That is
+the pairing the constants above were measured on.
+
+`json_extraction.FIELD_ALIASES` now reads those exact spellings under the
+schema's labels, for fresh and cached readings alike. Re-derived with it, the
+same 30 cards move between classes: `one_blank` falls from 121 fields to 41,
+at 46.3% instead of 73.6%, and the banded `one_blank`/`high` cell falls to
+33.3% over 27. **The constants are not recalibrated here.** IT-125 owns that,
+on the normalised pairing it ships.
+
+Until then:
+
+- `test_constants_still_match_the_benchmark` and
+  `test_band_constants_still_match_the_live_run` check the constants against
+  the parsing they were measured with. A strict `xfail` copy of each runs the
+  normalised parsing and is expected to fail. It starts passing, and so fails
+  the suite, once the constants are recalibrated.
+- No benchmark figure in this document or in D019's addendum validates the
+  normalised pairing. Calibrated scores, and any review bypass that relies on
+  them (D022's `agree` threshold), need IT-125's comparison first.

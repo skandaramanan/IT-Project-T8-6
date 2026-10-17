@@ -198,3 +198,26 @@ def test_extract_asks_for_a_region_when_the_folder_name_is_not_one(
         cli.main(["extract", str(unit)])
     assert error.value.code == 2
     assert "--region" in capsys.readouterr().err
+
+
+def test_extract_loads_the_excluded_sources_by_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    (tmp_path / "scan.pdf").touch()
+    calls = {}
+
+    def fake_run(scan_dir, **kwargs):
+        calls.update(kwargs)
+        return RunSummary()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    assert cli.main(["extract", str(tmp_path), "--region", "216461"]) == 0
+    # IT-124's review: a letter read as 10-0001-01
+    assert ("1262736_1973-0002-00050.pdf", 9) in calls["excluded_sources"]
+    assert not calls["excluded_sources"] & calls["verified_coding"]
+
+    registry = tmp_path / "excluded.json"
+    registry.write_text("[]")
+    args = ["extract", str(tmp_path), "--region", "216461", "--excluded-sources"]
+    assert cli.main([*args, str(registry)]) == 0
+    assert calls["excluded_sources"] == frozenset()

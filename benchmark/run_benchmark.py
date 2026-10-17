@@ -47,6 +47,8 @@ EXTRACTORS: dict[str, str] = {
     # --model with a bare ModuleNotFoundError, so the dict lists what is present.
     "gemini": "survey.extraction.gemini:GeminiExtractor",  # primary, D012
     "qwen2.5-vl": "survey.extraction.qwen:QwenVLExtractor",  # local second opinion
+    # the same model behind LM Studio/llama.cpp, for a GPU bitsandbytes can't use
+    "qwen2.5-vl-server": "survey.extraction.qwen_server:QwenServerExtractor",
 }
 
 
