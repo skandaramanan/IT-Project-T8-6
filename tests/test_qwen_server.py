@@ -23,6 +23,7 @@ def no_server_env(monkeypatch):
         "QWEN_MAX_PIXELS",
         "QWEN_REPEAT_PENALTY",
         "QWEN_STRUCK_DETECTION",
+        "QWEN_SERVER_WEIGHTS",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(qwen_server.time, "sleep", lambda _: None)
@@ -42,15 +43,32 @@ def fake_server(
     reply="{}",
     finish_reason="stop",
     errors=(),
+    weights="Q6_K",
+    model_path=None,
 ):
     """Answers /models and /chat/completions; returns the chat bodies sent.
-    ``errors`` are raised by the first chat requests, one each, in order."""
+    ``errors`` are raised by the first chat requests, one each, in order.
+    ``weights`` is LM Studio's quantization for every loaded model (None: not
+    LM Studio); ``model_path`` is llama.cpp's /props (None: not llama.cpp)."""
     sent = []
     errors = list(errors)
 
     def urlopen(request, timeout):
         url = request if isinstance(request, str) else request.full_url
-        if url.endswith("/models"):
+        if url.endswith("/api/v0/models"):
+            if weights is None:
+                raise qwen_server.urllib.error.URLError("404")
+            payload = {
+                "data": [
+                    {"id": m, "state": "loaded", "quantization": weights}
+                    for m in models
+                ]
+            }
+        elif url.endswith("/props"):
+            if model_path is None:
+                raise qwen_server.urllib.error.URLError("404")
+            payload = {"model_path": model_path}
+        elif url.endswith("/v1/models"):
             payload = {"data": [{"id": m} for m in models]}
         else:
             sent.append(json.loads(request.data))
@@ -155,6 +173,9 @@ def test_cli_runs_qwen_into_its_own_file_without_fronts(tmp_path, monkeypatch):
     ]
     assert cli.main(args) == 0
     assert calls["out_dir"].as_posix() == "results/qwen2.5-vl-server"
+    assert calls["extractor"].cache_name == (
+        "qwen2.5-vl-server/qwen2.5-vl-7b-instruct-q6_k"
+    )
     assert calls["front_extractor"] is None
     assert isinstance(calls["extractor"], QwenServerExtractor)
 
@@ -238,6 +259,87 @@ def test_a_cut_off_reply_is_a_failed_card_not_a_cached_reading(tmp_path, monkeyp
 
     assert result is None and summary.failed_cards == 1
     assert not (tmp_path / extractor.name).exists()
+
+
+def test_readings_cache_under_the_weights_the_server_reports(monkeypatch):
+    fake_server(monkeypatch, weights="Q4_K_M")
+    extractor = QwenServerExtractor()
+    assert extractor.is_available()
+    assert extractor.cache_name == "qwen2.5-vl-server/qwen2.5-vl-7b-instruct-q4_k_m"
+    assert extractor.config["weights"] == "Q4_K_M"
+
+    # llama.cpp names the GGUF file it was started with instead
+    fake_server(monkeypatch, weights=None, model_path=r"C:\models\Qwen-Q6_K.gguf")
+    extractor = QwenServerExtractor()
+    assert extractor.is_available()
+    assert extractor.weights == "Qwen-Q6_K.gguf"
+
+
+def test_weights_the_server_cannot_name_must_be_set(monkeypatch):
+    fake_server(monkeypatch, weights=None)
+    extractor = QwenServerExtractor()
+    assert not extractor.is_available()
+    assert "QWEN_SERVER_WEIGHTS" in extractor.unavailable
+
+    monkeypatch.setenv("QWEN_SERVER_WEIGHTS", "Q6_K")
+    extractor = QwenServerExtractor()
+    assert extractor.is_available()
+    assert extractor.cache_name.endswith("-q6_k")
+
+
+def test_set_weights_must_agree_with_the_server(monkeypatch):
+    # One LM Studio id served both quants in IT-124; the id alone can't tell.
+    fake_server(monkeypatch, weights="Q4_K_M")
+    monkeypatch.setenv("QWEN_SERVER_WEIGHTS", "Q6_K")
+    extractor = QwenServerExtractor()
+    assert not extractor.is_available()
+    assert "Q4_K_M" in extractor.unavailable
+
+
+def test_switching_weights_reads_the_card_again(tmp_path, monkeypatch):
+    from survey.pipeline import _reading
+
+    card = _card(tmp_path)
+    sent = fake_server(monkeypatch, reply='{"Municipality": "04"}', weights="Q6_K")
+    q6 = QwenServerExtractor()
+    assert q6.is_available()
+    assert _reading(card, tmp_path / "s.pdf", 1, q6, tmp_path, RunSummary())
+    assert _reading(card, tmp_path / "s.pdf", 1, q6, tmp_path, RunSummary())
+    assert len(sent) == 1  # replayed
+
+    sent = fake_server(monkeypatch, reply='{"Municipality": "05"}', weights="Q4_K_M")
+    q4 = QwenServerExtractor()
+    assert q4.is_available() and q4.name == q6.name
+    result = _reading(card, tmp_path / "s.pdf", 1, q4, tmp_path, RunSummary())
+    assert len(sent) == 1 and result.fields["Municipality"] == "05"
+
+
+def test_a_cache_only_rebuild_asks_no_server(tmp_path, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("no request expected")
+
+    monkeypatch.setattr(qwen_server.urllib.request, "urlopen", refuse)
+    extractor = QwenServerExtractor()
+    extractor.cached_only = True
+    assert not extractor.is_available()  # which cache?
+
+    monkeypatch.setenv("QWEN_SERVER_MODEL", "qwen/qwen2.5-vl-7b")
+    monkeypatch.setenv("QWEN_SERVER_WEIGHTS", "Q6_K")
+    extractor = QwenServerExtractor()
+    extractor.cached_only = True
+    assert extractor.is_available()
+    assert extractor.cache_name == "qwen2.5-vl-server/qwen-qwen2.5-vl-7b-q6_k"
+    with pytest.raises(RuntimeError, match="cache"):
+        extractor.extract(_card(tmp_path))
+
+
+def test_cached_only_is_the_qwen_servers(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    (tmp_path / "unit.pdf").touch()
+    with pytest.raises(SystemExit) as error:
+        cli.main(["extract", str(tmp_path), "--region", "x", "--cached-only"])
+    assert error.value.code == 2
 
 
 def test_an_http_error_names_the_servers_reason(tmp_path, monkeypatch):

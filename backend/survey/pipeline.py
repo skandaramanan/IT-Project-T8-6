@@ -57,7 +57,10 @@ from survey.confidence.agreement import NO_SECOND_OPINION
 from survey.confidence.card import card_confidence
 from survey.confidence.field import confidence_for
 from survey.extraction.base import ExtractionResult, Extractor
-from survey.extraction.json_extraction import parse_confidence_bands
+from survey.extraction.json_extraction import (
+    parse_confidence_bands,
+    with_canonical_labels,
+)
 from survey.extraction.record import (
     FIELD_MAP,
     SCHEMA_VERSION,
@@ -83,6 +86,21 @@ MAX_FAILURE_STREAK = 3  # a daily cap fails every card; stop instead of backing 
 
 def read_verified_coding(path: Path, region: str) -> frozenset[tuple[str, int]]:
     """Read explicit scan-inspection decisions, scoped to one archive region."""
+    return _read_page_decisions(path, region, "verified coding")
+
+
+def read_excluded_sources(path: Path, region: str) -> frozenset[tuple[str, int]]:
+    """Pages scan inspection found are not coding cards, in the same format.
+
+    A model reading one with the coding prompt can invent a whole household
+    (IT-124: a letter read as ``10-0001-01``), so they are never read as one.
+    """
+    return _read_page_decisions(path, region, "excluded source")
+
+
+def _read_page_decisions(
+    path: Path, region: str, what: str
+) -> frozenset[tuple[str, int]]:
     try:
         entries = json.loads(path.read_text())
         if not isinstance(entries, list):
@@ -102,7 +120,7 @@ def read_verified_coding(path: Path, region: str) -> frozenset[tuple[str, int]]:
             (e["pdf"], e["page"]) for e in entries if e["region"] == region
         )
     except (OSError, TypeError, ValueError) as error:
-        raise MergeRefused(f"cannot read verified coding decisions: {error}") from error
+        raise MergeRefused(f"cannot read {what} decisions: {error}") from error
 
 
 class MergeRefused(ValueError):
@@ -117,6 +135,7 @@ class RunSummary:
     unplaced_cards: int = 0  # read, but fits no dwelling: written on its own
     failed_cards: int = 0  # extractor raised or returned nothing usable
     failed_pdfs: int = 0  # could not be opened or split into pages
+    excluded_pages: int = 0  # not coding cards, by scan inspection: never read
     failure_streak: int = 0  # consecutive failed cards; reaching the cap stops the run
     invalid_records: int = 0  # failed the envelope, not written
     unattached_notes: int = 0  # notes read whose dwelling has no record
@@ -134,6 +153,7 @@ def run(
     notes_extractor: Extractor | None = None,
     identity_extractor: Extractor | None = None,
     verified_coding: Collection[tuple[str, int]] = (),
+    excluded_sources: Collection[tuple[str, int]] = (),
 ) -> RunSummary:
     """Process every PDF in ``scan_dir`` and write ``<region>.jsonl``.
 
@@ -145,17 +165,33 @@ def run(
     aside (``<extractor>.previous``) and reads every card again; corrections
     are still kept. Set aside once, at
     the start, so a fresh run cut short resumes with a plain rerun.
+    ``excluded_sources`` are pages that are not coding cards: they are never
+    read, and a previous record built from one is removed (:func:`_exclude`).
     """
     if notes_extractor and not front_extractor:
         # A note finds its record through its front's card entry, which only
         # a read front gets.
         raise ValueError("reading notes needs front_extractor too")
+    if both := set(verified_coding) & set(excluded_sources):
+        raise MergeRefused(
+            "both verified coding and excluded: "
+            + ", ".join(f"{pdf} p{page}" for pdf, page in sorted(both))
+        )
     summary = RunSummary()
     out_path = out_dir / f"{region}.jsonl"
-    previous = read_records(out_path, region)  # fail before spending quota
+    # fail before spending quota
+    previous = _exclude(read_records(out_path, region), excluded_sources)
     readers = (extractor, front_extractor, notes_extractor, identity_extractor)
     for reader in filter(None, readers):
-        cache_dir = raw_dir / reader.name if raw_dir else None
+        # A configuration the cache or results were not made with must not be
+        # mixed into them. Before --fresh moves anything.
+        if config := getattr(reader, "config", None):
+            if raw_dir:
+                _check_config(raw_dir / _cache_name(reader), config)
+            if reader is extractor:
+                _check_config(out_dir, config)
+    for reader in filter(None, readers):
+        cache_dir = raw_dir / _cache_name(reader) if raw_dir else None
         if fresh and cache_dir and cache_dir.exists():
             backup = cache_dir.with_name(cache_dir.name + ".previous")
             shutil.rmtree(backup, ignore_errors=True)
@@ -176,6 +212,7 @@ def run(
                 raw_dir,
                 summary,
                 verified_coding=verified_coding,
+                excluded_sources=excluded_sources,
                 previous=previous,
             )
         except Exception:  # without this, one damaged PDF loses the whole batch
@@ -188,7 +225,10 @@ def run(
             MAX_FAILURE_STREAK,
         )
     # re-read: corrections may have been saved meanwhile
-    merged = _merge(read_records(out_path, region), records)
+    merged = _merge(
+        _exclude(read_records(out_path, region), excluded_sources, quiet=True),
+        records,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     if merged:
         _write_atomic(out_path, "".join(json.dumps(record) + "\n" for record in merged))
@@ -217,6 +257,7 @@ def _run_pdf(
     summary: RunSummary,
     *,
     verified_coding: Collection[tuple[str, int]] = (),
+    excluded_sources: Collection[tuple[str, int]] = (),
     previous: Collection[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     with tempfile.TemporaryDirectory() as tmp:
@@ -258,6 +299,20 @@ def _run_pdf(
                     "%s p%d: unrecognised page, skipped", pdf.name, page_numbers[index]
                 )
                 summary.skipped_pages += 1
+        # Before any reading or recovery: a coding reading of a letter can
+        # spell a record_id, and recovery would then keep it as a card.
+        kept = []
+        for card in cards:
+            if (pdf.name, page_numbers[card.page_index]) in excluded_sources:
+                log.info(
+                    "%s p%d: excluded, not a coding card",
+                    pdf.name,
+                    page_numbers[card.page_index],
+                )
+                summary.excluded_pages += 1
+            else:
+                kept.append(card)
+        cards = kept
 
         readers = {
             CardType.NUMERIC_CODING: extractor,
@@ -524,6 +579,39 @@ def _add_notes(
             summary.unattached_notes += 1
 
 
+def _cache_name(extractor: Extractor) -> str:
+    """An extractor's cache folder under the region's: ``cache_name`` where it
+    has one, keyed by more than ``name`` (the Qwen server's model weights)."""
+    return getattr(extractor, "cache_name", extractor.name)
+
+
+CONFIG = "extractor.json"
+
+
+def _check_config(folder: Path, config: dict[str, Any]) -> None:
+    """Record ``config`` in ``folder``, or refuse if another is recorded."""
+    path = folder / CONFIG
+    if path.exists():
+        try:
+            recorded = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            raise MergeRefused(f"{path}: unreadable: {error}") from error
+        if recorded != config:
+            changed = sorted(
+                key
+                for key in recorded.keys() | config.keys()
+                if recorded.get(key) != config.get(key)
+            )
+            raise MergeRefused(
+                f"{folder} was made with another configuration "
+                f"({', '.join(f'{k}: {recorded.get(k)!r} now {config.get(k)!r}' for k in changed)}); "
+                "move it aside to start one for this configuration"
+            )
+        return
+    folder.mkdir(parents=True, exist_ok=True)
+    _write_atomic(path, json.dumps(config, indent=2) + "\n")
+
+
 def _reading(
     image: Path,
     pdf: Path,
@@ -542,7 +630,9 @@ def _reading(
     """
     where = f"{pdf.name} p{number}"
     cache = (
-        raw_dir / extractor.name / f"{pdf.stem}_p{number:04d}.json" if raw_dir else None
+        raw_dir / _cache_name(extractor) / f"{pdf.stem}_p{number:04d}.json"
+        if raw_dir
+        else None
     )
     result = None
     if cache and cache.exists():
@@ -562,6 +652,8 @@ def _reading(
         if cache and result.raw_text:
             cache.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(cache, json.dumps(asdict(result)))
+    # Cached readings were parsed before some labels were known (IT-124).
+    result = with_canonical_labels(result)
     if not result.fields:
         if expected_empty:
             summary.failure_streak = 0
@@ -647,6 +739,42 @@ def read_records(path: Path, region: str) -> list[dict[str, Any]]:
             )
         records.append(record)
     return records
+
+
+def _exclude(
+    records: list[dict[str, Any]],
+    excluded: Collection[tuple[str, int]],
+    *,
+    quiet: bool = False,
+) -> list[dict[str, Any]]:
+    """``records`` without those read from excluded pages.
+
+    Applied to the previous file as well as the new run, or the merge keeps a
+    record this run no longer builds. Only a whole record goes: one that also
+    holds a card kept would lose a household, and one with reviewed fields
+    would lose a reviewer's work, so both refuse instead.
+    """
+    excluded = frozenset(excluded)
+    kept = []
+    for record in records:
+        cards = _coding_cards(record)
+        if not cards & excluded:
+            kept.append(record)
+            continue
+        image, page = min(cards & excluded)
+        if not cards <= excluded:
+            raise MergeRefused(
+                f"{image} p{page}: excluded, but its dwelling also holds "
+                f"{', '.join(f'{i} p{p}' for i, p in sorted(cards - excluded))}; "
+                "move the results file aside and rebuild the region"
+            )
+        if any(_corrected_fields(record)):
+            raise MergeRefused(
+                f"{image} p{page}: excluded, but its record has reviewed fields"
+            )
+        if not quiet:
+            log.warning("%s p%d: excluded source, previous record removed", image, page)
+    return kept
 
 
 def _household_cards(record: dict[str, Any]) -> list[list[tuple[str, int]]]:

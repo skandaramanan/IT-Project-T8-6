@@ -10,6 +10,10 @@ Env vars, because ``run_benchmark.py`` constructs extractors with no args:
     QWEN_SERVER_URL     default http://localhost:1234/v1 (LM Studio's default)
     QWEN_SERVER_MODEL   the model id the server lists under /v1/models;
                         blank = the only one loaded
+    QWEN_SERVER_WEIGHTS the weights behind that id, e.g. Q6_K. Blank = what
+                        the server reports (LM Studio's quantization, or the
+                        GGUF file llama.cpp loaded); set, it must agree. Needed
+                        when the server can't say, and for --cached-only
     QWEN_STRUCK_DETECTION
                         1 to also report which printed options are struck
                         through (FR-06, D023); off by default. A different
@@ -29,13 +33,12 @@ reads the model's generation_config.json, which is greedy with a 1.05 repeat
 penalty.
 
 Not the calibrated configuration. D016's constants were measured on the
-bitsandbytes 4-bit build at ~1MP; ``model_id`` is still ``qwen2.5-vl`` so its
-tables apply. IT-124 checked that on the 30 benchmark cards (D019, 2026-10-16):
-Q6_K at 2MP reads 84.1% of coded fields against the 4-bit build's 75.0%, and
-``agree`` holds (97.6% against 0.97) while ``disagree`` and ``one_blank`` come
-in about 0.1 under their constants. Only ``agree`` clears review (D022), so
-routing is unchanged. Rerun ``benchmark/run_benchmark.py --model
-qwen2.5-vl-server`` before trusting any other quant or pixel budget.
+bitsandbytes 4-bit build at ~1MP; ``model_id`` is still ``qwen2.5-vl`` so the
+pipeline can look its tables up, not because they are known to hold. IT-124's
+30-card check (D019 addendum) was scored before the misspelt labels were read
+(``json_extraction.FIELD_ALIASES``), which moves fields between agreement
+classes, so it does not validate this pairing. Calibrated scores, and any
+review bypass on them, wait for IT-125's comparison.
 
 A reply cut off at MAX_TOKENS raises rather than returning the partial fields
 its JSON repairs to, so it is never cached; a dropped connection, timeout or
@@ -48,15 +51,23 @@ experiment -- better digits, maybe, but a picture D016 never saw, and the
 vision encoder's full-attention layers grow with the square of the pixel count
 (uncapped, the T4 run OOM'd at ~19GB) -- so those readings file under
 ``<name>-<pixels>px`` and a changed budget never replays another's cache.
+
+The weights behind the model id are part of a reading's identity too: one LM
+Studio id (``qwen/qwen2.5-vl-7b``) served both Q4_K_M and Q6_K during IT-124.
+Readings cache under ``<name>/<model>-<weights>`` (``cache_name``), so other
+weights never replay them, and ``config`` is recorded beside the cache and the
+results, where the pipeline refuses a run whose configuration differs.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import math
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -106,6 +117,10 @@ def _env_number(name: str, default, cast):
         raise ValueError(
             f"{name}={raw!r} is not a {cast.__name__}; leave it blank for {default}"
         ) from None
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9._]+", "-", text.lower()).strip("-")
 
 
 def _retryable(error: Exception) -> bool:
@@ -159,7 +174,12 @@ class QwenServerExtractor:
             "true",
             "yes",
         )
-        # ``name`` is the cache folder: a reading is only replayed at the
+        self.weights = os.environ.get("QWEN_SERVER_WEIGHTS") or None
+        # Replay cached readings only: no server is asked anything, and a card
+        # with no cached reading fails (a rebuild after a parsing change).
+        self.cached_only = False
+        self.unavailable = ""  # why is_available() said no
+        # ``name`` is the results folder: a reading is only replayed at the
         # resolution it was made at.
         self.name = "qwen2.5-vl-server"
         if self.max_pixels != MAX_PIXELS:
@@ -169,21 +189,88 @@ class QwenServerExtractor:
         if self.struck_detection:
             self.name += "-struck"
 
-    def _get(self, path: str) -> dict:
-        with urllib.request.urlopen(self.base_url + path, timeout=10) as response:
+    @property
+    def cache_name(self) -> str:
+        """The cache folder: ``name``, then the model and weights read with."""
+        if not (self.model and self.weights):
+            raise RuntimeError("which model and weights? call is_available() first")
+        return f"{self.name}/{_slug(self.model)}-{_slug(self.weights)}"
+
+    @property
+    def config(self) -> dict:
+        """Everything a reading depends on, recorded with the cache and results."""
+        prompt = (
+            STRUCK_EXTRACTION_PROMPT if self.struck_detection else EXTRACTION_PROMPT
+        )
+        return {
+            "extractor": self.name,
+            "model": self.model,
+            "weights": self.weights,
+            "max_pixels": self.max_pixels,
+            "repeat_penalty": self.repeat_penalty,
+            "struck_detection": self.struck_detection,
+            "max_tokens": MAX_TOKENS,
+            "decoding": "greedy",
+            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()[:16],
+        }
+
+    def _get(self, url: str) -> dict:
+        with urllib.request.urlopen(url, timeout=10) as response:
             return json.load(response)
 
+    def _served_weights(self) -> str | None:
+        """The weights the server says are behind ``self.model``, if it says."""
+        root = self.base_url.removesuffix("/v1")
+        try:  # LM Studio: the loaded instance's quantization
+            entries = self._get(root + "/api/v0/models").get("data", [])
+            for entry in entries:
+                if entry.get("id") == self.model and entry.get("state") == "loaded":
+                    return entry.get("quantization") or None
+        except (OSError, ValueError, AttributeError):
+            pass
+        try:  # llama.cpp: the GGUF file it was started with
+            path = self._get(root + "/props").get("model_path")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return Path(path.replace("\\", "/")).name if path else None
+
+    def _refuse(self, why: str) -> bool:
+        self.unavailable = why
+        return False
+
     def is_available(self) -> bool:
+        if self.cached_only:
+            if not (self.model and self.weights):
+                return self._refuse(
+                    "replaying a cache needs QWEN_SERVER_MODEL and QWEN_SERVER_WEIGHTS"
+                )
+            return True
         try:
-            models = [m["id"] for m in self._get("/models").get("data", [])]
-        except (OSError, ValueError):
-            return False
+            models = [m["id"] for m in self._get(self.base_url + "/models")["data"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            return self._refuse(f"no model server at {self.base_url}")
         if self.model is None:
             # Guessing between several would silently run the wrong one.
             if len(models) != 1:
-                return False
+                return self._refuse(
+                    f"{len(models)} models loaded; set QWEN_SERVER_MODEL to one"
+                )
             self.model = models[0]
-        return self.model in models
+        if self.model not in models:
+            return self._refuse(f"{self.model} isn't loaded at {self.base_url}")
+        served = self._served_weights()
+        if served and self.weights and _slug(served) != _slug(self.weights):
+            return self._refuse(
+                f"the server has {served} behind {self.model}, "
+                f"not QWEN_SERVER_WEIGHTS={self.weights}"
+            )
+        self.weights = self.weights or served
+        if not self.weights:
+            return self._refuse(
+                f"the server doesn't say which weights are behind {self.model}; "
+                "set QWEN_SERVER_WEIGHTS"
+            )
+        return True
 
     def _post(self, request: urllib.request.Request) -> dict:
         for attempt in range(1, ATTEMPTS + 1):
@@ -203,6 +290,8 @@ class QwenServerExtractor:
         raise AssertionError("unreachable")
 
     def extract(self, image_path: Path) -> ExtractionResult:
+        if self.cached_only:
+            raise RuntimeError("no cached reading, and replaying the cache only")
         body = {
             "model": self.model,
             "messages": [

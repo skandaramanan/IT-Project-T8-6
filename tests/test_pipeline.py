@@ -8,6 +8,7 @@ fake, so nothing here touches data/ or calls Gemini.
 import json
 import logging
 from pathlib import Path
+from typing import ClassVar
 
 import jsonschema
 import numpy as np
@@ -1409,3 +1410,211 @@ def test_a_fresh_rerun_without_notes_and_an_unusable_front_keeps_both(tmp_path):
     assert after["dwelling"]["address"]["value"] == "6 Hall St."
     assert after["dwelling"]["notes"] == before["dwelling"]["notes"]
     assert after == before
+
+
+# --- IT-124: excluded sources, misspelt labels, configuration ----------------
+
+EXCLUDED = {("unit.pdf", 7)}
+
+
+def _pages(records: list[dict]) -> list[list[int]]:
+    return [
+        sorted(c["page"] for h in r["dwelling"]["households"] for c in h["cards"])
+        for r in records
+    ]
+
+
+def test_an_excluded_page_is_never_read_and_its_old_record_goes(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    assert _pages(_read(tmp_path)) == [[3], [7]]
+
+    fresh = FakeExtractor()
+    summary = run(
+        scan_dir,
+        region="north",
+        extractor=fresh,
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        fresh=True,
+        excluded_sources=EXCLUDED,
+    )
+    assert fresh.calls == 1  # page 3 only
+    assert summary.excluded_pages == 1 and summary.failed_cards == 0
+    assert _pages(_read(tmp_path)) == [[3]]
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    # A rerun can't bring it back, and rebuilding again changes nothing.
+    again = FakeExtractor()
+    run(
+        scan_dir,
+        region="north",
+        extractor=again,
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+        excluded_sources=EXCLUDED,
+    )
+    assert again.calls == 0
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_correction_on_a_kept_source_survives_an_exclusion(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
+    records[0]["dwelling"]["house"]["garden"] = corrected
+    _write(tmp_path, records)
+
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        excluded_sources=EXCLUDED,
+    )
+
+    (record,) = _read(tmp_path)
+    assert record["dwelling"]["house"]["garden"] == corrected
+    jsonschema.validate(record, SCHEMA)
+
+
+def test_excluding_a_reviewed_record_is_refused(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
+    records = _read(tmp_path)
+    records[1]["dwelling"]["house"]["garden"].update(CORRECTED)
+    _write(tmp_path, records)
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    extractor = FakeExtractor()
+    with pytest.raises(MergeRefused, match="reviewed"):
+        run(
+            scan_dir,
+            region="north",
+            extractor=extractor,
+            out_dir=tmp_path,
+            excluded_sources=EXCLUDED,
+        )
+    assert extractor.calls == 0  # refused before anything was read
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_excluding_part_of_a_dwelling_is_refused(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    _write(tmp_path, [_stub(3, 7)])
+    before = (tmp_path / "north.jsonl").read_bytes()
+
+    with pytest.raises(MergeRefused, match="also holds unit.pdf p3"):
+        run(
+            scan_dir,
+            region="north",
+            extractor=FakeExtractor(),
+            out_dir=tmp_path,
+            excluded_sources=EXCLUDED,
+        )
+    assert (tmp_path / "north.jsonl").read_bytes() == before
+
+
+def test_a_page_cannot_be_both_verified_coding_and_excluded(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    with pytest.raises(MergeRefused, match="unit.pdf p7"):
+        run(
+            scan_dir,
+            region="north",
+            extractor=FakeExtractor(),
+            out_dir=tmp_path,
+            verified_coding=EXCLUDED,
+            excluded_sources=EXCLUDED,
+        )
+
+
+class StaleQwenExtractor(FakeExtractor):
+    """A reading parsed before the aliases: the reply says Washhouse, and its
+    fields, like every cached Qwen reading from IT-124, don't have Washouse."""
+
+    name = model_id = "qwen2.5-vl"
+    reply: ClassVar[dict] = {
+        "Washhouse": {"value": "2", "struck": True},
+        "Pre-war Occupation": "07",
+    }
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        raw = {**json.loads(result.raw_text), **self.reply}
+        fields = {**result.fields, "Washhouse": "2", "Pre-war Occupation": "07"}
+        return ExtractionResult(fields=fields, raw_text=json.dumps(raw), struck={})
+
+
+def test_a_misspelt_label_is_exported_under_the_schemas(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(
+        scan_dir,
+        region="north",
+        extractor=StaleQwenExtractor(),
+        out_dir=tmp_path,
+        raw_dir=tmp_path / "raw",
+    )
+    (record,) = _read(tmp_path)
+    washouse = record["dwelling"]["house"]["washouse"]
+    # its own strike came with it (D023: struck empties the value)
+    assert (washouse["status"], washouse["negated"]) == ("no_data", True)
+    head = record["dwelling"]["households"][0]["head"]
+    assert head["pre_war_occupation"]["value"] == "07"
+    assert record["dwelling"]["house"]["bathroom"]["status"] == "omitted"
+    jsonschema.validate(record, SCHEMA)
+
+
+class ExplicitBlankExtractor(StaleQwenExtractor):
+    reply: ClassVar[dict] = {"Washouse": None, "Washhouse": "2"}
+
+    def extract(self, image_path: Path) -> ExtractionResult:
+        result = super().extract(image_path)
+        return ExtractionResult(
+            fields={**result.fields, "Washouse": ""}, raw_text=result.raw_text
+        )
+
+
+def test_an_explicit_canonical_blank_beats_a_misspelt_value(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    run(scan_dir, region="north", extractor=ExplicitBlankExtractor(), out_dir=tmp_path)
+    (record,) = _read(tmp_path)
+    assert record["dwelling"]["house"]["washouse"]["status"] == "no_data"
+
+
+class ConfiguredExtractor(FakeExtractor):
+    name = cache_name = "qwen2.5-vl-server"
+    model_id = "qwen2.5-vl"
+
+    def __init__(self, weights: str = "Q6_K") -> None:
+        super().__init__()
+        self.config = {"model": "qwen/qwen2.5-vl-7b", "weights": weights}
+
+
+def test_a_run_refuses_results_made_with_another_configuration(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    out_dir, raw_dir = tmp_path / "out", tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=ConfiguredExtractor(),
+        out_dir=out_dir,
+        raw_dir=raw_dir,
+    )
+    recorded = {"model": "qwen/qwen2.5-vl-7b", "weights": "Q6_K"}
+    for folder in (out_dir, raw_dir / "qwen2.5-vl-server"):
+        assert json.loads((folder / "extractor.json").read_text()) == recorded
+    before = (out_dir / "north.jsonl").read_bytes()
+
+    other = ConfiguredExtractor("Q4_K_M")
+    with pytest.raises(MergeRefused, match="weights: 'Q6_K' now 'Q4_K_M'"):
+        run(
+            scan_dir,
+            region="north",
+            extractor=other,
+            out_dir=out_dir,
+            raw_dir=raw_dir,
+        )
+    assert other.calls == 0
+    assert (out_dir / "north.jsonl").read_bytes() == before

@@ -7,7 +7,9 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Container
+from dataclasses import replace
 
+from survey.extraction.base import ExtractionResult
 from survey.extraction.card_fields import (
     FIELD_SCHEMA_BY_NAME,
     REVERSE_NOTES_LABEL,
@@ -266,11 +268,85 @@ def _parse_object(text: str | None) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+# Labels a model wrote for a coding-card key, other than the one asked for.
+# Every one is a spelling seen in IT-124's Qwen readings (5,626 corpus cards
+# and the 30 benchmark ones): "Washhouse" in all of them, so every exported
+# Washouse was omitted. Exact strings only -- a near miss stays omitted, so
+# review sees it, rather than being guessed into a field.
+FIELD_ALIASES: dict[str, str] = {
+    "Washhouse": "Washouse",
+    "Pre-war Occupation": "Pre-War Occupation",
+    "Number 5 - 10": "Number 5-10",
+    "Number of Households": "Number of Household",
+    "Main Source of Head's Unearned Income": "Main Source of Head's Unearned I.",
+    "Subsidiary Source of Head's Income": "Subsidiary Source of Head's I.",
+    **{
+        f"{label}:": label
+        for label in (
+            "Head's Unearned I.",
+            "Main Source of Head's Unearned I.",
+            "Subsidiary Source of Head's I.",
+            "Industry of H.",
+            "Occupation of H.",
+            "Grade of Occup. of H.",
+        )
+    },
+    **{
+        f"Children of H. or {wife}{sep}{part}": f"Children of H. or wife: {part}"
+        for wife in ("wife", "Wife")
+        for sep in (" ", ": ")
+        for part in ("Living", "Dead", "Total")
+        if (wife, sep) != ("wife", ": ")
+    },
+}
+
+# The three children counts, also seen nested under their heading:
+# {"Children of H. or wife": {"Living": "0", "Dead": "0", "Total": "0"}}.
+_NESTED = {"Children of H. or wife": ("Living", "Dead", "Total")}
+
+
+def canonical_labels(parsed: dict) -> dict:
+    """The schema's labels a reply gave under another name, with their values.
+
+    Values come back as the model wrote them, banded/struck objects included,
+    so a field's own confidence and strike go with it. A label the reply also
+    gave under its own name is left out: that explicit value, blank or not,
+    is the reading. Two spellings that disagree are left out too.
+    """
+    found: dict[str, list] = {}
+    for key, value in parsed.items():
+        if key in FIELD_ALIASES:
+            found.setdefault(FIELD_ALIASES[key], []).append(value)
+        elif key in _NESTED and isinstance(value, dict) and "value" not in value:
+            for part in _NESTED[key]:
+                if part in value:
+                    found.setdefault(f"{key}: {part}", []).append(value[part])
+    return {
+        label: values[0]
+        for label, values in found.items()
+        if label not in parsed
+        and all(
+            _coerce_field(_unwrap(v)[0]) == _coerce_field(_unwrap(values[0])[0])
+            for v in values
+        )
+    }
+
+
+def _parse_card(text: str | None) -> dict | None:
+    """The reply's object, with known misspelt labels under the schema's."""
+    parsed = _parse_object(text)
+    return None if parsed is None else {**parsed, **canonical_labels(parsed)}
+
+
 def parse_json_fields(
     text: str | None, field_names: Container[str] = FIELD_SCHEMA_BY_NAME
 ) -> dict[str, str] | None:
     """The card's values, from either prompt's output."""
-    parsed = _parse_object(text)
+    parsed = (
+        _parse_card(text)
+        if field_names is FIELD_SCHEMA_BY_NAME
+        else _parse_object(text)
+    )
     if parsed is None:
         return None
     fields = {str(k): _coerce_field(_unwrap(v)[0]) for k, v in parsed.items()}
@@ -293,7 +369,7 @@ def parse_confidence_bands(text: str | None) -> dict[str, str]:
     since one means the model was not asked and the other means it was and said
     it could not read the cell.
     """
-    parsed = _parse_object(text) or {}
+    parsed = _parse_card(text) or {}
     bands = {}
     for name, value in parsed.items():
         band = _unwrap(value)[1]
@@ -305,9 +381,45 @@ def parse_confidence_bands(text: str | None) -> dict[str, str]:
 def parse_struck_fields(text: str | None) -> dict[str, bool]:
     """Fields the model flagged struck-through. Only True entries are kept,
     same convention as parse_confidence_bands."""
-    parsed = _parse_object(text) or {}
+    parsed = _parse_card(text) or {}
     struck = {}
     for name, value in parsed.items():
         if isinstance(value, dict) and value.get("struck") is True:
             struck[str(name)] = True
     return struck
+
+
+def with_canonical_labels(result: ExtractionResult) -> ExtractionResult:
+    """``result`` with the fields its raw reply gave under a known other
+    label (:data:`FIELD_ALIASES`) put under the schema's.
+
+    For a reading cached before the aliases existed: its ``fields`` were
+    parsed then and lack them, but its ``raw_text`` still says what the model
+    wrote. A label the fields already hold, even blank, is kept as it is.
+    """
+    parsed = _parse_object(result.raw_text)
+    extra = {
+        label: value
+        for label, value in canonical_labels(parsed or {}).items()
+        if label not in result.fields
+    }
+    if not extra:
+        return result
+    struck = result.struck
+    if struck is not None:
+        struck = {
+            **struck,
+            **{
+                label: True
+                for label, value in extra.items()
+                if isinstance(value, dict) and value.get("struck") is True
+            },
+        }
+    return replace(
+        result,
+        fields={
+            **{label: _coerce_field(_unwrap(v)[0]) for label, v in extra.items()},
+            **result.fields,
+        },
+        struck=struck,
+    )
