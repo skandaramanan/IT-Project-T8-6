@@ -339,7 +339,11 @@ Against Q4_K_M at 2 MP it is +2.3 (+1.1 to +3.6). Q8_0 adds nothing (+0.1).
 3 MP and 4 MP scored about the same as 2 MP but spilled out of VRAM.
 
 D016's classes, re-derived the way `test_constants_still_match_the_benchmark`
-does it (Flash-Lite primary, 1,860 fields):
+does it (Flash-Lite primary, 1,860 fields). **Scored before the misspelt
+labels were read** (D016 addendum C): every Qwen reply's `Washhouse`, among
+others, counted as blank. Reading them moves fields between classes, so these
+figures describe the pre-alias pairing only and do not validate the one the
+pipeline now builds.
 
 | Class | Constant | T4 4-bit: n, measured | Q6_K 2 MP: n, measured |
 | -- | -- | -- | -- |
@@ -354,24 +358,26 @@ does it (Flash-Lite primary, 1,860 fields):
 - **`disagree` and `one_blank` sit about 0.1 under their constants.** A
   better second arm disagrees less often, and when it does, it is right more
   often. That leaves Flash-Lite right less often, so the constants overstate
-  these two classes. Both are below D022's cutoff whatever their value, so
-  this changes no routing. It does matter wherever the numbers are used as
-  probabilities (D018's card-level score). The test's 0.03 tolerance would
-  fail on this pairing.
+  these two classes, and the test's 0.03 tolerance would fail on this pairing.
 - **Not recalibrated here.** IT-124 only flags a disagreement (out of scope:
-  "re-calibrating D016's constants"). `model_id` stays `qwen2.5-vl`, so the
-  constants above apply as they stand. IT-125 should either recalibrate
-  `disagree` and `one_blank` on this pairing or accept the overstatement on
-  purpose.
+  "re-calibrating D016's constants"). `model_id` stays `qwen2.5-vl` so the
+  pipeline can look the tables up, not because they are known to hold. IT-125
+  recalibrates on the normalised Q6_K pairing. Calibrated scores, and any
+  review bypass that relies on them (D022's `agree`), need that comparison
+  first: these figures are not it.
 
-**The run.** All 45 folders: 5,626 coding cards read and 5,617 dwelling
-records written to `results/qwen2.5-vl-server-2000000px/` (D025). Survey
-fronts, backs and identity re-reads are Gemini's alone. The skipped and failed
-pages are in `docs/runs/it124-qwen-run.md`.
+**The run.** All 45 folders: 5,403 dwelling records in
+`results/qwen2.5-vl-server-2000000px/` (D025), covering 5,410 of the Gemini
+run's 5,411 coding cards. 216 pages the first run published as households are
+not coding cards and were removed (`docs/runs/it124-excluded-sources.json`).
+Survey fronts, backs and identity re-reads are Gemini's alone. Removed,
+skipped and failed pages, and the evidence that every reading came from the
+Q6_K weights, are in `docs/runs/it124-qwen-run.md`.
 
 **Reproducing.** The benchmark readings are in `data/benchmark/results/`
 (`q6-2mp-rp1.05` and the other configurations). The run's readings are cached
-in `data/runs/<region>/qwen2.5-vl-server-2000000px/`.
+in `data/runs/<region>/qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k/`,
+and both are in the IT-125 handoff archive (`data/handoff/`).
 
 ```
 QWEN_MAX_PIXELS=2000000 uv run python benchmark/run_benchmark.py --model qwen2.5-vl-server
