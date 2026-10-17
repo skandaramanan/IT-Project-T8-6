@@ -8,33 +8,37 @@ run's configuration in `extractor.json` beside it.
 
 ## Totals
 
-- **5,403 dwelling records**, every file valid at schema 0.6.0. 216461 has
+- **5,421 dwelling records**, every file valid at schema 0.6.0. 216461 has
   none, as in the Gemini run, so it has no file.
-- **5,410 coding cards shared with the Gemini run**, out of its 5,411, paired
-  by PDF and page (D026). No card is in this run alone.
+- **5,283 coding cards shared with the Gemini run** outside 216436, out of
+  its 5,284, paired by PDF and page (D026). No card is in this run alone.
+  216436 was read again from a complete scan (below); Gemini's is being rerun
+  on the same file.
 - The one Gemini card with no Qwen reading is 216419,
   `423497_1973-0002-00008-00001.pdf` p103. The model repeats `0` until the
   2,048-token cap on every read, so the reply is refused rather than cached
   as a partial reading. It is the run's only failed card.
-- **216 sources excluded**: pages the review checked against the scans and
+- **218 sources excluded**: pages the review checked against the scans and
   found are not coding cards (below).
-- 696 pages skipped: 692 not recognised as a card, 3 with no decodable image,
+- 692 pages skipped: 688 not recognised as a card, 3 with no decodable image,
   and 1 blank coding card. Each is listed in `it124-qwen-skipped-pages.json`.
-- 164 records flagged `unplaced` (the card fits no dwelling), 129
+- 163 records flagged `unplaced` (the card fits no dwelling), 129
   `missing_record_id` (the ID is blank or malformed) and 349
   `duplicate_record_id` (another household has the same ID). All are written,
-  not dropped (IT-123). The ID still agrees with Gemini's on 3,635 of the 5,410
+  not dropped (IT-123). The ID still agrees with Gemini's on 3,541 of the 5,283
   shared cards, so IT-125 pairs the runs by card, not by `record_id`.
 
 ## Excluded sources
 
-`it124-excluded-sources.json` lists 216 pages, in the same region/PDF/page
+`it124-excluded-sources.json` lists 218 pages, in the same region/PDF/page
 format as `it123-verified-coding.json`. The first run published a record for
-each, and none is a numeric coding card. Two independent visual audits in the
+216 of them, and none is a numeric coding card. Two independent visual audits in the
 PR review checked every one. For example, 216461 p9 is a letter that was
 published as `10-0001-01`, and 216414 p101 is interview notes published as
 `15-0001-01`. Gemini read the same pages and returned nothing usable. Qwen
-filled in a plausible household.
+filled in a plausible household. The 216436 rerun added two more, checked
+against the scan: p272 is a blank card back (`05-0001-01`) and p570 a blank,
+voided coding card (`05-1234567890-1234567890`).
 
 `survey extract` reads the list by default (`--excluded-sources` overrides
 it), for either model:
@@ -155,7 +159,7 @@ counted.
 | 216433 | 125 | 17 | 6 | 1 | 8 | 2 | 0 |
 | 216434 | 109 | 15 | 2 | 0 | 8 | 0 | 0 |
 | 216435 | 95 | 19 | 1 | 2 | 2 | 0 | 0 |
-| 216436 | 127 | 16 | 0 | 1 | 4 | 3 | 0 |
+| 216436 | 145 | 12 | 2 | 1 | 4 | 2 | 0 |
 | 216437 | 179 | 15 | 5 | 1 | 8 | 5 | 0 |
 | 216438 | 166 | 11 | 3 | 2 | 17 | 2 | 0 |
 | 216439 | 170 | 66 | 2 | 1 | 8 | 2 | 0 |
@@ -178,7 +182,7 @@ counted.
 | 216460 | 107 | 5 | 2 | 1 | 9 | 6 | 0 |
 | 216461 | 0 | 2 | 6 | 0 | 0 | 0 | 0 |
 | 216463 | 63 | 1 | 13 | 0 | 2 | 7 | 0 |
-| **Total** | **5,403** | **696** | **216** | **129** | **349** | **164** | **1** |
+| **Total** | **5,421** | **692** | **218** | **129** | **349** | **163** | **1** |
 
 ## Pages with no image
 
@@ -192,9 +196,16 @@ Installing `jbig2dec` and rerunning those two folders reads them.
 
 ## Damaged scan
 
-The Drive copy of 216436's PDF is damaged: it has no xref table or trailer.
-All 514 pages were intact, so the index was rebuilt locally by appending only,
-and no existing byte changed. The Drive file itself still needs replacing.
+The Drive copy of 216436's PDF was damaged: no xref table or trailer, and its
+index, rebuilt locally, found 514 pages. A complete copy (17 October) has 594,
+a different scan at a lower resolution (2644×1642 against 3861×2400) and in a
+different page order, so none of the old page numbers carry over. It replaced
+the local file under the same name, `1264179_1973-0002-00025.pdf`, and 216436
+was read again from scratch: 147 cards, 145 records once p272 and p570 were
+excluded, none failed. The old scan, its cached readings and its 127 records
+are kept outside Git, in `data/damaged/it124-216436-514-page-scan/`. The Gemini
+run's 216436 still refers to the old scan's pages until its rerun on the new
+file lands, and IT-125 can't pair that folder before then.
 
 ## How the run went
 
@@ -210,6 +221,8 @@ and no existing byte changed. The Drive file itself still needs replacing.
    failed again, and the record built from the cut-off reading was removed.
 4. Review (17 October): the 216 excluded records removed, the misspelt labels
    read, p194 read, and the cache moved under its weights, as above.
+5. 216436 read again from the complete scan, and its two invented records
+   excluded (`data/bench-logs/rerun_216436.log`).
 
 ## For IT-125
 

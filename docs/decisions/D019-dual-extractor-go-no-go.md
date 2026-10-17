@@ -366,10 +366,11 @@ pipeline now builds.
   review bypass that relies on them (D022's `agree`), need that comparison
   first: these figures are not it.
 
-**The run.** All 45 folders: 5,403 dwelling records in
-`results/qwen2.5-vl-server-2000000px/` (D025), covering 5,410 of the Gemini
-run's 5,411 coding cards. 216 pages the first run published as households are
-not coding cards and were removed (`docs/runs/it124-excluded-sources.json`).
+**The run.** All 45 folders: 5,421 dwelling records in
+`results/qwen2.5-vl-server-2000000px/` (D025). Outside 216436, read again from
+a complete scan, they cover 5,283 of the Gemini run's 5,284 coding cards. 218
+pages read as households are not coding cards and were removed
+(`docs/runs/it124-excluded-sources.json`).
 Survey fronts, backs and identity re-reads are Gemini's alone. Removed,
 skipped and failed pages, and the evidence that every reading came from the
 Q6_K weights, are in `docs/runs/it124-qwen-run.md`.
