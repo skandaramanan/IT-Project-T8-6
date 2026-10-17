@@ -29,15 +29,32 @@ must also be installed under that canonical name so pages above 514 resolve.
 - `results/216436.jsonl`: **127 -> 146 records / physical coding sources**.
 - All 127 original JSONL lines are preserved exactly. Other region files and
   Qwen results are unchanged.
-- Page 551's full-card identity and crop disagree on municipality (14 vs 21).
-  Its ID remains null; the raw readings and review flag are preserved.
-- Eight new coding records remain unplaced by the existing association rules.
-  Nine fronts and their notes could not be attached safely. All their raw
-  readings are retained; structured orphan payloads are under
-  `data/216436-additions/unattached-fronts.json` and `unattached-notes.json`.
-  No positional association was forced to increase coverage.
-- Page 585 returned `Type_of_Family` instead of `Type of Family`. Its canonical
-  field stays explicitly omitted for review; no value was guessed.
+- Source inspection resolved all nine previously unmatched fronts and their
+  notes. All 20 fronts and 20 backs are now attached to the 19 coding records;
+  no positional associations were forced and no general association rule changed.
+- `216436-source-corrections.json` records 19 page-specific corrections:
+  11 front dwelling numbers and eight coding fields. Crossed-out old numbers
+  and top-right archive references caused most errors. Every correction records
+  the original cached value, the replacement, and the scan evidence.
+- All 19 new coding identities were checked against the scans. This also
+  corrected p539's municipality, p547/p555's cancelled municipality/dwelling
+  pairs, and p573's misread dwelling number. P551 is now `14-0209-01`;
+  its crop read the cancelled legacy values and remains unchanged in the cache.
+- P585's `Type of Family` is visibly **1**. Its original reply used
+  `Type_of_Family: null`; this was both a wrong blank and a label variant.
+  The output now carries 1 as a source-verified correction.
+- Fronts p527 and p529 continue one dwelling, `14-0191-01`, and share coding
+  p531. Both person grids and both backs survive. There are 12 resident
+  columns plus a separately written "Another expected" column; all 13
+  transcribed columns are retained, without equating grid length to residents.
+- One `fronts_disagree` flag remains on those continuation sheets: the cached
+  municipality text differs (`Armadale` versus `Truedale(21)`, from the older
+  annotation). The first sheet supplies the published municipality text.
+  This flag remains visible instead of suppressing the discrepancy.
+- Corrected output fields carry `origin: corrected` and `original_value`.
+  Raw caches stay byte-identical; no new model requests were needed for this
+  investigation. Fields retain the existing confidence; teammate review remains
+  pending. IT-125 must preserve corrections.
 - Confidence is the existing standalone Gemini confidence, not IT-125's
   calibrated paired score. These readings must not be treated as dual agreement.
 
@@ -46,12 +63,17 @@ must also be installed under that canonical name so pages above 514 resolve.
 - Every expected new coding page is present exactly once; p570 is absent.
 - All 44 nonempty region files pass `survey validate-results results`.
 - Offline rebuilding produces byte-identical output.
-- 120 association, notes and pipeline tests pass; the extraction script passes
-  Ruff. No production extraction/association implementation was changed.
+- 129 focused tests pass: 120 association/notes/pipeline tests and nine new
+  correction/continuation/regression checks. The new tests cover immutable raw
+  readings, unexpected-cache refusal, page/field restrictions, duplicate
+  decisions, original-value metadata, municipality aliases, continuation grids
+  and backs, complete source coverage, and deterministic rebuilding. A published
+  correction/review payload cannot be overwritten by the rebuild.
+- Ruff passes. No production extraction/association implementation was changed.
 - Checksums of 300 tracked/nonignored files in the original checkout match
   the pre-run snapshot, including every ongoing IT-125 change.
 - Evidence: `data/216436-additions/verification.json`, worker/build logs,
-  `schema-validation.log`, and `verification-tests.log`.
+  `gap-review/schema-validation.log`, and `gap-review/verification-tests.log`.
 
 ## Reproduce in this worktree
 
@@ -71,6 +93,12 @@ uv run python scripts/extract_216436_additions.py --worker 0 --credentials /path
 uv run python scripts/extract_216436_additions.py --worker 1 --credentials /path/to/.env
 uv run python scripts/extract_216436_additions.py --identity --credentials /path/to/.env
 ```
+
+The offline build applies the source-correction manifest to copies of the
+cached fields before association. It refuses a different PDF hash or a changed
+machine value, then verifies the exact 20 inspected front-to-coding links.
+It marks the selected published fields corrected while preserving machine
+values and immutable raw caches.
 
 The script refuses other branches, shared data/results paths or imports from
 another checkout. It always merges against the pinned original Gemini

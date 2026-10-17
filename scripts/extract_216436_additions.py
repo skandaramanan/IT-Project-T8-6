@@ -21,8 +21,20 @@ from survey.association.records import build_dwelling_records
 from survey.extraction.base import ExtractionResult
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
 from survey.extraction.gemini import GeminiExtractor
-from survey.extraction.record import fill_identity, identity_of
-from survey.pipeline import _coding_cards, _merge, _score
+from survey.extraction.record import (
+    FIELD_MAP,
+    clean_text,
+    fill_identity,
+    identity_of,
+    normalise,
+)
+from survey.pipeline import (
+    _coding_cards,
+    _corrected_fields,
+    _merge,
+    _score,
+    read_records,
+)
 from survey.records import schema_errors, validate_records, write_atomic
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import CardType, SegmentedCard
@@ -223,6 +235,93 @@ def extract_identity(credentials):
         print(f"read identity p{page}", flush=True)
 
 
+def correction_index(manifest):
+    """Only inspected pages/fields may be corrected, without duplicate decisions."""
+    decisions = {}
+    for item in manifest["corrections"]:
+        kind, page, field = item["kind"], item["page"], item["field"]
+        allowed = (
+            kind == "front"
+            and page in FRONTS
+            and field == "Dwelling Number (top-left corner)"
+        ) or (kind == "coding" and page in CODING and field in FIELD_MAP)
+        key = kind, page, field
+        if not allowed or key in decisions:
+            raise ValueError(f"invalid or repeated correction: {key}")
+        decisions[key] = item
+    return decisions
+
+
+def corrected_reading(kind, page, result, decisions):
+    """Apply inspected changes to a copy; refuse an unexpected machine reading."""
+    fields = dict(result.fields)
+    for (target_kind, target_page, label), item in decisions.items():
+        if (target_kind, target_page) != (kind, page):
+            continue
+        if fields.get(label) != item["original_value"]:
+            raise ValueError(
+                f"{kind} p{page} {label}: machine reading changed; recheck the scan"
+            )
+        fields[label] = item["value"]
+    return replace(result, fields=fields)
+
+
+def annotate_corrections(record, originals, decisions):
+    """NFR-05: keep the machine value on the field selected for this record."""
+    dwelling = record["dwelling"]
+
+    def mark(field, kind, page, label):
+        if (kind, page, label) not in decisions:
+            return
+        raw = originals[kind, page].fields.get(label)
+        clean = clean_text if kind == "front" else normalise
+        field.update(origin="corrected", original_value=clean(raw) or None)
+
+    for index, household in enumerate(dwelling["households"]):
+        page = household["cards"][0]["page"]
+        groups = {
+            "household": household,
+            "head": household["head"],
+            "counts": household["counts"],
+            "coding": household["coding"],
+        }
+        if index == 0:
+            groups.update(dwelling=dwelling, house=dwelling["house"])
+        for label, (key, group) in FIELD_MAP.items():
+            if group in groups:
+                mark(groups[group][key], "coding", page, label)
+        mark(household["municipality"], "coding", page, "Municipality")
+    # Dwelling number is the only corrected front label. It is present on
+    # every inspected front, so the first front supplies the selected value.
+    fronts = [
+        card for card in dwelling.get("cards", []) if card["role"] == "survey-front"
+    ]
+    if fronts:
+        mark(
+            dwelling["handwritten"]["dwelling_no"],
+            "front",
+            fronts[0]["page"],
+            "Dwelling Number (top-left corner)",
+        )
+
+
+def protect_published_corrections(published, rebuilt):
+    """Refuse to replace a reviewed/corrected payload with a different one."""
+    targets = {_coding_cards(record): record for record in rebuilt}
+    for record in published:
+        for path, field in _corrected_fields(record):
+            target = targets.get(_coding_cards(record))
+            try:
+                for key in path:
+                    target = target[key]
+            except (KeyError, IndexError, TypeError):
+                target = None
+            if target != field:
+                raise ValueError(
+                    "rebuild would overwrite a published correction or review"
+                )
+
+
 def build():
     isolated()
     # Read the original committed Gemini baseline, never the IT-125 working file.
@@ -236,6 +335,17 @@ def build():
         text=True,
     )
     previous = [json.loads(line) for line in original.splitlines() if line.strip()]
+    manifest = json.loads(
+        (ROOT / "docs/runs/216436-source-corrections.json").read_text()
+    )
+    if (
+        manifest["pdf"] != PDF_NAME
+        or manifest["region"] != "216436"
+        or manifest["pdf_sha256"] != hashlib.sha256(PDF.read_bytes()).hexdigest()
+    ):
+        raise ValueError("source corrections belong to a different scan")
+    decisions = correction_index(manifest)
+    originals = {}
     cards, readings, reread = [], {}, set()
     for kind, page in jobs():
         if kind == "notes":
@@ -247,8 +357,15 @@ def build():
             page - 1,
         )
         cards.append(card)
-        result = read_cache(kind, page)
-        if kind == "coding" and cache("identity", page).exists():
+        original_result = read_cache(kind, page)
+        originals[kind, page] = original_result
+        result = corrected_reading(kind, page, original_result, decisions)
+        try:
+            identity_of(result.fields)
+            valid_identity = True
+        except ValueError:
+            valid_identity = False
+        if kind == "coding" and not valid_identity and cache("identity", page).exists():
             try:
                 fields = fill_identity(
                     result.fields, read_cache("identity", page).fields
@@ -287,6 +404,7 @@ def build():
     by_place = {locate(card): result for card, result in readings.items()}
     for record in added:
         _score(record, by_place, MODEL)
+        annotate_corrections(record, originals, decisions)
     merged = _merge(deepcopy(previous), added)
     before = {_coding_cards(record): record for record in previous}
     after = {_coding_cards(record): record for record in merged}
@@ -300,6 +418,21 @@ def build():
     expected = {(PDF_NAME, page) for page in CODING}
     if new_sources - old_sources != expected or old_sources - new_sources:
         raise RuntimeError("coding inventory differs from the inspected additions")
+    actual_links = {
+        (front["page"], coding["page"])
+        for record in added
+        for front in record["dwelling"].get("cards", [])
+        if front["role"] == "survey-front"
+        for household in record["dwelling"]["households"]
+        for coding in household["cards"]
+        if coding["role"] == "coding-front"
+    }
+    expected_links = {
+        (pair["front_page"], pair["coding_page"])
+        for pair in manifest["verified_associations"]
+    }
+    if actual_links != expected_links or unattached:
+        raise ValueError("rebuilt associations differ from the scan-verified inventory")
     validate_records(merged, "216436")
     for record in merged:
         if errors := schema_errors(record):
@@ -318,6 +451,9 @@ def build():
         "coding_sources_after": len(new_sources),
         "new_coding_pages": list(CODING),
         "fronts_read": len(FRONTS),
+        "source_corrections": len(decisions),
+        "corrections_manifest": "docs/runs/216436-source-corrections.json",
+        "verified_associations": sorted([list(pair) for pair in actual_links]),
         "identity_reread_pages": sorted(card.page_index + 1 for card in reread),
         "identity_crop_pages": identity_pages,
         "null_record_id_pages": [
@@ -352,7 +488,10 @@ def build():
             {"page": page, "field": field}
             for page in CODING
             for field in sorted(
-                set(FIELD_SCHEMA_BY_NAME) - read_cache("coding", page).fields.keys()
+                set(FIELD_SCHEMA_BY_NAME)
+                - corrected_reading(
+                    "coding", page, originals["coding", page], decisions
+                ).fields.keys()
             )
         ],
         "estimated_usage_cost_usd": cost,
@@ -361,6 +500,9 @@ def build():
         "source_download_name": "1973-0002-00025-00001.pdf",
         "canonical_pdf_name": PDF_NAME,
     }
+    protect_published_corrections(
+        read_records(ROOT / "results/216436.jsonl", "216436"), merged
+    )
     output = "".join(json.dumps(record) + "\n" for record in merged)
     write_atomic(ROOT / "results/216436.jsonl", output)
     write_atomic(RUN / "additions.jsonl", "".join(json.dumps(r) + "\n" for r in added))

@@ -29,13 +29,95 @@
     593
   ],
   "fronts_read": 20,
+  "source_corrections": 19,
+  "corrections_manifest": "docs/runs/216436-source-corrections.json",
+  "verified_associations": [
+    [
+      515,
+      517
+    ],
+    [
+      519,
+      521
+    ],
+    [
+      523,
+      525
+    ],
+    [
+      527,
+      531
+    ],
+    [
+      529,
+      531
+    ],
+    [
+      533,
+      535
+    ],
+    [
+      537,
+      539
+    ],
+    [
+      541,
+      543
+    ],
+    [
+      545,
+      547
+    ],
+    [
+      549,
+      551
+    ],
+    [
+      553,
+      555
+    ],
+    [
+      557,
+      559
+    ],
+    [
+      561,
+      563
+    ],
+    [
+      565,
+      567
+    ],
+    [
+      571,
+      573
+    ],
+    [
+      575,
+      577
+    ],
+    [
+      579,
+      581
+    ],
+    [
+      583,
+      585
+    ],
+    [
+      587,
+      589
+    ],
+    [
+      591,
+      593
+    ]
+  ],
   "identity_reread_pages": [],
   "identity_crop_pages": [
     551
   ],
-  "null_record_id_pages": [
-    551
-  ],
+  "null_record_id_pages": [],
   "front_pages": [
     515,
     519,
@@ -59,40 +141,14 @@
     591
   ],
   "notes_read": 20,
-  "unattached_front_pages": [
-    515,
-    527,
-    529,
-    545,
-    561,
-    565,
-    571,
-    583,
-    587
-  ],
+  "unattached_front_pages": [],
   "unplaced_card_pages": [],
   "existing_records_changed": 0,
   "new_record_flags": {
-    "unplaced": 8,
-    "missing_record_id": 1,
-    "missing_dwelling_no": 1
+    "fronts_disagree": 1
   },
-  "new_unplaced_coding_pages": [
-    517,
-    531,
-    547,
-    563,
-    567,
-    573,
-    585,
-    589
-  ],
-  "omitted_coding_fields": [
-    {
-      "page": 585,
-      "field": "Type of Family"
-    }
-  ],
+  "new_unplaced_coding_pages": [],
+  "omitted_coding_fields": [],
   "estimated_usage_cost_usd": 0.2445906,
   "excluded_blank_crossed_out_page": 570,
   "pdf_sha256": "6d7b64bc0bb82e499ac35a6d32872409572ec484f8670a9368b834ab9c3796f0",
