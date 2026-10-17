@@ -607,6 +607,30 @@ def test_a_corrected_field_survives_a_rerun_that_reextracts(tmp_path):
     jsonschema.validate(records[0], SCHEMA)
 
 
+def test_rerunning_with_saved_corrections_reads_no_card_again(tmp_path):
+    # IT-114 AC3 (FR-18): corrections come back from the results file and the
+    # readings from the cache, so re-exporting costs no extraction.
+    scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
+    raw_dir = tmp_path / "raw"
+    run(
+        scan_dir,
+        region="north",
+        extractor=FakeExtractor(),
+        out_dir=tmp_path,
+        raw_dir=raw_dir,
+    )
+    records = _read(tmp_path)
+    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
+    records[0]["dwelling"]["house"]["garden"] = corrected
+    _write(tmp_path, records)
+
+    again = FakeExtractor()
+    run(scan_dir, region="north", extractor=again, out_dir=tmp_path, raw_dir=raw_dir)
+
+    assert again.calls == 0
+    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+
+
 def test_a_corrected_household_number_carries_its_record_id(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
