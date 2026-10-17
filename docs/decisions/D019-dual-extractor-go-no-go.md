@@ -366,7 +366,7 @@ pipeline now builds.
   review bypass that relies on them (D022's `agree`), need that comparison
   first: these figures are not it.
 
-**The run.** All 45 folders: 5,421 dwelling records in
+**The run.** All 45 folders: 5,422 dwelling records in
 `results/qwen2.5-vl-server-2000000px/` (D025). Outside 216436, read again from
 a complete scan, they cover 5,283 of the Gemini run's 5,284 coding cards. 218
 pages read as households are not coding cards and were removed

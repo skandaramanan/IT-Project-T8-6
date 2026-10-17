@@ -8,12 +8,12 @@ run's configuration in `extractor.json` beside it.
 
 ## Totals
 
-- **5,421 dwelling records**, every file valid at schema 0.6.0. 216461 has
+- **5,422 dwelling records**, every file valid at schema 0.6.0. 216461 has
   none, as in the Gemini run, so it has no file.
 - **5,283 coding cards shared with the Gemini run** outside 216436, out of
   its 5,284, paired by PDF and page (D026). No card is in this run alone.
-  216436 was read again from a complete scan (below); Gemini's is being rerun
-  on the same file.
+  216436 was read again from a complete scan (below). Gemini's rerun on the
+  same file has the same 146 cards.
 - The one Gemini card with no Qwen reading is 216419,
   `423497_1973-0002-00008-00001.pdf` p103. The model repeats `0` until the
   2,048-token cap on every read, so the reply is refused rather than cached
@@ -22,7 +22,7 @@ run's configuration in `extractor.json` beside it.
   found are not coding cards (below).
 - 692 pages skipped: 688 not recognised as a card, 3 with no decodable image,
   and 1 blank coding card. Each is listed in `it124-qwen-skipped-pages.json`.
-- 163 records flagged `unplaced` (the card fits no dwelling), 129
+- 164 records flagged `unplaced` (the card fits no dwelling), 129
   `missing_record_id` (the ID is blank or malformed) and 349
   `duplicate_record_id` (another household has the same ID). All are written,
   not dropped (IT-123). The ID still agrees with Gemini's on 3,541 of the 5,283
@@ -159,7 +159,7 @@ counted.
 | 216433 | 125 | 17 | 6 | 1 | 8 | 2 | 0 |
 | 216434 | 109 | 15 | 2 | 0 | 8 | 0 | 0 |
 | 216435 | 95 | 19 | 1 | 2 | 2 | 0 | 0 |
-| 216436 | 145 | 12 | 2 | 1 | 4 | 2 | 0 |
+| 216436 | 146 | 12 | 2 | 1 | 4 | 3 | 0 |
 | 216437 | 179 | 15 | 5 | 1 | 8 | 5 | 0 |
 | 216438 | 166 | 11 | 3 | 2 | 17 | 2 | 0 |
 | 216439 | 170 | 66 | 2 | 1 | 8 | 2 | 0 |
@@ -182,7 +182,7 @@ counted.
 | 216460 | 107 | 5 | 2 | 1 | 9 | 6 | 0 |
 | 216461 | 0 | 2 | 6 | 0 | 0 | 0 | 0 |
 | 216463 | 63 | 1 | 13 | 0 | 2 | 7 | 0 |
-| **Total** | **5,421** | **692** | **218** | **129** | **349** | **163** | **1** |
+| **Total** | **5,422** | **692** | **218** | **129** | **349** | **164** | **1** |
 
 ## Pages with no image
 
@@ -202,10 +202,13 @@ a different scan at a lower resolution (2644×1642 against 3861×2400) and in a
 different page order, so none of the old page numbers carry over. It replaced
 the local file under the same name, `1264179_1973-0002-00025.pdf`, and 216436
 was read again from scratch: 147 cards, 145 records once p272 and p570 were
-excluded, none failed. The old scan, its cached readings and its 127 records
+excluded, none failed. p271, like 216414 p194, is a coding card the segmenter
+takes for a front. It is now verified coding and was read on its own with
+`scripts/read_qwen_card.py` (`14-0093-01`, as Gemini reads it), flagged
+`unplaced` for the same reason, making 146. The old scan, its cached readings and its 127 records
 are kept outside Git, in `data/damaged/it124-216436-514-page-scan/`. The Gemini
-run's 216436 still refers to the old scan's pages until its rerun on the new
-file lands, and IT-125 can't pair that folder before then.
+run's 216436 is being rerun on the new file
+(`skandar/it-123-216436-gemini-additions`): its 146 coding cards are these 146.
 
 ## How the run went
 
@@ -221,8 +224,8 @@ file lands, and IT-125 can't pair that folder before then.
    failed again, and the record built from the cut-off reading was removed.
 4. Review (17 October): the 216 excluded records removed, the misspelt labels
    read, p194 read, and the cache moved under its weights, as above.
-5. 216436 read again from the complete scan, and its two invented records
-   excluded (`data/bench-logs/rerun_216436.log`).
+5. 216436 read again from the complete scan, its two invented records
+   excluded, and p271 read (`data/bench-logs/rerun_216436.log`).
 
 ## For IT-125
 
