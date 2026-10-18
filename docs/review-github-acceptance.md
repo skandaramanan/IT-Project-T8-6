@@ -8,7 +8,7 @@ in its test fixtures through the application before exercising them again.
 
 ## Install and prepare
 
-Run from the code checkout on `eric-zhang/review-github-integration-tests`:
+Run from the code checkout on `eric-zhang/review-github-acceptance`:
 
 ```sh
 uv sync --locked
