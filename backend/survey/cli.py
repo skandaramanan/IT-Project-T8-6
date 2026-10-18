@@ -171,7 +171,12 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error(f"no such file: {path}")
             paths += sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
         try:
-            regions = {r: records for r, (records, _) in read_dataset(paths).items()}
+            regions = {
+                r: records
+                for r, (records, _) in read_dataset(
+                    paths, allow_duplicate_cards=True
+                ).items()
+            }
         except (OSError, ValueError) as error:  # ReviewError is a ValueError
             parser.error(str(error))
         queue, skipped = build_flags(regions)

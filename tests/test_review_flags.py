@@ -256,3 +256,18 @@ def test_a_card_on_two_households_is_skipped():
     queue, skipped = build_flags({"216412": [a, b]})
     assert queue == []
     assert skipped == ["216412: unit.pdf p1 is on two households"]
+
+
+@pytest.mark.parametrize("folder", [False, True])
+def test_cli_skips_duplicate_cards_and_keeps_valid_flags(tmp_path, capsys, folder):
+    a = record("27-0001-01", house__garden=0.5)
+    b = record("27-0002-01", house__garden=0.5)
+    b["dwelling"]["households"][0]["cards"][0]["page"] = 1
+    valid = record("27-0003-01", house__garden=0.5)
+    path = write(tmp_path, a, b, valid)
+
+    assert cli.main(["flags", str(tmp_path if folder else path)]) == 1
+
+    out, err = capsys.readouterr()
+    assert [json.loads(line) for line in out.splitlines()] == flags(valid)
+    assert "216412: unit.pdf p1 is on two households, skipped" in err

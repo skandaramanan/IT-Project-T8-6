@@ -248,6 +248,10 @@ One line per coding-card field that needs review (D022), in the format
 form order. Accepted and corrected fields are left out. Takes files or
 folders; each file must be named after its region (`216412.jsonl`). A
 household it can't flag is reported and skipped, and the command exits 1.
+Skipped-card diagnostics go to stderr. Duplicate card ownership must still be
+repaired in the source records before launching the review tool: its backend
+rejects ambiguous datasets even when the flags file contains only valid cards.
+Regenerate the flags after repairing the records.
 
 ## Contributing
 

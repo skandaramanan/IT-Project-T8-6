@@ -62,7 +62,9 @@ def schema_errors(record: dict) -> list[str]:
     return errors
 
 
-def validate_records(records: list[dict], region: str) -> None:
+def validate_records(
+    records: list[dict], region: str, *, allow_duplicate_cards: bool = False
+) -> None:
     seen = set()
     for number, record in enumerate(records, 1):
         if errors := schema_errors(record):
@@ -80,7 +82,7 @@ def validate_records(records: list[dict], region: str) -> None:
                 if card["role"] != "coding-front":
                     continue
                 key = card["image"], card.get("page")
-                if key in seen:
+                if key in seen and not allow_duplicate_cards:
                     raise ReviewError("ambiguous_card", f"duplicate coding card {key}")
                 seen.add(key)
     audit_index({region: records})
@@ -218,7 +220,9 @@ def validate_history(field: dict) -> None:
         )
 
 
-def parse_records(raw: bytes, region: str, name: str) -> tuple[list[dict], str]:
+def parse_records(
+    raw: bytes, region: str, name: str, *, allow_duplicate_cards: bool = False
+) -> tuple[list[dict], str]:
     try:
         records = [
             json.loads(line)
@@ -227,18 +231,22 @@ def parse_records(raw: bytes, region: str, name: str) -> tuple[list[dict], str]:
         ]
     except (ValueError, UnicodeError) as error:
         raise ReviewError("invalid_records", f"Cannot read {name}: {error}") from error
-    validate_records(records, region)
+    validate_records(records, region, allow_duplicate_cards=allow_duplicate_cards)
     return records, digest(raw)
 
 
-def read_records(path: Path, region: str) -> tuple[list[dict], str]:
+def read_records(
+    path: Path, region: str, *, allow_duplicate_cards: bool = False
+) -> tuple[list[dict], str]:
     try:
         raw = path.read_bytes()
     except OSError as error:
         raise ReviewError(
             "invalid_records", f"Cannot read {path.name}: {error}"
         ) from error
-    return parse_records(raw, region, path.name)
+    return parse_records(
+        raw, region, path.name, allow_duplicate_cards=allow_duplicate_cards
+    )
 
 
 def validate_dataset(regions: dict[str, tuple[list[dict], str]]) -> None:
@@ -251,7 +259,13 @@ def validate_dataset(regions: dict[str, tuple[list[dict], str]]) -> None:
     audit_index({region: records for region, (records, _) in regions.items()})
 
 
-def read_dataset(paths: list[Path]) -> dict[str, tuple[list[dict], str]]:
+def read_dataset(
+    paths: list[Path], *, allow_duplicate_cards: bool = False
+) -> dict[str, tuple[list[dict], str]]:
+    """Read validated regions. Queue generation may retain duplicate cards so
+    it can report and skip them; schema and review-history checks still apply.
+    Review loading and persistence reject duplicates by default.
+    """
     candidate = {}
     for path in paths:
         if not REGION.fullmatch(path.stem) or path.is_symlink():
@@ -260,7 +274,9 @@ def read_dataset(paths: list[Path]) -> dict[str, tuple[list[dict], str]]:
             )
         if path.stem in candidate:
             raise ReviewError("invalid_path", f"Duplicate region file: {path.name}")
-        candidate[path.stem] = read_records(path, path.stem)
+        candidate[path.stem] = read_records(
+            path, path.stem, allow_duplicate_cards=allow_duplicate_cards
+        )
     validate_dataset(candidate)
     return candidate
 
