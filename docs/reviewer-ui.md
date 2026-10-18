@@ -46,10 +46,10 @@ Keep the proposed three-PR split:
   provisional. D022 and IT-109's newer client-confirmation comment settle it.
   The UI takes the supplied order; it does not implement routing or move
   in-progress dwellings ahead of lower-scoring ones as the mockup suggests.
-- #53's current `build_flags` traverses front/person fields too, although its
-  IT-109 comment says coding-only. #52 rejects those as unsupported diagnostics.
-  They stay visible and unresolved here; supplying only supported C1/C2 flags
-  is an upstream queue responsibility, not a silent frontend filter.
+- IT-109's coding-only generator fixes merged as #60 and are included here.
+  Generated assignments use the shared record reader and printed field order.
+  Explicit/manual flags can still contain unsupported entries; those remain
+  visible diagnostics rather than being silently filtered by the frontend.
 - Standup 17 predates #52's fixes to performance, disjoint-region sharing and
   the schema clash. One backend owns each checkout; separate checkouts can
   share different regions. Same-region changes stop for manual reconciliation,
@@ -245,9 +245,9 @@ text is kept literal when opened in spreadsheet software.
 
 - #52 is merged and provides the store/save/sync implementation. Linear's IT-111/112/113
   database wording/status remains older than D029 and the implementation.
-- #53 (IT-109) still needs its review fixes/rebase and coding-only flags. #54 (IT-110)
-  is stacked on it. Unsupported supplied flags are surfaced; the frontend does not
-  silently discard them or rebuild routing.
+- IT-109's generator fixes and labelled queue examples are integrated from #60.
+  Generated-assignment HTTP lifecycle tests are described in review-backend.md.
+  Unsupported supplied flags remain visible; the frontend does not rebuild routing.
 - #51 (IT-123) is open. Its published data count changed from 3,590 to 3,717; read
   counts from data. The other agent's local schema 0.5 follow-up allows null/lettered
   IDs and dwelling flags. Its schema predates review metadata: it must be integrated
@@ -372,7 +372,8 @@ the complete name remains in every saved audit decision.
 - IT-116 has no findings yet. The unaided non-technical participant test and
   independent manual UI acceptance remain required; developer/subagent checks
   cannot claim NFR-09 or physical Windows desktop acceptance.
-- #53 still needs production queue fixes/integration. #51 now retains 5,356
+- Historical PR 3 boundary: the queue fixes subsequently merged as #60 and are
+  included here. Full dual-corpus acceptance is still pending. #51 retains 5,356
   records/5,411 households and schema 0.5.0; this stack's 0.4 schema must integrate
   with it before validating that latest corpus. Counts are always data-derived.
   The old PR 2 load comparison remains a historical measurement of its cited commit.
