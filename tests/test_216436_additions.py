@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -200,30 +201,76 @@ def test_coding_corrections_keep_identity_aliases_and_missing_machine_values():
 @pytest.mark.skipif(
     not additions.PDF.exists(), reason="needs the local replacement scan and raw caches"
 )
-def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps():
+def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
+    tmp_path, monkeypatch
+):
+    # This offline rebuild used to invoke the production writer in the developer's
+    # checkout. Exercise copies instead; never relax the production branch guard.
+    baseline_command = [
+        "git",
+        "show",
+        "556913316ae04aeaca0b5332198975bc176d7bc1:results/216436.jsonl",
+    ]
+    baseline_text = subprocess.check_output(baseline_command, cwd=ROOT, text=True)
     raw_paths = sorted((ROOT / "data/runs/216436").rglob("*.json"))
-    raw_before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in raw_paths}
-    output = ROOT / "results/216436.jsonl"
+    source_paths = [
+        *raw_paths,
+        additions.PDF,
+        ROOT / "results/216436.jsonl",
+        ROOT / "docs/runs/216436-source-corrections.json",
+        ROOT / "docs/runs/216436-gemini-additions.json",
+    ]
+    original_hashes = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest() for path in source_paths
+    }
+    sandbox = tmp_path / "offline rebuild"
+    for source in source_paths:
+        target = sandbox / source.relative_to(ROOT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    monkeypatch.setattr(additions, "ROOT", sandbox)
+    monkeypatch.setattr(additions, "RUN", sandbox / "data/216436-additions")
+    monkeypatch.setattr(additions, "PDF", sandbox / additions.PDF.relative_to(ROOT))
+    additions.RUN.mkdir(parents=True)
+    monkeypatch.chdir(sandbox)
+
+    def sandbox_only():
+        assert Path.cwd() == sandbox
+        for target in (additions.ROOT, additions.RUN, additions.PDF):
+            assert target.resolve().is_relative_to(sandbox)
+            assert not target.is_symlink()
+
+    def baseline_only(command, *, cwd, text):
+        assert command == baseline_command and cwd == sandbox and text is True
+        return baseline_text
+
+    monkeypatch.setattr(additions, "isolated", sandbox_only)
+    monkeypatch.setattr(additions.subprocess, "check_output", baseline_only)
+    output = sandbox / "results/216436.jsonl"
     before = output.read_bytes()
     additions.build()
     assert output.read_bytes() == before
+    report_path = sandbox / "docs/runs/216436-gemini-additions.json"
+    first_report = report_path.read_bytes()
+    additions.build()
+    assert output.read_bytes() == before
+    assert report_path.read_bytes() == first_report
     assert all(
-        hashlib.sha256(p.read_bytes()).hexdigest() == digest
-        for p, digest in raw_before.items()
+        hashlib.sha256(path.read_bytes()).hexdigest() == digest
+        for path, digest in original_hashes.items()
     )
-    baseline = subprocess.check_output(
-        [
-            "git",
-            "show",
-            "556913316ae04aeaca0b5332198975bc176d7bc1:results/216436.jsonl",
-        ],
-        cwd=ROOT,
-        text=True,
-    ).splitlines()
+    for source in raw_paths:
+        assert (
+            hashlib.sha256(
+                (sandbox / source.relative_to(ROOT)).read_bytes()
+            ).hexdigest()
+            == original_hashes[source]
+        )
+    baseline = baseline_text.splitlines()
     assert set(baseline) <= set(output.read_text().splitlines())
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert len(records) == 146
-    report = json.loads((ROOT / "docs/runs/216436-gemini-additions.json").read_text())
+    report = json.loads(report_path.read_text())
     assert report["unattached_front_pages"] == report["new_unplaced_coding_pages"] == []
     assert report["null_record_id_pages"] == report["omitted_coding_fields"] == []
     assert report["source_corrections"] == 19
@@ -239,6 +286,20 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps():
         for r in records
         for h in r["dwelling"]["households"]
     )
+
+
+def test_offline_rebuild_rejects_wrong_branch_before_writing(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    monkeypatch.setattr(
+        additions.subprocess, "check_output", lambda *args, **kwargs: "another-branch\n"
+    )
+    monkeypatch.setattr(
+        additions,
+        "write_atomic",
+        lambda *args, **kwargs: pytest.fail("Wrong-branch rebuild attempted a write"),
+    )
+    with pytest.raises(RuntimeError, match="not the isolated additions branch"):
+        additions.build()
 
 
 def test_existing_review_and_manual_correction_payloads_cannot_be_overwritten():

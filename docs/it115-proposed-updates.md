@@ -1,76 +1,140 @@
-# IT-115 acceptance and dependency audit — 19 October 2026
-Read-only live Linear audit. No ticket, document, status, comment or GitHub state changed. Raw local retrieval evidence is in /tmp/it115-audit/live-linear-evidence.json and /tmp/it115-audit/document-comments.json. This file contains proposed updates only; apply none automatically. All retrieved issue and document comments were read (no pagination remained).
+# Proposed IT-115 ticket and Product updates — 19 October 2026
 
-## Current state and branch
-IT-115 is already Done (completed 18 October 2026 13:04 UTC), despite TC-M07 remaining explicitly Pending and backend rollout sign-off remaining outstanding. This audit cannot validate that closure from genuine human evidence. Do not claim this session closed or reopened the ticket.
-Exact Linear gitBranchName: skandar/it-115-reviewer-screen-a-queue-to-browse-and-a-screen-to-review.
-IT109 Done; IT110 Done; IT111 In Progress; IT112 In Progress; IT113 In Progress (briefly Done then reopened 13 October); IT114 Done; IT116 In Progress; IT125 In Review; IT131 Todo; IT134 archived Todo.
+These are reviewable local drafts, not posted comments or applied document/status
+updates. Live IT-115 was rechecked as **In Progress** on 19 October. It was briefly
+Done on 18 October, then reopened; the earlier audit's Done observation is
+historical. Read-only retrievals are retained under `/tmp/it115-audit/`, including
+`revised-live-scope-evidence.json` and `revised-scope-checklist.md`.
 
-## Acceptance mapping
-IT115 AC1: every eligible flag from US13 queue visible/selectable. Prove producer→loader→API→browser; all statuses, nullable record_id, shared identities, multiple households, Municipality per household and printed field order matter. Unresolved diagnostics must remain visible and blocked.
-AC2: source scan, current/machine answer, status and score before acting. Matching real scan + real record required; actions disabled until scan loaded, missing/error scan blocks writes. Code/label where present; genuine unscored values shown honestly.
-AC3: actual review save and export through IT112, persisted IT113 state. Prove accept/correction, exact 009 string, machine original, attribution/time/history, restart/reopen/export/queue regeneration and untouched-record preservation.
-User Stories AC14.1 adds rerun retention; AC14.2 gives same pre-decision evidence; AC11.3 status/confidence visibly flagged.
-DoD: acceptance met; independently approved PR merged main; local/CI lint+format+pytest (plus frontend); docs changed; owner closes; known gaps tracked. Local-only work necessarily leaves publication/independent approval/merge/final pushed-SHA CI outstanding.
+The PR 4 branch was committed and pushed at `d28624f`, with no PR published.
+Follow-up edits were prepared above that revision and are included in the PR
+branch. Use its final pushed SHA for CI and delivery evidence; do not substitute
+an earlier CI result for the final diff.
 
-## Dependencies and scope
-IT109 (queue), IT112 (save), IT113 (store) explicitly block IT115. Merged implementation is distinct from their acceptance sign-off. IT111 is IT113 decision prerequisite; ticket text contradicts D029. Do not pretend outstanding sign-off complete.
-IT116 depends on IT115; TC-M08 NFR09 non-engineer Archives staff test is downstream, not automatically a prerequisite to this ticket.
-IT125 dual-scored final corpus is not an explicit IT115 dependency. Gemini-only compatible production records can prove integration: single-extractor 0.91 correctly queues. Final dual dataset required only for a separately stated final-corpus acceptance claim.
-IT131 currently covers TC-M01–05, yet refers TC-M06–08 to IT110/116; TC-M07 needs explicit ownership in proposed update.
-IT134 FR06 is archived Todo with no decision/client notification evidence. Track strike editing/FR06 as deferred; do not expand PR4 to invent human strike handling.
+## Proposed IT-115 evidence comment
 
-## Genuine human and Windows evidence
-Test Cases: TC-M07 Pending, executor explicitly Not Skanda. Steps: open region, selected flag, verify scan+machine value+status+confidence, correct/save, reopen/re-export, screenshot steps 3/4/5.
-Test Report 08 October: no manual test executed; AC11.3/14.2 Not run. How We Tested also explicitly says none run and AI-drafted tests cannot be evidence from a model saying passed.
-NFR09 instructions are Draft, written against PR1/2; empty observation sheet proves no actual usability result.
-Runbook rollout checklist requires physical Windows shortcut, spaces in paths, scan rendering, browser launch, port collision, saves/undo/restart, credentials and failed-push retention. Windows CI synthetic Git/filesystem/API tests are not that acceptance.
-No fetched comment provides completed TC-M07 or physical desktop acceptance. Prepare runnable materials with empty executor/result fields; user must nominate non-author and Windows operator, run and record real evidence.
+Production integration uses the real queue producer, compatible production
+records and their matching copied scan. The dated verification record covers
+visible/actionable queue entries; scan, answer, status and confidence before a
+decision; exact `009` correction, Accept, original machine values,
+attribution/history, restart/reopen/JSONL export, unchanged other records,
+regeneration/Undo, stale versions, retries and disposable-local-remote sharing.
+See `docs/it115-verification.md` for actual current results and limitations.
+Automated tests and any explicitly AI-assisted walkthrough are technical evidence;
+they do not establish a human TC-M07 pass.
 
-## Explicit contradictions and proposed corrections
-1. IT111 description/scope/AC: replace database/SQLite/dual-write model with: 'Authoritative region JSONL contains full field and optional review state/history. An in-memory index built at startup supplies direct retrieval. Decisions validate the changed record, atomically replace JSONL and update the index under the writer lock. Restart rebuilds the index. There is no second durable store.' Retain direct lookup, original values, state/actor/time and queue-rerun AC; link D029.
-2. IT113 description: same model correction; implementation #52 is merged but acceptance/rollout sign-off remains. Proposed sign-off table must separately list persistence/restart/queue regeneration/local Git sharing/Windows/human result.
-3. IT112: proposed evidence links actual save regression/integration tests for AC1–3, byte/deep equality for other records, original machine snapshot after repeated corrections. Do not mark Done from merge alone.
-4. D022 dates: repo and Decisions row say confirmation 04 October; 02 October Client Meeting #4, IT109 and user stories say 02 October. Proposed wording: 'Accepted following Client Meeting #4 on 02 October 2026; the earlier 04 October reference was stale.' Rule itself remains status ok + confidence >= D016 agree (0.97), null always routes. Replace obsolete 'every confidence None today' with Gemini-only score 0.91; preserve historical date claims as history, not current state.
-5. Decisions D022 row says identity routing deferred, but repo D022 assigns flagged dwelling identities to queue producer. Update to 'Per-field rule does not read dwelling.flags; queue producer additionally routes flagged dwelling identities. Identity fields are accept-only in bounded review v1.' Only claim actual landed behavior once verified.
-6. Hi-fi v1.5 p1 proposes separate progress file, PR per region, storage/schema unresolved. D029 supersedes: per-field JSONL review history and review-data direct pushes, no per-batch PR. Preserve PDF as design history, attach a scope/supersession note rather than claiming all frames implemented.
-7. Hi-fi p1 discloses fixture scans r01 stand in for different 03-0005 values. Those pages are not matching scan evidence. Use matching copied originals for production acceptance.
-8. Hi-fi front/person/free-text, identity changes, human crossed-out editing are broader than v1. Document v1 as C1/C2 supported mapped fields; shared ownership first coding household/card; identity and existing-negated accept-only; front/person/handwritten/reverse, identity amendments, negation edits and regrouping deferred. Card tabs/read-only context do not imply edit support.
-9. Textual locator scope: printed field labels, Left/Middle/Right column and where line; whole-card scan with manual zoom/magnifier. No field coordinates, automatic highlight or automatic zoom-to-field. Low-fi p32 and IT115 explicitly defer automatic highlighting.
-10. Test Cases TC-M07 status: replace stale 'first slice merged, issue still in progress' with 'PR1–3 merged; Linear currently Done, manual independent acceptance remains unrecorded. PR4 integration evidence [local artifact], TC-M07 human execution pending.' Keep genuine result Not run until executor supplies screenshots.
-11. Test Report 08 October should remain historical at c88e86f; prepare a dated addendum/new report, not overwrite old test totals or imply new runs occurred then. Record PR4 local SHA/base/diff fingerprint, exact command counts, fixtures/scans, automated vs human distinctions.
-12. How We Tested has outdated #59 last PR, #62 draft, Windows #61 pending and 25/43 frontend counts. Update from verified live merge/CI + current command output; remove draft/pending claims only when independently verified.
-13. Test Plan still makes banding the decided mechanism and asserts frontend tests in fake browser only / Playwright future. D022+banding-off adopted, real E2E #62 exists. Update current layers/rule; benchmark precision 97.0 is distinct from confidence cutoff and not universal corpus accuracy.
-14. Usability draft: check actual button names ('Correct', save label, welcome dismissal, Save and Exit outcome), preserve leading-zero instruction, clarify only supported coding fields. Copy exact sample launch output after actual production sample generation. Do not fill observation sheet from automation.
-15. Architectural Requirements says output JSON or XML and CLI enough; D007 output is JSON Lines, IT115 explicitly requires GUI for this deliverable. Note XML/CLI as historical alternatives; resulting reviewer proof is GUI. 4+1 already correctly says no database but obsolete 'in progress' remains.
+IT-115 remains In Progress. TC-M07 requires a human executor other than Skanda,
+with screenshots at steps 3 (evidence visible), 4 (correction/save) and 5
+(reopen/export). Human executor/result remain blank pending actual execution.
+The prepared instructions are in `docs/it115-acceptance.md`. Its queue, save and
+store dependencies must function; their ticket statuses do not impose additional
+acceptance requirements. D029 wording corrections are proposed separately.
 
-## Required remaining actions before closure claim
-- User publishes PR4 with independently reviewed final diff; CI passes exact final pushed SHA; user merges under D002.
-- Team records IT111/112/113 acceptance reconciliation and sign-off without confusing merged code with acceptance.
-- Non-author runs TC-M07 on matching real scan/record disposable sample, records date/build/executor/screenshots/export/restart result.
-- Physical Windows operator runs runbook acceptance and records environment/build/results; synthetic Windows CI insufficient.
-- Admin verifies review-data branch/protection/credentials/validation workflow and canonical reviewed-data ownership. Read-only existing review-save commits prove branch use but not every intended desktop credential or branch-rule behavior.
-- Keep IT116 and FR06 deferred ownership visible; no fabricated TC-M08 or final dual-corpus claim.
+IT-116's unaided Archives usability check remains downstream. IT-125 is needed
+only for a final dual-scored corpus claim. Jacob's requested physical Windows
+acceptance and administrator live-data checks remain separately labeled rollout
+items. PR 4 is not published; final changes still need publication, final-SHA CI,
+independent approval and merge before owner closure under the Definition of Done.
 
+## Proposed dated Test Report addendum
 
-## Exact proposed IT-115 evidence comment (not posted)
+Date: 19 October 2026. Scope: IT-115 production integration using disposable
+compatible records, matching scans and a local Git remote. Attach the current
+`docs/it115-verification.md`, relevant logs and the final code/diff identity.
+Record automated and AI-assisted checks separately from human execution.
 
-Production integration was audited against merged main 9cf8a35 on 19 October 2026. PRs 56/57/59/60/62/65 are merged. The coding-only producer's later-household Municipality, printed order and flagged-identity routing were verified. Read-only inspection resolved all 335,487 flags across 44 populated production regions. Disposable production acceptance used 75 dwellings, 4,650 generated flags and their matching original PDF copied into a new local sample. Automated checks verified exact 009 persistence, Accept, restart/reopen/export, original machine values, attribution/history, stale versions, retries, Undo, regeneration and sharing to a local bare remote. See docs/it115-verification.md for exact final results and limitations, and docs/it115-acceptance.md for the executable human checklist.
+Human TC-M07 execution status: **NOT RUN**. Executor: ______ (not Skanda).
+Date/build: ______. Screenshot 3: ______. Screenshot 4: ______.
+Screenshot 5 and exported field excerpt: ______. Observed result: ______.
+Failure/follow-up: ______.
 
-IT-115 currently shows Done, but this audit found TC-M07 Pending and no physical Windows desktop evidence. Do not treat agent or synthetic CI results as human acceptance. Proposed disposition: owner reconciles status with the outstanding gates; no automatic closure or reopening. IT-111/112/113 acceptance and D029 wording reconciliation remain outstanding. IT-116 is downstream; IT-125 blocks only a final dual-corpus acceptance claim. PR4 remains local/uncommitted until user publication, independent approval, final pushed-SHA CI and merge. The empty-assignment fix overlaps open #68 and needs coordination before publication.
+Downstream TC-M08 / IT-116: pending; no unaided usability pass claimed.
+Physical Windows rollout requested of Jacob: actual executor/date/build/evidence
+and observed result remain blank until execution. Preserve the 08 October Test
+Report as historical rather than replacing its dated totals with these runs.
 
-## Exact proposed acceptance-result addendum (not applied)
+## Proposed IT-111 and IT-113 storage wording
 
-Date: 19 October 2026. Scope: IT-115 production integration on disposable compatible production records and matching scans. Automated results: attach docs/it115-verification.md and final diff fingerprint. Human TC-M07: NOT RUN; executor and required screenshots outstanding. Physical Windows desktop: NOT RUN; operator/build/shortcut/paths/scan/save/undo/restart evidence outstanding. Overall human acceptance: NOT ESTABLISHED. Preserve the 08 October Test Report as historical; do not replace its dated results with these runs.
+Authoritative regional JSONL contains each current field and optional review
+state/history. An in-memory index rebuilt at startup supplies direct lookup. A
+decision validates the changed record, atomically replaces its JSONL file and
+updates the index under the writer lock. Restart reconstructs the index; no
+second durable database or dual-write operation exists. D029 governs review-data
+sharing, one writer per checkout and manual same-region reconciliation.
 
-## Exact proposed IT-111/113 replacement storage wording (not applied)
+For IT-111, replace database/SQLite and dual-write language with this model while
+retaining direct retrieval, review state/actor/time and the explicit authoritative
+record boundary. For IT-113, describe the implemented index, atomic writes and
+restart/queue-regeneration behavior; link the corresponding persistence,
+regeneration and sync tests from the dated verification record. #52's merged
+implementation and the actual checks are evidence to assess against its ACs.
+Do not invent a new owner sign-off table or equate ticket status with a missing
+implementation. Apply no status change from this draft.
 
-Authoritative regional JSONL contains each current field and optional review state/history. An in-memory index rebuilt at startup supplies direct lookup. A decision validates the changed record, atomically replaces its JSONL file and updates the index under the writer lock. Restart reconstructs the index; no second durable database or dual-write operation exists. D029 governs review-data sharing, one writer per checkout and manual same-region reconciliation. Implementation is merged; production/human/Windows acceptance remains separately evidenced.
+## Proposed IT-112 evidence note
 
-## Exact proposed IT-112 acceptance note (not applied)
+The merged save logic was exercised through the built reviewer and real queue
+producer on disposable production records. Its AC1 evidence is the corrected
+value in JSONL export; AC2 is `origin: corrected` with the original machine value
+retained; AC3 is comparison showing every other record unchanged. Restart,
+history, repeated correction, regeneration and Undo regressions provide supporting
+integration coverage. Link current test names/results and copied-record evidence
+from `docs/it115-verification.md`. Evaluate its own ACs without adding unrelated
+usability, administrator or physical desktop requirements to this backend ticket.
 
-Merged save logic was exercised through the built reviewer and the real flags producer on disposable production records. Exact digit strings, unchanged other fields/records, original machine snapshots, reviewer/time/history, restart, JSONL export, queue regeneration, Undo and local sharing were verified by the dated PR4 evidence. This supports implementation integration; rollout and required human/Windows acceptance are not signed off by this note.
+## Proposed TC-M07 ownership clarification
 
-## Exact proposed IT-131 ownership clarification (not applied)
+TC-M01–05 remain IT-131's scope. Assign TC-M07 to an actual non-author human under
+IT-115 and retain the three screenshots and export excerpt with build identity.
+A separate AI-assisted report cannot fill the executor/result fields. TC-M08's
+unaided participant/observer requirements remain downstream IT-116; the physical
+Windows rollout request to Jacob is separate from both cases.
 
-TC-M01–05 remain this ticket's scope. Nominate a non-author executor for TC-M07 under IT-115 and a physical Windows operator; retain screenshots and exported copied records with build/diff identity. TC-M08 remains downstream IT-116 usability work. Do not infer a TC-M07 pass from merged browser tests.
+Clarify TC-M07's correction step: if the first generated flag is an accept-only
+identity, inspect it and select an editable numeric flag for steps 3–5. Record
+the chosen field. A test edit on disposable records is not a claim of archival
+transcription accuracy. This reflects existing allowed actions without expanding
+the implementation to identity editing.
+
+## Proposed Product-document corrections
+
+- **D022 / Decisions:** identify Client Meeting #4 on 02 October as the accepted
+  routing confirmation; the old 04 October reference was stale. Keep the rule
+  tied to D016's agree constant, with null scores/non-ok statuses queued. The
+  producer additionally routes flagged dwelling identities; bounded-v1 identities
+  remain accept-only. Preserve historical calibration claims with their dates.
+- **Hi-fi design:** retain the PDF as design history. D029 supersedes separate
+  progress-file storage and per-region PR sharing: review metadata lives in JSONL
+  and sharing uses `review-data`. The design's disclosed stand-in scans do not
+  establish matching-source acceptance. Front/person/handwritten/reverse editing,
+  identity changes, strike editing and regrouping are deferred in bounded v1.
+- **Locator scope:** printed field names, textual Left/Middle/Right location,
+  whole-card scan and manual zoom/magnifier are supported. Automatic field
+  coordinates, highlighting and zoom-to-field remain outside IT-115.
+- **Test Cases:** describe merged PR1–3 and current IT-115 In Progress status;
+  leave TC-M07 Pending until genuine evidence arrives. Preserve the actual
+  five-step case and three screenshots without adding the entire technical
+  failure/retry regression suite to the human task.
+- **How We Tested / Test Plan:** update outdated PR draft/merge statements and
+  counts from verified current evidence. Describe real browser coverage alongside
+  component/backend tests, distinguish D022 routing from optional banding, and
+  keep benchmark precision separate from confidence cutoff or corpus accuracy.
+- **IT-116 instructions:** check button names and first-use Help against the
+  current screen, retain exact digits/leading zeros, and identify supported coding
+  fields. Keep its participant observation sheet empty until actual execution.
+- **Architecture:** JSON Lines is the implemented export; CLI/XML alternatives
+  are historical. IT-115's deliverable is the GUI. Existing no-database wording
+  should match D029 and the actual implementation.
+- **Deferred work:** preserve IT-134's FR-06/client decision gap and IT-125's final
+  dual-corpus scope explicitly. Do not silently add their features to PR 4.
+
+## Proposed owner checklist
+
+1. Verify current functional AC1–3 evidence and complete human TC-M07.
+2. Commit/publish the final PR 4 changes, coordinate the documented #68 overlap,
+   verify CI on the final pushed SHA, obtain independent approval and merge.
+3. Close IT-115 as its owner only when its actual ACs and DoD are satisfied.
+4. Keep IT-116 downstream and administrative review-data readiness separate.
+5. At the end of the handoff, Jacob performs the requested physical Windows
+   shortcut/quoted paths/browser/scan/save/Undo/restart/port-collision checks on a
+   disposable sample and records actual results. Do not substitute Windows CI.

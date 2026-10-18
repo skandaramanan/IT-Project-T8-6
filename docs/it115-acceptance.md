@@ -1,27 +1,46 @@
 # IT-115 PR 4: production integration and acceptance handoff
 
-Audit date: 19 October 2026 (Australia/Melbourne). Local changes based on main
-`9cf8a35c3883f8ff75113d7d4d23760c4a73de05`; no publication or remote mutation.
+Audit date: 19 October 2026 (Australia/Melbourne). The PR 4 branch was committed
+and pushed at `d28624f`; no PR has been published. The documentation and test
+follow-ups were prepared after that revision and are included in this PR branch.
+Verify CI against the final pushed SHA; the initial revision alone does not
+identify those follow-ups or establish their CI outcome.
 
-## Current status and authority
+## Current status and acceptance scope
 
-Live Linear already marks IT-115 Done. That status is not evidence of completed
-acceptance: [TC-M07](https://linear.app/um-it-project/document/test-cases-648649f503b7)
-remains Pending, explicitly requires an executor other than Skanda, and the
-[Test Report](https://linear.app/um-it-project/document/test-report-08102026-81352fbbbe45)
-and [How We Tested](https://linear.app/um-it-project/document/how-we-tested-6a8358e84eee)
-record no manual execution. No status was changed in this work.
+[IT-115](https://linear.app/um-it-project/issue/IT-115/reviewer-screen-a-queue-to-browse-and-a-screen-to-review-each-field-fr)
+is **In Progress**, rechecked on 19 October. It was briefly Done on 18 October;
+that earlier observation is historical. This documentation review changes no
+remote ticket, document or status.
+
+IT-115 requires the produced flags to be visible/selectable (AC1), the matching
+scan, answer, status and confidence before deciding (AC2), and GUI corrections
+saved into exported records with updated review state (AC3). The working queue,
+save logic and state store are implementation dependencies. Their ticket statuses
+and separate administrative approvals do not add acceptance criteria to IT-115.
+D029 storage wording is reconciled below and in the proposed updates.
+
+The [dependency evidence map](it115-dependency-evidence.md) links each IT-111,
+IT-112 and IT-113 criterion to the implemented D029 model and specific regression
+or production-copy proof. No new backend approval ceremony is required.
+
+[TC-M07](https://linear.app/um-it-project/document/test-cases-648649f503b7)
+remains Pending. It requires a human executor other than Skanda and screenshots
+at steps 3, 4 and 5. Automated checks and AI-assisted computer-use evidence are
+useful technical evidence; neither is a human TC-M07 pass. Human executor and
+observed result remain blank until that person performs the test.
 
 [Definition of Done](https://linear.app/um-it-project/document/definition-of-done-0fce56ee35d6)
-also requires independent PR approval, merge and checks. This local handoff does
-not establish those gates. Automated and agent reviews cannot replace human
-TC-M07 or physical Windows desktop evidence.
+also requires independent PR approval, merge, passing checks, updated docs,
+recorded follow-ups and owner closure. No PR exists yet, so those delivery items
+remain outstanding.
 
-IT-109/110/114 are Done; IT-111/112/113 remain In Progress. IT-116 is downstream
-usability work; IT-125 is In Review and is only a hard dependency for a claim
-about the final dual-scored corpus. Compatible production Gemini records and
-their actual scans suffice for bounded reviewer integration, with scores shown
-honestly. IT-134 is archived Todo: negation editing remains deferred.
+IT-116's unaided Archives usability test is downstream, with its own participant
+and observation requirements. IT-125 is needed only for a claim about the final
+dual-scored corpus; compatible production Gemini records and their matching
+scans suffice for bounded reviewer integration. IT-134's negation editing remains
+deferred. Physical Windows acceptance is a user-requested rollout check, kept
+separate from IT-115's written ACs and TC-M07 below.
 
 ## Scope and resolved contradictions
 
@@ -112,66 +131,116 @@ from that sample's local `remote.git`. Default CI runs the generated synthetic
 queue journey and existing failure/retry journeys; production execution requires
 the archive and is explicitly skipped when the variable is absent.
 
-## Human TC-M07 and Windows execution sheet
+## Human TC-M07 execution sheet
 
-Result: **NOT RUN**. Executor: ______ (not Skanda). Date/time: ______.
-Windows operator/device/OS/browser: ______. Code base and diff hash: ______.
-Sample manifest and source hashes: ______. Evidence directory: ______.
+Execution status: **NOT RUN**. Human executor: ______ (not Skanda).
+Date/time: ______. Build/commit and working diff identity: ______.
+Sample manifest/source hashes: ______. Evidence directory: ______.
+Observed result: ______. Failure and follow-up, if any: ______.
 
-1. Start with a fresh copied region and matching scans. Record manifest counts,
-   code/diff and launch output. Enter reviewer name and dismiss welcome Help.
-2. Select a region, then a dwelling. Compare generated flags with the queue;
-   visit both households where available. Nullable display IDs must not combine
-   physical cards or prevent selection. Identity decisions remain accept-only.
-3. Before deciding, capture the matching original PDF/page, printed label,
-   extracted answer, status and actual confidence. Capture screenshots required
-   by TC-M07; verify manual zoom and textual location rather than a highlight.
-4. Correct a numeric field to `009`, accept another and capture local-save
-   confirmation. Inspect `results/<region>.jsonl` in the disposable checkout:
-   exact string, original machine value, reviewer, time and history must remain.
-5. Stop/restart, sign in, reopen and capture retained values. JSONL is the export;
-   no lossy numeric conversion step is needed. Compare every other field/record.
-6. Regenerate from the copied results with `uv run survey flags <copied-results>`
-   into a new flags file; restart using it. Decided fields must leave pending
-   assignment; retain the old flags file to reopen/Undo. An empty regenerated
-   assignment must start successfully, without claiming whole-corpus acceptance.
-7. Undo using the retained assignment; inspect append-only history and regenerate
-   again. The restored pending field must reappear. Record any failure honestly.
-8. On a separate fresh sample, remove/rename a copied scan and verify decisions
-   are disabled. Restore it. Never manipulate original archive files.
-9. Run two reviewer sessions; verify stale save rejection and retained typed
-   input. Reproduce uncertain response retry through the automated browser test;
-   verify one decision event, not two.
-10. Rename only the disposable `remote.git`, save and Share now. Verify local
-    persistence plus failed-share feedback. Restore it and retry. For same-region
-    reconciliation use the existing two-clone sync regressions; capture the stop
-    message and preserve both sides. Do not test live data writes.
-11. On physical Windows, launch `scripts\review.cmd` from a shortcut with quoted
-    paths containing spaces; verify actual browser/scan, save/undo/restart and
-    port-collision handling. For portable assets repeat from the unpacked folder.
-    CI on Windows does not fill this sheet.
+Use a fresh disposable sample prepared above. Enter a reviewer name and dismiss
+first-use Help. These are the documented TC-M07 steps:
 
-Observed results and screenshot/export paths: ______. Failures: ______.
-Independent executor sign-off: ______. Physical Windows sign-off: ______.
+1. Open the reviewer screen on a region.
+2. Open the first flagged field.
+3. Check that the matching source scan, machine value, status and confidence are
+   visible before deciding. **Capture screenshot 3.**
+4. Correct the value and save. **Capture screenshot 4.**
+5. Reopen it, then inspect the JSONL export. Confirm the new value,
+   `origin: corrected` and original machine value. **Capture screenshot 5** and
+   retain the exported field excerpt.
 
-## Review-data rollout and closure checklist
+The JSONL in the disposable data checkout is the export. TC-M07 requires a
+non-author human; it does not require an unaided Archives participant or Windows.
+Those belong to the separate checks below. Record an actual pass or failure only
+after execution; leave executor/result fields blank beforehand.
+
+The first generated flag can be an accept-only identity. Inspect it, then select
+an editable numeric field such as **Weekly Rent** for steps 3–5; record that
+selection. Do not attempt to change an identity or claim its disabled Correct
+button is a defect. On the prepared fresh sample, open `09-0077-01`, select
+**Weekly Rent** (original PDF page 197), and compare its machine value `10`,
+Readable status and confidence `0.91` with the scan. A deliberate `009` test edit
+is permitted only on the disposable copy to check exact-digit persistence; label
+it as a test edit rather than a source-verified transcription correction.
+
+## Optional technical integration evidence
+
+The dated [verification record](it115-verification.md) records automated and
+independent technical checks. Any separately recorded AI-assisted walkthrough
+must identify itself as AI-assisted. Neither fills the human sheet above.
+
+The completed [computer-use walkthrough](it115-walkthrough.md) includes local
+screenshots, exported field evidence and the exact result template/location for
+a subsequent human execution. A fresh unmodified human sample is prepared at
+`/tmp/it115-human-ready-20261019`; use its manifest's launch command. The earlier
+walkthrough sample contains a deliberate test edit and is evidence only.
+
+Additional coverage requested for PR 4 includes exact `009`, Accept, restart,
+regeneration, Undo, multiple households, nullable identities, unchanged records,
+missing scans, stale versions, uncertain retries, sharing failures and same-region
+reconciliation stops. Use the existing backend/browser regressions and disposable
+production samples. These are technical checks, not extra mandatory steps for
+the TC-M07 human executor. Never mutate original scans/results or test sharing
+against a live remote.
+
+## Downstream IT-116 usability
+
+IT-116 / TC-M08 requires a non-technical Archives participant to complete the
+review/correct cycle using only written instructions without development-team
+help, with failures recorded, fixed and retested. Its observation sheet, participant
+selection and timing are separate from TC-M07. Prepare current instructions now;
+keep IT-116 pending and downstream rather than making it an IT-115 closure gate.
+
+## Review-data administrative rollout
 
 Read-only inspection found an existing remote `review-data` branch and review-save
-history. That proves branch use, not correct credentials/protections for every
-intended desktop. D029 and `.github/workflows/review-data.yml` govern rollout:
-local validated JSONL save → commit/share → post-push validation. “Shared” means
-upload success, not a CI pass. Same-region overlap requires preserved-data manual
+history. That proves branch use, not credentials/protections on every intended
+desktop. D029 and `.github/workflows/review-data.yml` govern rollout: local
+validated JSONL save → commit/share → post-push validation. “Shared” means upload
+success, not a CI pass. Same-region overlap requires preserved-data manual
 reconciliation; disjoint regions can rebase. Never force-push to reconcile.
 
-- [ ] Named non-author TC-M07 execution with matching scan/record screenshots.
-- [ ] Physical Windows launch/shortcut/paths/save/undo/restart evidence.
-- [ ] IT-111/112/113 storage wording and actual acceptance sign-off reconciled.
-- [ ] Admin confirms canonical review-data ownership, branch rules, intended
-      operator credentials and post-push validation. Live writes are outside this
-      session; disposable sharing does not attest to live permissions.
-- [ ] User commits/publishes PR 4, resolves #68 overlap, obtains independent review,
-      verifies all CI at the final pushed SHA and merges per DoD.
-- [ ] Owner reconciles IT-115's existing Done status with the evidence above.
-      IT-116 remains downstream; no final dual-corpus claim without IT-125.
+The rollout owner/admin should confirm canonical data ownership, appropriate
+branch rules, operator credentials and post-push validation before intended live
+use. Disposable local sharing tests do not attest to live permissions. These
+administrative tasks are deployment readiness items, not additional IT-115 ACs.
 
-Until these gates have genuine evidence, this audit does not support closure.
+## IT-115 delivery and closure checklist
+
+- [ ] Record final functional evidence for AC1–3 against the current code and
+      matching copied production records/scans; rerun affected checks after fixes.
+- [ ] Complete the actual human TC-M07 sheet and its three required screenshots.
+- [ ] Update behavior/setup docs and locally prepare accurate ticket wording;
+      track deferred scope and distinguish dependency implementation from rollout.
+- [ ] Publish PR 4, coordinate the documented #68 overlap, verify CI on the final
+      pushed SHA, obtain independent approval and merge under the Definition of Done.
+- [ ] Owner closes IT-115 when its actual ACs and DoD are satisfied. Its current
+      status is In Progress. IT-116 remains downstream; final dual-corpus claims
+      require IT-125.
+
+## User-requested physical Windows handoff — Jacob
+
+Requested operator: Jacob. Actual executor: ______. Date/time: ______.
+Device/Windows/browser: ______. Build and working diff identity: ______.
+Evidence paths: ______. Observed result: ______. Failures/follow-ups: ______.
+
+Run this on a physical Windows desktop at the end of the handoff. Use a new
+sample destination and shortcut paths containing spaces; launch
+`scripts\review.cmd` with correctly quoted paths. Verify actual browser opening,
+matching scan rendering, a saved decision, Undo, restart/reopen and port-collision
+handling. If delivering the portable source-plus-assets folder, repeat its launch
+from the unpacked location. Use only the disposable local remote to verify failed
+sharing retains local decisions and recovery succeeds.
+
+Jacob may also execute TC-M07 during this same session, provided he actually
+performs its steps as a non-author and records his own screenshots/result.
+TC-M07 does not require an Archives participant; that belongs to IT-116. Record
+the functional TC-M07 result and Windows rollout result separately even if
+executed together. Existing automated screenshots are reference material, not
+proof of his execution.
+
+Windows CI covers synthetic filesystem/Git/API behavior; it does not fill this
+sheet. Jacob's requested Windows check is rollout evidence, separate from the
+written IT-115 ACs, human TC-M07 and downstream IT-116 usability. No physical
+Windows pass is claimed here.
