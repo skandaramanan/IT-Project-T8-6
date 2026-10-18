@@ -127,6 +127,20 @@ The coverage table lists, per module, the share of lines and branches the
 tests run and the line numbers they miss. In CI it also appears on the
 run's Summary page. It is reported, not enforced.
 
+The reviewer UI has two more layers, both in CI. `npm test` runs the Vitest
+suite against a fake API. `npm run e2e` builds the page and runs Playwright in
+Chromium against the real backend, each test on its own synthetic demo and
+server: the correct/undo/share/reload journey, a lost save response, two
+reviewers on one field, a missing scan, a failed share and a lost session.
+
+```bash
+cd frontend
+npm ci
+npx playwright install chromium   # once
+npm test
+npm run e2e
+```
+
 Some tests skip on purpose, and pytest lists them as `s`:
 
 | Test | Skips unless |
