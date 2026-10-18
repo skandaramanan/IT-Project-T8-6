@@ -1,0 +1,157 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "banded": false,
+  "struck_detection": false,
+  "media_resolution": "default",
+  "original_records": 127,
+  "records": 146,
+  "coding_sources_before": 127,
+  "coding_sources_after": 146,
+  "new_coding_pages": [
+    517,
+    521,
+    525,
+    531,
+    535,
+    539,
+    543,
+    547,
+    551,
+    555,
+    559,
+    563,
+    567,
+    573,
+    577,
+    581,
+    585,
+    589,
+    593
+  ],
+  "fronts_read": 20,
+  "source_corrections": 19,
+  "corrections_manifest": "docs/runs/216436-source-corrections.json",
+  "verified_associations": [
+    [
+      515,
+      517
+    ],
+    [
+      519,
+      521
+    ],
+    [
+      523,
+      525
+    ],
+    [
+      527,
+      531
+    ],
+    [
+      529,
+      531
+    ],
+    [
+      533,
+      535
+    ],
+    [
+      537,
+      539
+    ],
+    [
+      541,
+      543
+    ],
+    [
+      545,
+      547
+    ],
+    [
+      549,
+      551
+    ],
+    [
+      553,
+      555
+    ],
+    [
+      557,
+      559
+    ],
+    [
+      561,
+      563
+    ],
+    [
+      565,
+      567
+    ],
+    [
+      571,
+      573
+    ],
+    [
+      575,
+      577
+    ],
+    [
+      579,
+      581
+    ],
+    [
+      583,
+      585
+    ],
+    [
+      587,
+      589
+    ],
+    [
+      591,
+      593
+    ]
+  ],
+  "identity_reread_pages": [],
+  "identity_crop_pages": [
+    551
+  ],
+  "null_record_id_pages": [],
+  "front_pages": [
+    515,
+    519,
+    523,
+    527,
+    529,
+    533,
+    537,
+    541,
+    545,
+    549,
+    553,
+    557,
+    561,
+    565,
+    571,
+    575,
+    579,
+    583,
+    587,
+    591
+  ],
+  "notes_read": 20,
+  "unattached_front_pages": [],
+  "unplaced_card_pages": [],
+  "existing_records_changed": 0,
+  "new_record_flags": {
+    "fronts_disagree": 1
+  },
+  "new_unplaced_coding_pages": [],
+  "omitted_coding_fields": [],
+  "estimated_usage_cost_usd": 0.2445906,
+  "excluded_blank_crossed_out_page": 570,
+  "pdf_sha256": "6d7b64bc0bb82e499ac35a6d32872409572ec484f8670a9368b834ab9c3796f0",
+  "source_download_name": "1973-0002-00025-00001.pdf",
+  "canonical_pdf_name": "1264179_1973-0002-00025.pdf"
+}

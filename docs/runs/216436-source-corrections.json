@@ -1,0 +1,243 @@
+{
+  "region": "216436",
+  "pdf": "1264179_1973-0002-00025.pdf",
+  "pdf_sha256": "6d7b64bc0bb82e499ac35a6d32872409572ec484f8670a9368b834ab9c3796f0",
+  "method": "Source-verified corrections by the coding assistant at the user request; teammate review pending. Raw model responses are retained unchanged. All 19 coding identities and 20 front identities were visually inspected.",
+  "corrections": [
+    {
+      "kind": "front",
+      "page": 515,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "01120",
+      "value": "177",
+      "evidence": "Top-left replacement 177 agrees with coding p517; 01120 is the top-right archive reference."
+    },
+    {
+      "kind": "front",
+      "page": 527,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "488",
+      "value": "191",
+      "evidence": "Top-left cancelled legacy 488/483 is replaced by 191; coding p531 carries the same replacement."
+    },
+    {
+      "kind": "front",
+      "page": 529,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "483",
+      "value": "191",
+      "evidence": "Continuation of p527: shared legacy 483, adjacent person columns (ages 7,6,4,3,2 and Another expected), and the combined 12 resident members match coding p531. Use the established replacement dwelling 191 for this continuation."
+    },
+    {
+      "kind": "front",
+      "page": 549,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "209522",
+      "value": "209",
+      "evidence": "Front and coding p551 both show replacement 209 beside cancelled legacy 522; use the surviving replacement, not both numbers concatenated."
+    },
+    {
+      "kind": "front",
+      "page": 553,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "526",
+      "value": "213",
+      "evidence": "Front and coding p555 show 526 cancelled and replaced by 213."
+    },
+    {
+      "kind": "front",
+      "page": 561,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "535",
+      "value": "219A",
+      "evidence": "Front shows 219 A with legacy 535 cancelled; coding p563 explicitly says 219A."
+    },
+    {
+      "kind": "front",
+      "page": 565,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "2193",
+      "value": "219B",
+      "evidence": "Front shows 219 B; the letter B was read as 3. Coding p567 says 219B."
+    },
+    {
+      "kind": "front",
+      "page": 571,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "01123",
+      "value": "222",
+      "evidence": "Top-left replacement 222 agrees with coding p573; 01123 is an archive reference."
+    },
+    {
+      "kind": "front",
+      "page": 583,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "1776",
+      "value": "233",
+      "evidence": "Small top-left 233 agrees with coding p585; 1776 belongs to the archive reference at top right."
+    },
+    {
+      "kind": "front",
+      "page": 587,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": "01124",
+      "value": "235",
+      "evidence": "Small top-left 235 agrees with coding p589; 01124 is the top-right archive reference."
+    },
+    {
+      "kind": "front",
+      "page": 591,
+      "field": "Dwelling Number (top-left corner)",
+      "original_value": null,
+      "value": "236",
+      "evidence": "Faint top-left 236 agrees with coding p593."
+    },
+    {
+      "kind": "coding",
+      "page": 539,
+      "field": "Municipality",
+      "original_value": "11",
+      "value": "14",
+      "evidence": "Coding municipality is 14, corroborated by front p537 (Armadale 14)."
+    },
+    {
+      "kind": "coding",
+      "page": 547,
+      "field": "Municipality",
+      "original_value": "21",
+      "value": "14",
+      "evidence": "21 is cancelled; replacement 14 is visible on both coding p547 and front p545."
+    },
+    {
+      "kind": "coding",
+      "page": 547,
+      "field": "Number of Dwelling",
+      "original_value": "517",
+      "value": "208",
+      "evidence": "517 is cancelled; replacement 208 is visible on coding p547 and front p545."
+    },
+    {
+      "kind": "coding",
+      "page": 551,
+      "field": "Number of Dwelling",
+      "original_value": "209.522",
+      "value": "209",
+      "evidence": "Coding p551 shows replacement 209 and cancelled legacy 522; front p549 confirms 209 and municipality 14. The crop reread followed the cancelled values and is not accepted."
+    },
+    {
+      "kind": "coding",
+      "page": 555,
+      "field": "Municipality",
+      "original_value": "21",
+      "value": "14",
+      "evidence": "21 is cancelled and replaced by 14, corroborated by front p553."
+    },
+    {
+      "kind": "coding",
+      "page": 555,
+      "field": "Number of Dwelling",
+      "original_value": "526",
+      "value": "213",
+      "evidence": "526 is cancelled and replaced by 213, corroborated by front p553."
+    },
+    {
+      "kind": "coding",
+      "page": 573,
+      "field": "Number of Dwelling",
+      "original_value": "992",
+      "value": "222",
+      "evidence": "The surviving red replacement is 222, corroborated by the clear top-left 222 on front p571; old 538 is cancelled."
+    },
+    {
+      "kind": "coding",
+      "page": 585,
+      "field": "Type of Family",
+      "original_value": null,
+      "value": "1",
+      "evidence": "The coding-card Type of Family row visibly contains 1. The cached Type_of_Family:null is a wrong blank as well as a misspelt label."
+    }
+  ],
+  "verified_associations": [
+    {
+      "front_page": 515,
+      "coding_page": 517
+    },
+    {
+      "front_page": 519,
+      "coding_page": 521
+    },
+    {
+      "front_page": 523,
+      "coding_page": 525
+    },
+    {
+      "front_page": 527,
+      "coding_page": 531
+    },
+    {
+      "front_page": 529,
+      "coding_page": 531
+    },
+    {
+      "front_page": 533,
+      "coding_page": 535
+    },
+    {
+      "front_page": 537,
+      "coding_page": 539
+    },
+    {
+      "front_page": 541,
+      "coding_page": 543
+    },
+    {
+      "front_page": 545,
+      "coding_page": 547
+    },
+    {
+      "front_page": 549,
+      "coding_page": 551
+    },
+    {
+      "front_page": 553,
+      "coding_page": 555
+    },
+    {
+      "front_page": 557,
+      "coding_page": 559
+    },
+    {
+      "front_page": 561,
+      "coding_page": 563
+    },
+    {
+      "front_page": 565,
+      "coding_page": 567
+    },
+    {
+      "front_page": 571,
+      "coding_page": 573
+    },
+    {
+      "front_page": 575,
+      "coding_page": 577
+    },
+    {
+      "front_page": 579,
+      "coding_page": 581
+    },
+    {
+      "front_page": 583,
+      "coding_page": 585
+    },
+    {
+      "front_page": 587,
+      "coding_page": 589
+    },
+    {
+      "front_page": 591,
+      "coding_page": 593
+    }
+  ],
+  "continuation_note": "Fronts 527 and 529 form one household grid: 12 resident columns plus a separately written Another expected column. Preserve all transcribed columns; do not infer resident count from the persons array length."
+}
