@@ -1,27 +1,25 @@
 {
   "calibration_sha256": "041ae5ead28d04bedf469487addc5e6fbe816cc5201c91931edac091fe40c7db",
   "card_without_calibrated_fields": 0.0,
-  "current_refresh_status": {
-    "coding_sources": 5430,
-    "complete_scan_sha256": "6d7b64bc0bb82e499ac35a6d32872409572ec484f8670a9368b834ab9c3796f0",
-    "current_AC2": "temporarily pending: retained216436baseline has151nullfront/backcards; pairedmerge will apply no-evidence fallback",
-    "date": "2026-10-18",
-    "dwellings": 5375,
-    "fresh_qwen_raw_handoff_required": true,
-    "git_head": "50ad42bffbe38df0399ab4f615396569ec5cb66c",
-    "paired_regions": 43,
-    "qwen_coding_sources": 5429,
-    "qwen_dwellings": 5422,
-    "reason": "PR64 fresh Qwen readings differ from old supplied caches; do not reuse old paired scores",
-    "region_216436_coding_sources": 146,
-    "region_216436_no_score_based_review_bypass": true,
-    "region_216436_unscored_non_coding_cards": 151,
-    "standalone_regions": [
-      "216436"
-    ]
+  "date": "2026-10-19",
+  "empty_regions": {
+    "216461": "front-only material; no coding records in either arm"
   },
   "excluded_sha256": "9d07197344565b69293fc8339a53e6250d2e521baa6f7eaf6098f38aa41bdea9",
   "excluded_sources": 218,
+  "handoff": {
+    "archive": "data/it124-216436-qwen-handoff.tar.gz",
+    "audit": "data/it125-closeout-20261019/archive-audit.json",
+    "excluded_readings": [
+      272,
+      570
+    ],
+    "fresh_region": "216436",
+    "input_audit": "data/it125-closeout-20261019/input-audit.md",
+    "published_readings": 146,
+    "raw_readings": 148,
+    "sha256": "ef8f3f082d7ca0ec33bd9d548cd626a24009113c9c5d0fcab5956ce96f4d69a9"
+  },
   "missing_secondary": [
     [
       "216419",
@@ -29,6 +27,13 @@
       103
     ]
   ],
+  "paths": {
+    "gemini_cache": "data/runs",
+    "primary": "data/it125-inputs-after216436/results",
+    "publication": "results",
+    "qwen_cache": "data/it125-closeout-20261019/qwen-cache",
+    "secondary": "results/qwen2.5-vl-server-2000000px"
+  },
   "policy": "D021 Gemini primary, D016 normalized Q6 calibration, D018 weakest quarter, D022 clean agreement",
   "primary": "gemini-3.5-flash-lite",
   "primary_files": {
@@ -77,6 +82,53 @@
     "216460.jsonl": "1147f3bd44787915255cfeb145786e5e13deeb9bb2bdb9ee6fdf70a258114186",
     "216463.jsonl": "984090b06383e3b6d4d7bf7a47addf1200fdff1783fa174b91056ea0da6c9051"
   },
+  "region_inventory": [
+    "216412",
+    "216413",
+    "216414",
+    "216415",
+    "216416",
+    "216417",
+    "216418",
+    "216419",
+    "216420",
+    "216421",
+    "216422",
+    "216423",
+    "216424",
+    "216425",
+    "216426",
+    "216427",
+    "216428",
+    "216429",
+    "216431",
+    "216433",
+    "216434",
+    "216435",
+    "216436",
+    "216437",
+    "216438",
+    "216439",
+    "216440",
+    "216441",
+    "216442",
+    "216443",
+    "216444",
+    "216445",
+    "216446",
+    "216447",
+    "216448",
+    "216449",
+    "216450",
+    "216451",
+    "216452",
+    "216453",
+    "216454",
+    "216459",
+    "216460",
+    "216461",
+    "216463"
+  ],
   "secondary": {
     "decoding": "greedy",
     "extractor": "qwen2.5-vl-server-2000000px",

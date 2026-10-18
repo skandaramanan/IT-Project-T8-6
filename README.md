@@ -322,29 +322,39 @@ acceptance. Use one dataset writer; stop extraction while reviewing.
 
 ### Merge the two saved runs (IT-125, offline)
 
-**18 October status:** PRs #63/#64 are now included. The 43 unchanged regions
-retain paired scores; 216436 uses the new standalone Gemini baseline while
-Jacob’s refreshed raw Qwen cache is pending. The original baseline path below
-is the 17 October snapshot. Current integration must use
-`data/it125-inputs-after216436/results/` and a separate cache tree containing
-216436’s fresh Qwen readings. The stale-cache guard refuses the old handoff;
-see [the integration status](docs/runs/it125-216436-integration.md).
+**19 October status:** PRs #63/#64 and Jacob’s refreshed 216436 raw
+handoff are integrated. The local publication is `results/<region>.jsonl`:
+5,375 dwellings / 5,430 coding sources across 44 nonempty regions; front-only
+216461 accounts for the 45th region. All 34 protected field payloads are
+preserved. Every stored card has a numeric score; uncalibrated fronts/backs
+use zero as a no-evidence marker and supplementary handwriting stays as-is.
+See [the integration evidence](docs/runs/it125-216436-integration.md).
 
-The final local dataset is `results/<region>.jsonl`. The independent Qwen run
-stays in `results/qwen2.5-vl-server-2000000px/`. See the
-[merge report](docs/runs/it125-merge-report.md) for source coverage, regional
-agreement, review share, calibration limitations and the unresolved full-corpus
-secondary-form census.
+The independent Qwen export stays in
+`results/qwen2.5-vl-server-2000000px/`. The [merge report](docs/runs/it125-merge-report.md)
+contains per-region agreement, review eligibility, calibration limitations and
+known C3/S3/R1 sample counts. Unsupported forms are outside the agreed scored
+scope; these counts do not claim full-corpus prevalence. Review queue behaviour
+and handwriting priority belong to IT-109/IT-115.
 
 ```bash
 uv run python scripts/merge_scored_results.py \
-  --primary data/it125-originals/results \
-  --qwen-cache data/it124-review-20261017/handoff/data/runs \
+  --primary data/it125-inputs-after216436/results \
+  --qwen-cache data/it125-closeout-20261019/qwen-cache \
   --output data/it125-new-candidate
 uv run survey validate-results data/it125-new-candidate
 uv run python scripts/report_scored_results.py \
   --dataset data/it125-new-candidate --output data/it125-new-report
 ```
+
+The primary snapshot includes the source-verified Gemini additions. The isolated
+Qwen cache tree uses the fresh 216436 handoff for that entire region and the
+original handoff for the other regions; extracting the replacement over old
+caches is unsafe. Both original archives and the original Gemini snapshot are
+preserved. The completed candidate, pairing audit and repeat build are in
+`data/it125-closeout-20261019/`. Optional report `--runtime` and `--evidence`
+arguments attach measured runtime and candidate-specific verification; report
+generation never invents validation or publication evidence.
 
 The output must be separate from all inputs and new or empty. `--primary` can
 also name a reviewed Gemini dataset: human decisions and their full payloads

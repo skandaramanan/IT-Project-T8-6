@@ -1,48 +1,43 @@
-> **18 October update:** Main now includes PRs #63/#64. The current local dataset has **5,375 dwellings / 5,430 coding sources**. Region 216436 contains the new 146-record Gemini baseline with single-extractor scores; its machine scores do not clear review while the refreshed Qwen raw handoff is pending; source-verified corrections remain protected. The other 43 paired regions are unchanged. The figures below are the **17 October snapshot**, not current whole-corpus agreement figures. See [the integration status](it125-216436-integration.md). The complete 594-page scan is installed locally; the old 514-page scan and previous scored dataset are backed up.
+# IT-125 candidate merge report — 2026-10-19
 
-# IT-125 local merge report — 17 October 2026
+This report describes candidate `/Users/skandaramanan/Documents/IT-Project-T8-6/data/it125-closeout-20261019/candidate`: **5,375 dwellings / 5,430 physical coding cards**, with 44 nonempty regions. It does not establish that this candidate is the current published dataset.
 
-Built **5,356 dwellings / 5,411 physical coding cards**, covering 44 nonempty region files. Region 216461 is front-only and explicitly has zero coding records. All 45 regions are accounted for.
+Candidate creation date: 2026-10-19. Region names accounted for in the supplied artifacts: 45; full project region inventory supplied. Empty-region declarations: `{"216461": "front-only material; no coding records in either arm"}`.
 
-Final local publication: `results/<region>.jsonl`. Qwen inputs remain in `results/qwen2.5-vl-server-2000000px/`; original Gemini files are preserved at `data/it125-originals/results/`. Candidate and per-source pairing evidence: `data/it125-repeat/` (with `pairing/`, `summary.json`, `merge-manifest.json`). No model calls or remote writes were used.
+## Agreement and review eligibility
 
-## Agreement and review policy
+Raw normalized agreement: **265,167/336,660 = 78.76%** across expected comparison fields; **81.19%** where both arms read a nonblank value. Raw and effective class counts remain separate where evidence is uncalibrated or protected.
 
-Raw normalized agreement is **264,289/335,482 = 78.78%** across all 62 fields per card, or **81.21%** where both read nonblank values. Raw classes are separate from effective scored classes: unsupported C3 fields and preserved Gemini-only identity recoveries receive no paired calibration evidence.
+Candidate policy: `D021 Gemini primary, D016 normalized Q6 calibration, D018 weakest quarter, D022 clean agreement`. Review-eligible bypass share: **269,035/895,331 = 30.05%** of stored field leaves; 78.92% of numeric leaves. These are policy eligibility counts, not a guarantee that the eventual review queue bypasses those fields. Identity flags can still require review; protected human-reviewed fields are excluded from automatic eligibility.
 
-Under D022's current clean-agreement policy, **268,146/891,553 = 30.08%** of stored field leaves are eligible to skip review; **78.94%** of numeric coding leaves. These denominators include the schema's municipality aliases and exclude review history snapshots. They differ from 62 × card counts because shared dwelling fields are stored once, while municipality is duplicated. Identity flags can still force queue entries. Human-reviewed leaves are excluded from automatic-skip counts.
+Confidence summarizes the calibrated evidence for the selected reading. Agreement is not a corpus accuracy guarantee. Blank, omitted, absent and failed readings must remain distinct; Gemini stays primary, including an individual blank or omission. Qwen supplies a value only when the entire primary arm is unavailable.
 
-The 0.98 cutoff follows the recalibrated D016 agree constant. This is the existing interim policy on the development benchmark, not a 99% corpus accuracy guarantee. 37/1,523 agreeing unbanded benchmark fields were wrong. There is no held-out evaluation or human ceiling. Both-blank has zero Q6 benchmark support and remains in review via status; banded low-sample fallbacks do not establish a new bypass policy.
+## Scores, preservation and discrepancies
 
-## Scores and preservation
+D018 aggregates each coding card's own paired fields with the weakest-quarter mean. Uncalibrated fronts and backs use card score 0 as a no-evidence marker; supplementary handwriting/person/note field confidences may remain null. Neither marker measures handwriting accuracy.
 
-Every stored coding field has numeric confidence (339,683 leaves); 551,870 handwriting/person/note leaves remain null under D028. Every stored card has numeric confidence (10,045 cards). The mean numeric field score is 0.9036; mean stored-card score is 0.3857, including zero evidence fronts/backs. These are score summaries, not measured full-corpus accuracies.
+Stored fields: 895,331; numeric scores: 340,880; null scores: 554,451; invalid scores: 0. Coding-source leaves with numeric scores: 340,880/340,880. Mean numeric field score: 0.9036.
 
-Each coding card uses its own 62 raw Gemini/Qwen fields and D018's weakest-quarter mean. Gemini remains primary even for individual blanks and omissions. Omitted selected fields score zero; absence never counts as agreement. Uncalibrated fronts/backs receive card score 0.0 as a no-evidence triage marker; their fields remain null. No handwriting accuracy is inferred.
+Stored cards: 10,104, by role `{"coding-front": 5430, "survey-back": 20, "survey-front": 4654}`; unscored/invalid cards: 0. Mean numeric card score: 0.3847. These are score summaries, not measured corpus accuracies.
 
-All 13 legacy corrected field payloads remain unchanged, including their confidence and provenance. The merge also preserves audit histories and accepted omissions in regression tests. It recovers 1,106 previously omitted Gemini fields from explicit aliases (1,081 populated, 25 explicit blanks), never Qwen substitutes. Separately recovered Gemini identity values are preserved and scored zero because their crop prompt has no paired calibration. The inputs' 460 null household IDs and all grouping/association flags remain unchanged.
+Protected field leaves present: **34**. Audit override counts: `{"gemini_identity_recovery_uncalibrated": 121, "human_review_preserved": 18, "primary_label_alias_recovered": 1106}`. Null household identities: 460; grouping/identity flags: `{"duplicate_dwelling_no": 215, "duplicate_record_id": 351, "fronts_disagree": 196, "identity_reread": 116, "missing_dwelling_no": 238, "missing_record_id": 64, "municipality_mismatch": 5, "out_of_order": 855, "paired_by_position": 451, "persons_unassigned": 43, "unplaced": 978}`. Presence and counts do not independently establish unchanged human payloads; preservation checks belong in the supplied verification evidence.
 
-All 216 excluded sources remain excluded. Region 216414 p194 is present. The only missing Qwen arm is 216419 / `423497_1973-0002-00008-00001.pdf` / p103 (failed token-cap loop); all 62 surviving Gemini fields remain in the output with single-arm evidence. The one unused nonexcluded Qwen cache, 216434 p2, is blank and adds no source.
+Excluded-source count declared by this candidate manifest: **218**. Missing/failed secondary arms in this candidate: `[{"page": 103, "pdf": "423497_1973-0002-00008-00001.pdf", "region": "216419", "state": "failed"}]`. The report does not infer zero lost or unclassified archive cards from these observations.
 
-Measured local full offline merge runtime: **89.40 seconds**, including input/output validation and staged writes. No model calls. Runtime evidence is an observation of this machine, not an extraction throughput claim.
+## Clarified scope and secondary counts
 
-Missed-card accounting: zero published Gemini coding sources lost; one failed/missing Qwen reading (p103). The number of genuinely missed or unclassified archive cards remains unknown because no new full typed scan audit was performed. The truncated 216436 scan and upstream discovery gaps prevent a claim of zero missing archive cards.
+Unsupported secondary forms are ignored for the scored extraction scope; any retained placeholders do not gain C1/C2 validation.
+Known C3/S3/R1 sample counts are reported honestly; unknown full-corpus prevalence is not an acceptance blocker under the clarified scope.
+Handwriting, notes and person text are accepted as-is as supplementary information; no accuracy is inferred from their retention.
+Queue implementation belongs to IT-109/IT-115 and is outside IT-125; reported skip shares describe eligibility under the candidate policy.
 
-## Secondary forms and acceptance limitation
-
-The historical structure sample identifies **C3: 4, S3: 10, R1: 12** among 843 successfully analyzed pages (880 sampled; 44 readable units). Published-source intersections are **C3: 4, S3: 3, R1: 2**. These are observed counts and corpus lower bounds, not a full prevalence census. The exact sources and evidence references are in `it125-known-secondary-sources.json`. All four known C3 sources remain present, with coding/card scores zero and review required. Known S3/R1 stored cards have zero evidence scores and uncalibrated handwriting.
-
-No complete subtype inventory exists in the repository or supplied handoff; the generic segmenter does not distinguish these forms, and no additional inventory was available. The full-corpus C3/S3/R1 totals therefore remain **unknown**. A typed page audit is needed to close that part of AC3. Existing truncated 216436 material, front-only 216461, unplaced cards and absent strike detection remain upstream limitations. No broad model rerun is justified by this merge.
-
-## Acceptance status
-
-- **AC1 met** for the retained corpus: schema valid, resolved values and complete coding scores; null only for documented uncalibrated fields.
-- **AC2 met:** every stored card is numerically scored, with conservative no-evidence handling.
-- **AC3 partially met:** per-region agreement and skip-review shares are complete; exact known sample/output subtype counts are reported, but full-corpus prevalence is unavailable. The requested Linear report is supplied locally here under the no-Linear-updates instruction.
+| Form | Identified in supplied sample | Present in candidate | Present as coding source |
+| --- | ---: | ---: | ---: |
+| C3 | 4 | 4 | 4 |
+| R1 | 12 | 2 | 0 |
+| S3 | 10 | 3 | 0 |
 
 ## Per-region figures
-
-Agreement is raw nonblank agreement / all expected card fields. Effective agreement excludes uncalibrated identity/C3 evidence. Skip share is D022-eligible leaves / all stored field leaves.
 
 | Region | Dwellings | Coding cards | Raw agree / fields | Raw agree % | Effective agree % | Skip fields / stored | Skip % |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -68,7 +63,7 @@ Agreement is raw nonblank agreement / all expected card fields. Effective agreem
 | 216433 | 125 | 125 | 6211/7750 | 80.14% | 80.14% | 6326/19542 | 32.37% |
 | 216434 | 109 | 109 | 4775/6758 | 70.66% | 70.66% | 4872/18222 | 26.74% |
 | 216435 | 95 | 95 | 4747/5890 | 80.59% | 80.59% | 4839/15793 | 30.64% |
-| 216436 | 127 | 127 | 6507/7874 | 82.64% | 82.63% | 6624/21622 | 30.64% |
+| 216436 | 146 | 146 | 7385/9052 | 81.58% | 81.57% | 7513/25400 | 29.58% |
 | 216437 | 179 | 179 | 8419/11098 | 75.86% | 75.86% | 8593/29433 | 29.20% |
 | 216438 | 166 | 166 | 8327/10292 | 80.91% | 80.91% | 8463/27858 | 30.38% |
 | 216439 | 170 | 170 | 8681/10540 | 82.36% | 82.36% | 8848/26455 | 33.45% |
@@ -90,21 +85,138 @@ Agreement is raw nonblank agreement / all expected card fields. Effective agreem
 | 216459 | 54 | 54 | 2771/3348 | 82.77% | 82.77% | 2818/13168 | 21.40% |
 | 216460 | 105 | 108 | 5554/6696 | 82.95% | 82.95% | 5586/15995 | 34.92% |
 | 216463 | 64 | 69 | 1761/4278 | 41.16% | 39.69% | 1651/10265 | 16.08% |
-| 216461 | 0 | 0 | 0/0 | n/a | n/a | 0/0 | n/a |
+| 216461 | 0 | 0 | 0/0 | unknown | unknown | 0/0 | unknown |
 
-## Validation
+## Acceptance observations
 
-The completed local full suite passed **775 tests**, with **13 skipped** and no calibration xfails. Ruff lint/format and `git diff --check` passed. `survey validate-results` passed all 44 region files. An independent reviewer separately validated all 5,356 schema envelopes, every raw arm field, card aggregation, protected payloads, exclusions, source uniqueness and review bypass: zero unsafe skips. Same-input runs produced byte-identical 44 region files, 44 pairing files and summary; final published files match the verified candidate. The final manifest also pins calibration and secondary-type evidence hashes.
+- **AC1:** `{"coding_confidence_complete": true, "schema_and_preservation": "see supplied verification evidence; not inferred from report generation"}`
+- **AC2:** `{"all_stored_cards_numerically_scored": true}`
+- **AC3:** `{"full_census_required": false, "known_secondary_counts_reported": true, "regional_agreement_and_review_share_reported": true}`
 
-Detailed local evidence: `data/it125-final-tests.log`, `data/it125-validation.log`, `data/it125-context/final-review.md`, `determinism.json`, `publication.json` and `runtime.json`. The supplied raw caches and original Gemini/Qwen files remain preserved. No commit, push, merge, PR comment or Linear update was made.
+These observations establish only the counts/completeness checked by this generator. Acceptance and publication require the relevant candidate-specific verification evidence; generating this report does not run the test suite, schema validator, independent review or determinism checks.
 
-## Reproduce
+## Provenance and supplied verification
 
-```bash
-uv run python benchmark/calibrate_confidence.py --qwen-raw data/it124-review-20261017/handoff/data/benchmark/results/q6-2mp-rp1.05/raw --output data/it125-calibration/calibration.json --summary-output docs/runs/it125-calibration.json
-uv run python scripts/merge_scored_results.py --primary data/it125-originals/results --output data/it125-new-candidate
-uv run survey validate-results data/it125-new-candidate
-uv run python scripts/report_scored_results.py --dataset data/it125-new-candidate --output data/it125-new-report
+Manifest `/Users/skandaramanan/Documents/IT-Project-T8-6/data/it125-closeout-20261019/candidate/merge-manifest.json` SHA-256 `38436446bb4ca45c98052a1aa37780cd05d2e88edf8c93f8cc1a8f74f9e36dcc`; summary SHA-256 `ebe0f734c085e1b3c0fb4565836aa4a65768b52cb50424391c4e76e715c856e0`. Candidate paths: `{"candidate": "/Users/skandaramanan/Documents/IT-Project-T8-6/data/it125-closeout-20261019/candidate", "gemini_cache": "data/runs", "primary": "data/it125-inputs-after216436/results", "publication": "results", "qwen_cache": "data/it125-closeout-20261019/qwen-cache", "secondary": "results/qwen2.5-vl-server-2000000px"}`. Input/configuration, exclusion/calibration hashes and candidate file hashes are retained in the JSON report's provenance object.
+
+Supplied merge-runtime evidence:
+
+```json
+{
+  "elapsed_seconds": 109.1322903749533,
+  "operation": "full offline merge with validation; no model calls"
+}
 ```
 
-The output directory must be new/empty and disjoint from all inputs. The merge never calls either model, `--fresh`, or the IT-124 patch helper. The two accepted maintenance defects remain separate from this implementation.
+Supplied verification evidence (attributed to the supplying checks; not rerun by this report):
+
+```json
+{
+  "calibration": {
+    "benchmark_cards": 30,
+    "evidence": "data/it125-closeout-20261019/calibration.json",
+    "fields": 1860,
+    "status": "passed",
+    "summary_byte_identical_to_tracked_artifact": true
+  },
+  "candidate_manifest_sha256": "38436446bb4ca45c98052a1aa37780cd05d2e88edf8c93f8cc1a8f74f9e36dcc",
+  "determinism": {
+    "byte_identical_files": 90,
+    "evidence": "data/it125-closeout-20261019/determinism.json",
+    "status": "passed"
+  },
+  "full_suite": {
+    "evidence": "data/it125-validation-fix-20261019/pytest.log",
+    "failed": 0,
+    "passed": 807,
+    "phase": "after final dataset publication",
+    "skipped": 13,
+    "status": "passed"
+  },
+  "handoff": {
+    "evidence": "data/it125-closeout-20261019/input-audit.md",
+    "export_field_checks": 9052,
+    "mismatches": 0,
+    "published_readings": 146,
+    "raw_readings": 148,
+    "status": "passed"
+  },
+  "independent_review": {
+    "all_scoped_acceptance_criteria_satisfied": true,
+    "blocking_findings": 0,
+    "evidence": "data/it125-validation-fix-20261019/final-review.md",
+    "status": "passed",
+    "validation_gap_resolved": true
+  },
+  "lint_format": {
+    "evidence": "data/it125-validation-fix-20261019/ruff.log",
+    "status": "passed"
+  },
+  "pre_publication_suite": {
+    "evidence": "data/it125-closeout-20261019/pytest.log",
+    "passed": 791,
+    "phase": "before final paired dataset publication; historical evidence",
+    "skipped": 13,
+    "status": "passed"
+  },
+  "preservation": {
+    "evidence": "data/it125-closeout-20261019/independent-audit.json",
+    "independent_audit_errors": 0,
+    "lost_published_coding_sources": 0,
+    "protected_payloads_unchanged": 34,
+    "status": "passed"
+  },
+  "previous_independent_review": {
+    "all_scoped_acceptance_criteria_satisfied": true,
+    "blocking_findings": 0,
+    "evidence": "data/it125-closeout-20261019/final-review.md",
+    "phase": "initial data review; later fixture finding recorded separately",
+    "status": "passed"
+  },
+  "publication": {
+    "candidate_files_match": true,
+    "changed_region_files": [
+      "216436.jsonl"
+    ],
+    "evidence": "data/it125-closeout-20261019/publication.json",
+    "path": "results",
+    "status": "passed"
+  },
+  "report_tests": {
+    "evidence": "data/it125-closeout-20261019/report-tests.log",
+    "included_in_full_suite": true,
+    "passed": 16,
+    "status": "passed"
+  },
+  "schema": {
+    "dwellings": 5375,
+    "evidence": "data/it125-closeout-20261019/schema.log",
+    "region_files": 44,
+    "status": "passed"
+  },
+  "scope": {
+    "handwriting": "Supplementary; accepted as-is. Numbers-first/lower handwriting queue priority belongs to IT-109/IT-115.",
+    "remaining_upstream": "216461 front-only IT-133; strike handling IT-134; review queue/UI IT-109/IT-115. These are outside IT-125.",
+    "secondary_forms": "Ignored under user clarification; known sample C3=4/S3=10/R1=12 reported, full-corpus prevalence unknown. No fabricated census."
+  },
+  "validation_fix": {
+    "builds_per_replay": 2,
+    "expected_commit": "5b45a21aba1283eb41ceaeff130837234c2c35b0",
+    "fixture_stage": "standalone Gemini PR63",
+    "focused_tests_passed": 10,
+    "preservation_evidence": "data/it125-validation-fix-20261019/after.json",
+    "previous_failure_evidence": "data/it125-independent-review-20261019/pytest.log",
+    "published_files_unchanged": 92,
+    "status": "passed",
+    "test_sha256": "efc52c973ad61b3224d8265b68e1a113c92ccc0503d2e78bf3d27295d65917cb"
+  }
+}
+```
+
+## Reproduce this report
+
+```sh
+uv run python scripts/report_scored_results.py --dataset "/Users/skandaramanan/Documents/IT-Project-T8-6/data/it125-closeout-20261019/candidate" --output <report-prefix>
+```
+
+Optional --runtime, --evidence, --secondary-evidence and --report-date attach candidate-specific measurements, verification evidence, hash-matched sample sources and a chosen report date. Report generation reads the candidate and writes only the requested report prefix.
