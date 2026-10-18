@@ -241,29 +241,27 @@ def test_launch_reports_configuration_failure_without_opening_browser(monkeypatc
     assert open_when_ready(8765) == 1
 
 
-def test_periodic_sync_uploads_without_explicit_request(tmp_path, monkeypatch):
+def test_periodic_worker_calls_sync_with_history_refresh(tmp_path, monkeypatch):
     from threading import Event
 
-    from review_support import decide
+    from survey.review.sync import GitSync
 
     settings, _ = setup_client(tmp_path)
     app = create_app(replace(settings, sync_interval=0.1))
-    uploaded = Event()
+    invoked = Event()
+    callbacks = []
+
+    # Real commit/push behavior is covered in test_review_sync.py. This checks
+    # scheduling independently of Git subprocess throughput on the CI runner.
+    def observed(self, reload_callback=None):
+        callbacks.append(reload_callback)
+        invoked.set()
+
+    monkeypatch.setattr(GitSync, "sync", observed)
     with TestClient(app, base_url=BASE):
-        original = app.state.sync.git
-
-        def observed(*args, **kwargs):
-            result = original(*args, **kwargs)
-            if args[0] == "push":
-                uploaded.set()
-            return result
-
-        monkeypatch.setattr(app.state.sync, "git", observed)
-        decide(app.state.service)
-        assert uploaded.wait(5)
-    assert git(settings.data_checkout, "rev-parse", "HEAD") == git(
-        tmp_path / "remote.git", "rev-parse", "review-data"
-    )
+        assert invoked.wait(30), "Periodic worker did not invoke synchronization"
+    assert callbacks
+    assert all(callback == app.state.service.reindex_history for callback in callbacks)
 
 
 def test_review_cli_port_collision_leaves_existing_backend_alone(tmp_path, monkeypatch):
