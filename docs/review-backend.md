@@ -494,3 +494,28 @@ snapshots in `FIELD_SCHEMA` printed order, with `id: null` for read-only context
 these snapshots omit audit history. Detailed selected fields retain their normal
 history, version and allowed actions. Household 0 owns shared fields. Summary rows
 omit field values/history and do not render scans. Unknown confidences remain null.
+
+
+### PR 3 display context
+
+Detailed review items include `column` (printed Left/Middle/Right column),
+`household_count`, and optional dwelling grouping/identity flags as `dwelling_flags`.
+`card_fields` include their printed `column`; coding-card tabs include `score`.
+All physical coding cards are represented, including those outside the supplied
+queue. An unqueued card has null `first_item_id`/`next_item_id`; it grants no new
+review action or scan route. The frontend labels it “Not queued”. Queue counts,
+field ownership, routing, persistence and allowed actions are unchanged.
+
+
+### Reviewer follow-up: display identity and completion
+
+Card tabs and `Reference.card_id` use the shared `physical_card_id` helper, which
+preserves the existing region/image/page digest. Optional read-only cards may
+lack a page; they have no decision target. The frontend keys tab instances by
+household position plus physical ID and disables tabs without queued items.
+
+The dwelling summary builds a diagnostic lookup once per request, preserving
+region-wide, batch-wide and page-specific blocking. Both regional rows and global
+completion use this lookup, so unrelated diagnostics do not cause a full-list
+scan per completed dwelling. Tests cover diagnostic scope and bound diagnostic
+reads across multiple dwellings without relying on machine-specific timings.
