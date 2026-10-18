@@ -25,7 +25,7 @@ def record(record_id="27-0006-01", region="216412", card_confidence=None, **scor
         "Number of Household": household,
     }
     built = build_record(fields, region=region, image="unit.pdf", page=int(dwelling))
-    for _, field in walk_fields(built):
+    for _, field in current_fields(built):
         field |= {"status": "ok", "confidence": AGREE_CONFIDENCE}
     built["dwelling"]["households"][0]["cards"][0]["confidence"] = card_confidence
     for name, score in scores.items():

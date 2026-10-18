@@ -59,7 +59,7 @@ def test_batch_covers_every_status_and_score_band():
     assert any(f.get("origin") == "corrected" for f in seen)
     scores = {f["confidence"] for f in seen if f["status"] == "ok"}
     # none, zero, D016's classes, just under and above the cutoff
-    assert {None, 0.0, 0.14, 0.45, 0.74, 0.75, 0.91, 0.969, 0.97, 1.0} <= scores
+    assert {None, 0.0, 0.14, 0.35, 0.51, 0.64, 0.91, 0.979, 0.98, 1.0} <= scores
 
 
 def test_every_flag_opens_in_the_review_tool(tmp_path):
