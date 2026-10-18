@@ -1,13 +1,13 @@
 # D022 — Review-routing rule (FR-11)
 
-**Status:** Accepted, client confirmed agreement-based routing (2026-10-04 meeting)
+**Status:** Accepted, client confirmed agreement-based routing (2026-10-02 meeting)
 **Date:** 2026-09-23
 **Proposed by:** Elliot Guo (IT-107 assignee)
 **Linear issue:** IT-107
 
 ## Client confirmation
 
-In the 2026-10-04 meeting the client confirmed that when both extractors
+In Client Meeting #4 on 2026-10-02 the client confirmed that when both extractors
 agree on a field, it does not need to be added to the review queue. Everything
 else is still queued. This settles the earlier open question in favour of
 routing by agreement, so the per-field cutoff below is the rule. The "no
@@ -15,6 +15,11 @@ threshold" (queue every field) and card-level disagreement alternatives are
 not adopted.
 
 IT-108 can build against this rule.
+
+The former 04 October meeting reference was stale; the live client meeting and
+IT-109 confirmation identify 02 October. See the dated
+[integration and acceptance audit](../it115-acceptance.md) for documentation
+reconciliation and the producer's additional flagged-dwelling identity routing.
 
 ## The rule
 

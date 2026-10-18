@@ -1,5 +1,11 @@
 # IT-113: local review backend
 
+See [IT-115 PR 4 acceptance](it115-acceptance.md) for the current copied-production
+workflow, release/launch instructions, empty generated assignment handling,
+review-data rollout checks and unfulfilled human/Windows acceptance gates.
+Historical dated results and rollout statements below retain their original
+context; they are not a current sign-off or a new test result.
+
 The review store indexes region JSONL in memory for direct lookup. Region JSONL
 is the only durable record: each field's current payload and append-only audit
 history are replaced together in one atomic file save. There is no database or

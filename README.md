@@ -1,5 +1,8 @@
 # IT-Project-T8-6
 
+Reviewer production integration and human acceptance:
+[IT-115 PR 4 handoff](docs/it115-acceptance.md).
+
 Wilfred Prest Survey IT Project — Team 8/6.
 
 ## What this is

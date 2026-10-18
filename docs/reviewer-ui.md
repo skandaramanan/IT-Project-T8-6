@@ -1,5 +1,10 @@
 # IT-115 reviewer UI: PRs 1–3
 
+For current production integration, runnable copied-record acceptance, packaging,
+scope decisions and remaining human gates, see [PR 4 acceptance](it115-acceptance.md).
+The dated PR 1–3 development notes below are historical; their pending PR/CI
+statements do not describe the current merged main.
+
 React + TypeScript in `frontend/`, built with Vite and served by the local
 FastAPI backend at `http://127.0.0.1:8765`. The browser and API share an origin.
 Source Sans 3 (400/600/700) is bundled, so opening the review screen needs no

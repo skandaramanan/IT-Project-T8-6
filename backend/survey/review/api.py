@@ -123,10 +123,6 @@ def create_app(settings: Settings) -> FastAPI:
                     "missing_records",
                     "Supply extracted region JSONL in the separate data checkout",
                 )
-            if not refs and not diagnostics:
-                raise ReviewError(
-                    "empty_flags", "Flagged file is empty; supply teammate flags"
-                )
             app.state.service, app.state.sync = service, sync
 
             def periodic():

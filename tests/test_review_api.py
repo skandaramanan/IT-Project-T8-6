@@ -241,6 +241,32 @@ def test_launch_reports_configuration_failure_without_opening_browser(monkeypatc
     assert open_when_ready(8765) == 1
 
 
+def test_launch_waits_for_production_validation_and_remains_bounded(monkeypatch):
+    from io import BytesIO
+
+    from survey.review import launch
+
+    elapsed, opened = [0.0], []
+
+    def health(*args, **kwargs):
+        if elapsed[0] < 34:
+            raise OSError("Production validation still running")
+        return BytesIO(b'{"ready":true}')
+
+    monkeypatch.setattr(launch.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(
+        launch.time, "sleep", lambda delay: elapsed.__setitem__(0, elapsed[0] + delay)
+    )
+    monkeypatch.setattr(launch.urllib.request, "urlopen", health)
+    monkeypatch.setattr(launch.webbrowser, "open", opened.append)
+    assert open_when_ready(8765) == 0
+    assert elapsed[0] == 34 and opened == ["http://127.0.0.1:8765"]
+    elapsed[0] = 0
+    opened.clear()
+    assert open_when_ready(8765, timeout=2) == 1
+    assert elapsed[0] == 2 and opened == []
+
+
 def test_periodic_worker_calls_sync_with_history_refresh(tmp_path, monkeypatch):
     from threading import Event
 
