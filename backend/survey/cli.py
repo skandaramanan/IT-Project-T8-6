@@ -26,7 +26,7 @@ Settings come from ``.env`` in the working directory.
 Exits 1 if any card or PDF failed, or any record failed the schema. An unplaced
 coding card is retained and flagged rather than treated as a failed request.
 
-    uv run survey flags results/*.jsonl > flags.jsonl  # the review queue
+    uv run survey flags results > flags.jsonl  # the review queue
 """
 
 from __future__ import annotations
@@ -45,11 +45,9 @@ from survey.extraction.qwen_server import QwenServerExtractor
 from survey.pipeline import (
     MergeRefused,
     read_excluded_sources,
-    read_records,
     read_verified_coding,
     run,
 )
-from survey.review.flags import build_flags
 
 log = logging.getLogger("survey")
 
@@ -138,7 +136,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     validate.add_argument("path", type=Path)
     flags = commands.add_parser("flags", help="list the fields that need review")
-    flags.add_argument("records", nargs="+", type=Path, help="results .jsonl files")
+    flags.add_argument(
+        "records", nargs="+", type=Path, help="results .jsonl files or folders"
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env()
@@ -162,16 +162,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "review":
         return _review(args, parser)
     if args.command == "flags":
-        if missing := [str(p) for p in args.records if not p.exists()]:
-            parser.error(f"no such file: {', '.join(missing)}")
+        from survey.records import read_dataset
+        from survey.review.flags import build_flags
+
+        paths = []
+        for path in args.records:
+            if not path.exists():
+                parser.error(f"no such file: {path}")
+            paths += sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
         try:
-            records = [r for p in args.records for r in read_records(p, p.stem)]
-            queue = build_flags(records)
-        except ValueError as error:  # MergeRefused is one
+            regions = {
+                r: records
+                for r, (records, _) in read_dataset(
+                    paths, allow_duplicate_cards=True
+                ).items()
+            }
+        except (OSError, ValueError) as error:  # ReviewError is a ValueError
             parser.error(str(error))
+        queue, skipped = build_flags(regions)
         for flag in queue:
             print(json.dumps(flag))
-        return 0
+        for message in skipped:
+            print(f"{message}, skipped", file=sys.stderr)
+        return 1 if skipped else 0
     region = args.scan_dir.resolve().name if args.region is None else args.region
     if not REGION.fullmatch(region):
         parser.error(

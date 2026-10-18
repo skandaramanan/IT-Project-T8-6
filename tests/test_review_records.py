@@ -10,6 +10,7 @@ from survey.extraction.record import SCHEMA_VERSION
 from survey.records import (
     Reference,
     ReviewError,
+    read_dataset,
     read_records,
     resolve_field,
     schema_errors,
@@ -95,6 +96,8 @@ def test_record_validation_rejects_duplicates_and_wrong_region(tmp_path):
     write_record(path, record)
     with pytest.raises(ReviewError, match="duplicate"):
         read_records(path, "demo")
+    with pytest.raises(ReviewError, match="duplicate"):
+        read_dataset([path])
     write_record(path, synthetic_record())
     with pytest.raises(ReviewError, match="belong"):
         read_records(path, "other")
@@ -136,7 +139,8 @@ def test_item_id_survives_household_index_change():
     )
 
 
-def test_validator_rejects_inconsistent_audit_state(tmp_path):
+@pytest.mark.parametrize("allow_duplicate_cards", [False, True])
+def test_validator_rejects_inconsistent_audit_state(tmp_path, allow_duplicate_cards):
     from review_support import decide
 
     service, _ = setup_review(tmp_path)
@@ -146,7 +150,11 @@ def test_validator_rejects_inconsistent_audit_state(tmp_path):
     field["review"]["state"] = "accepted"
     write_record(service.store.directory / "demo.jsonl", record)
     with pytest.raises(ReviewError, match="disagrees"):
-        read_records(service.store.directory / "demo.jsonl", "demo")
+        read_records(
+            service.store.directory / "demo.jsonl",
+            "demo",
+            allow_duplicate_cards=allow_duplicate_cards,
+        )
 
 
 @pytest.mark.parametrize(
