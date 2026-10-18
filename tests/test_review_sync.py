@@ -288,6 +288,14 @@ def test_git_errors_never_expose_stderr_or_remote_secrets(tmp_path, monkeypatch)
     ("stdout", "stderr", "code"),
     [
         (
+            (
+                "!\tHEAD:refs/heads/review-data\t[remote rejected] "
+                "(cannot lock ref 'refs/heads/review-data': is at abc but expected def)"
+            ),
+            "error: failed to push some refs",
+            "push_rejected",
+        ),
+        (
             "!\tHEAD:refs/heads/review-data\t[remote rejected] (failed to update ref)",
             "remote: error: cannot lock ref 'refs/heads/review-data': is at abc but expected def",
             "push_rejected",

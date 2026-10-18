@@ -330,7 +330,7 @@ class Backend:
 
 
 class Run:
-    def __init__(self, root, check_ci=True):
+    def __init__(self, root, check_ci=True, verify_revision=True):
         self.root = root.resolve()
         self.manifest = json.loads((self.root / "manifest.json").read_text())
         require(
@@ -339,8 +339,9 @@ class Run:
             "Unexpected workspace repository/branch",
         )
         require(
-            git(CODE, "rev-parse", "HEAD") == self.manifest["code_sha"],
-            "Code revision changed; preserve this workspace and reconcile the test revision",
+            not verify_revision
+            or git(CODE, "rev-parse", "HEAD") == self.manifest["code_sha"],
+            "Code revision changed; commit clean code and explicitly repin this workspace",
         )
         if not self.manifest["local"]:
             require(
@@ -821,6 +822,31 @@ def browser_session(root):
         run.report()
 
 
+def repin(root):
+    """Revalidate existing data before recording a deliberate application upgrade."""
+    run = Run(root, verify_revision=False)
+    require(
+        not git(CODE, "status", "--porcelain"),
+        "Repinning requires a clean code checkout",
+    )
+    run.source_check()
+    proof = run.verify()
+    previous = run.manifest["code_sha"]
+    current = git(CODE, "rev-parse", "HEAD")
+    run.manifest.setdefault("revision_history", []).append(
+        {
+            "previous_code_sha": previous,
+            "code_sha": current,
+            "validated_data_sha": proof["sha"],
+            "at": datetime.now(UTC).isoformat(),
+        }
+    )
+    run.manifest["code_sha"] = current
+    run.manifest["code_dirty"] = False
+    write_json(run.root / "manifest.json", run.manifest)
+    print(f"Repinned {previous[:7]} -> {current[:7]}; existing branch/data retained")
+
+
 def main():
     def interrupted(_number, _frame):
         raise KeyboardInterrupt
@@ -845,7 +871,7 @@ def main():
         type=Path,
         default=Path("/Users/ericzhang/Downloads/Wilfred_Prest_Survey_Data"),
     )
-    for name in ("run", "manual", "browser-session"):
+    for name in ("run", "manual", "repin", "browser-session"):
         p = sub.add_parser(name)
         p.add_argument("workspace", type=Path)
         if name == "run":
@@ -861,6 +887,9 @@ def main():
         return 0
     if args.action == "browser-session":
         browser_session(args.workspace)
+        return 0
+    if args.action == "repin":
+        repin(args.workspace)
         return 0
     run = Run(args.workspace, check_ci=not getattr(args, "skip_ci", False))
     if args.action == "manual":

@@ -108,10 +108,12 @@ class GitSync:
         )
         if check and result.returncode:
             stale_remote_ref = (
-                "[remote rejected] (failed to update ref)" in result.stdout
-                and "cannot lock ref 'refs/heads/" in result.stderr
-                and " but expected " in result.stderr
-                and ": is at " in result.stderr
+                "[remote rejected]" in result.stdout
+                and re.search(
+                    r"cannot lock ref 'refs/heads/[^']+': is at [0-9a-f]+ but expected [0-9a-f]+",
+                    result.stdout + "\n" + result.stderr,
+                )
+                is not None
             )
             if args[0] == "push" and (
                 stale_remote_ref

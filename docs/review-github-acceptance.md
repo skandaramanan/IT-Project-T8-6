@@ -68,8 +68,18 @@ original results. The synthetic queue is explicit, not confidence generated.
 
 Do not delete/recreate a live branch to rerun. Reuse its workspace. The runner
 checks repository identity and seed ancestry before using any clone. If code HEAD
-changes, preserve the workspace and reconcile the new test revision deliberately;
-do not edit the manifest to bypass the check.
+changes after integration or a fix, commit a clean revision, then explicitly
+revalidate and repin the existing workspace:
+
+```sh
+uv run python scripts/review_github_test.py repin /tmp/review-github-live
+uv run python scripts/review_github_test.py run /tmp/review-github-live
+```
+
+Repinning validates current remote records with the new code and checks original
+hashes before updating the local manifest. It records both code revisions and the
+validated data SHA. It does not push, reset checkouts, change seed ancestry or
+remove previous evidence. Do not edit the manifest to bypass these checks.
 
 ## Automated scenarios and reports
 

@@ -81,3 +81,30 @@ def test_verify_refuses_unrelated_application_commit(tmp_path):
     git(settings.data_checkout, "push", "origin", "review-data")
     with pytest.raises(RuntimeError, match="unexpected paths"):
         run.verify()
+
+
+def test_repin_validates_existing_data_and_preserves_remote_history(
+    tmp_path, monkeypatch
+):
+    workspace(tmp_path)
+    path = tmp_path / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["code_sha"] = git(tool.CODE, "rev-parse", "HEAD^")
+    tool.write_json(path, manifest)
+    original_git = tool.git
+    monkeypatch.setattr(
+        tool,
+        "git",
+        lambda where, *args: (
+            ""
+            if where == tool.CODE and args == ("status", "--porcelain")
+            else original_git(where, *args)
+        ),
+    )
+    before = git(tmp_path / "remote.git", "rev-parse", "review-data")
+    tool.repin(tmp_path)
+    updated = json.loads(path.read_text())
+    assert updated["code_sha"] == git(tool.CODE, "rev-parse", "HEAD")
+    assert updated["revision_history"][0]["previous_code_sha"] == manifest["code_sha"]
+    assert updated["seed_sha"] == manifest["seed_sha"]
+    assert git(tmp_path / "remote.git", "rev-parse", "review-data") == before
