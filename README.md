@@ -240,13 +240,14 @@ reviewer's correction that way stops instead.
 ### Building the review queue
 
 ```bash
-uv run survey flags results/*.jsonl > flags.jsonl
+uv run survey flags results > flags.jsonl
 ```
 
-One line per field that needs review (D022), least sure card first, in the
-format `survey review --flags` reads. Accepted and corrected fields are left
-out. Each file must be named after its region (`216412.jsonl`), as
-`survey extract` writes it.
+One line per coding-card field that needs review (D022), in the format
+`survey review --flags` reads: least sure card first, each card's fields in
+form order. Accepted and corrected fields are left out. Takes files or
+folders; each file must be named after its region (`216412.jsonl`). A
+household it can't flag is reported and skipped, and the command exits 1.
 
 ## Contributing
 
