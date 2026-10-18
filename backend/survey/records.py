@@ -50,6 +50,11 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def physical_card_id(region: str, image: str, page: int | None) -> str:
+    """Stable physical identity, including read-only cards without a page."""
+    return digest(json.dumps([region, image, page]).encode())
+
+
 def schema_errors(record: dict) -> list[str]:
     errors = [
         f"{'/'.join(map(str, e.absolute_path)) or '<record>'}: {e.message}"
@@ -317,7 +322,7 @@ class Reference:
 
     @property
     def card_id(self) -> str:
-        return digest(json.dumps([self.region, self.pdf, self.page]).encode())
+        return physical_card_id(self.region, self.pdf, self.page)
 
     @property
     def item_id(self) -> str:

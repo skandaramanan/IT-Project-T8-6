@@ -64,7 +64,7 @@ function backend(items = [field()]) {
   function enrich(item: Item): Item {
     return {
       ...item,
-      card_fields: [
+      card_fields: item.card_fields ?? [
         ...current
           .filter(
             (i) =>
@@ -86,22 +86,24 @@ function backend(items = [field()]) {
           review_state: 'pending' as const,
         },
       ],
-      cards: [
-        ...new Map(
-          current
-            .filter((i) => i.dwelling_id === item.dwelling_id)
-            .map((i) => [i.source.card_id, i]),
-        ).values(),
-      ].map((i, n) => ({
-        card_id: i.source.card_id,
-        score: i.card_score,
-        page: i.source.page,
-        household_index: n,
-          household_no: String(n+1),
-        record_id: i.record_id,
-        first_item_id: i.id,
-        next_item_id: i.id,
-      })),
+      cards:
+        item.cards ??
+        [
+          ...new Map(
+            current
+              .filter((i) => i.dwelling_id === item.dwelling_id)
+              .map((i) => [i.source.card_id, i]),
+          ).values(),
+        ].map((i, n) => ({
+          card_id: i.source.card_id,
+          score: i.card_score,
+          page: i.source.page,
+          household_index: n,
+          household_no: String(n + 1),
+          record_id: i.record_id,
+          first_item_id: i.id,
+          next_item_id: i.id,
+        })),
     };
   }
   const fetch = vi.fn(async (input: string, options?: RequestInit) => {
@@ -144,7 +146,13 @@ function backend(items = [field()]) {
           total: items.length,
           resolved,
           unresolved: items.length - resolved,
-          status: resolved === items.length ? 'complete' : resolved ? 'in_progress' : 'pending',
+          status: items.some((item) => item.diagnostics.length)
+            ? 'blocked'
+            : resolved === items.length
+              ? 'complete'
+              : resolved
+                ? 'in_progress'
+                : 'pending',
           first_item_id: items[0].id,
           next_item_id: items.find((i) => !i.resolved)?.id ?? null,
           last_reviewer: resolved ? 'Jane Smith' : null,
@@ -880,4 +888,173 @@ it('requires fresh scan evidence when another reviewer signs in on the open fiel
   expect(screen.getByRole('button', { name: 'Correct' })).toBeDisabled();
   loaded();
   expect(screen.getByRole('button', { name: 'Accept 05' })).toBeEnabled();
+});
+
+it('clears a previous reviewer’s saved Undo button and shortcut on sign-in', async () => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  await user.click(screen.getByRole('button', { name: 'Change' }));
+  await user.clear(screen.getByLabelText('Your name'));
+  await user.type(screen.getByLabelText('Your name'), 'Second Reviewer');
+  await user.click(screen.getByRole('button', { name: 'Start reviewing' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  expect(
+    screen.queryByRole('button', { name: /^Undo$/ }),
+  ).not.toBeInTheDocument();
+  const panel = screen.getByRole('region', { name: 'Fields to review on this card' });
+  fireEvent.keyDown(panel, { key: 'u' });
+  loaded();
+  fireEvent.keyDown(panel, { key: 'u' });
+  expect(server.mutations).toHaveLength(1);
+});
+
+it.each([
+  [401, 'session_required', 'Session expired'],
+  [409, 'remote_ahead', 'Same region changed'],
+])('handles a %s error during Save and Exit', async (status, code, message) => {
+  const server = backend();
+  const user = await start();
+  loaded();
+  vi.stubGlobal('fetch', async (input: string, options?: RequestInit) =>
+    input === '/api/sync' && options?.method === 'POST'
+      ? response({ error: { code, message } }, status)
+      : server.fetch(input, options),
+  );
+  await user.click(screen.getByRole('button', { name: 'Save and Exit' }));
+  if (status === 401) {
+    expect(await screen.findByLabelText('Your name')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Accept 05' })).not.toBeInTheDocument();
+  } else {
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Ask the team to reconcile this region');
+    await user.click(within(dialog).getByRole('button', { name: 'Keep reviewing' }));
+    expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
+  }
+  expect(screen.getAllByText(message).length).toBeGreaterThan(0);
+});
+
+it('does not label a context-only printed column as decided or fold it', async () => {
+  const rent = field();
+  backend([
+    field('rent', {
+      column: 'Middle column',
+      card_fields: [
+        {
+          id: rent.id,
+          field_path: rent.field_path,
+          label: rent.label,
+          column: 'Middle column',
+          field: rent.field,
+          review_state: 'pending',
+        },
+        {
+          id: null,
+          field_path: '/context',
+          label: 'Length of Residence',
+          column: 'Right column',
+          field: rent.field,
+          review_state: 'pending',
+        },
+      ],
+    }),
+  ]);
+  await start();
+  expect(screen.getByRole('heading', { name: 'Right column' })).toBeVisible();
+  expect(screen.getByRole('button', { name: /Length of Residence/ })).toBeDisabled();
+  expect(
+    screen.queryByRole('button', { name: /Right column.*decided/ }),
+  ).not.toBeInTheDocument();
+});
+
+it('keeps unqueued card tabs disabled without changing the current field', async () => {
+  const rent = field();
+  backend([
+    field('rent', {
+      cards: [
+        {
+          card_id: rent.source.card_id,
+          household_index: 0,
+          household_no: '1',
+          record_id: rent.record_id,
+          first_item_id: rent.id,
+          next_item_id: rent.id,
+        },
+        {
+          card_id: 'optional-card',
+          household_index: 1,
+          household_no: '2',
+          record_id: null,
+          first_item_id: null,
+          next_item_id: null,
+        },
+        {
+          card_id: 'optional-card',
+          household_index: 2,
+          household_no: '3',
+          record_id: null,
+          first_item_id: null,
+          next_item_id: null,
+        },
+      ],
+    }),
+  ]);
+  const user = await start();
+  const tab = screen.getByRole('button', { name: /Coding card · household 2/ });
+  expect(tab).toBeDisabled();
+  expect(tab).toHaveTextContent('Not queued');
+  expect(
+    screen.getByRole('button', { name: /Coding card · household 3/ }),
+  ).toBeDisabled();
+  await user.click(tab);
+  expect(screen.getByRole('img')).toHaveAttribute('src', rent.scan_url);
+});
+
+it('Continue skips blocked dwellings but leaves their rows visible', async () => {
+  backend([
+    field('blocked', {
+      label: 'Garden',
+      dwelling_id: 'blocked',
+      record_id: '03-0001-01',
+      diagnostics: [{ code: 'missing_scan', message: 'Scan missing' }],
+    }),
+    field(),
+  ]);
+  const user = userEvent.setup();
+  render(<App />);
+  await user.type(await screen.findByLabelText('Your name'), 'Jane Smith');
+  await user.click(screen.getByRole('button', { name: 'Start reviewing' }));
+  const next = await screen.findByRole('button', { name: 'Continue 03-0005-01 →' });
+  expect(screen.getByText('03-0001-01')).toBeVisible();
+  await user.click(next);
+  expect(await screen.findByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+});
+
+it('marks a newly discovered missing scan blocked so Continue can move on', async () => {
+  const server = backend([
+    field(),
+    field('other', { label: 'Garden', dwelling_id: 'other', record_id: '03-0006-01' }),
+  ]);
+  vi.stubGlobal('fetch', async (input: string, options?: RequestInit) => {
+    const result = await server.fetch(input, options);
+    if (String(input).includes('/api/dwellings/dwelling1/items?')) {
+      const data = await result.json();
+      data.items = data.items.map((item: Item) => ({
+        ...item,
+        allowed_actions: [],
+        diagnostics: [{ code: 'missing_scan', message: 'Scan missing' }],
+      }));
+      return response(data);
+    }
+    return result;
+  });
+  // Two Review row buttons: choose this dwelling through the Continue shortcut.
+  const user = await start('Continue 03-0005-01 →');
+  await user.click(screen.getByRole('button', { name: '← Queue' }));
+  expect(
+    await screen.findByRole('button', { name: 'Continue 03-0006-01 →' }),
+  ).toBeVisible();
 });

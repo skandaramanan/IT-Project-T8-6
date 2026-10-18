@@ -307,8 +307,9 @@ both fixes; the focused backend suite passed 62 tests and the frontend suite 25.
 
 ## PR 3: magnifier, help, history, finish and laptop review
 
-PR 3 is a local branch `skandar/it-115-reviewer-polish-pr-3`, stacked on
-PR 2 (`0eaea42`, GitHub #57). PR 1 and PR 2 branches remain unchanged.
+PR 3 is [GitHub #59](https://github.com/skandaramanan/IT-Project-T8-6/pull/59),
+from `skandar/it-115-reviewer-polish-pr-3`. PRs #56 and #57 are merged; #59
+builds on their working reviewer and dwelling queue.
 
 The scan viewer fits the entire original card into its viewport using the image's
 real dimensions. Use +/− to zoom, or drag with the mouse to move an enlarged scan.
@@ -431,3 +432,48 @@ two-household switching. Magnifier toggle and lens-size controls were exercised;
 native mouse-hover lens rendering was not exercised by the available browser
 controls (source/geometry are covered by component tests). All review tests used
 disposable data/local remotes; that reviewer's server/tab and viewport were cleaned up.
+
+
+### Follow-up fixes from teammate review
+
+Changing reviewer clears the previous session's saved-decision Undo banner and
+scan evidence. Undo remains an append-only action attributed to the current
+reviewer; this does not add an ownership restriction to the backend's history.
+Save and Exit now applies the same session-expiry, version-conflict and
+reconciliation handling as other actions. Ordinary sharing failures still explain
+that confirmed decisions remain saved locally.
+
+History distinguishes Accept, Correct, Blank and Illegible, and explicitly marks
+the decisions targeted by undo events. A column containing no queued fields stays
+expanded as context, rather than claiming "0 decided". Unqueued card tabs remain
+disabled; their React keys include their household position, so optional cards
+without a usable page cannot collide in the tab list. The API and item references
+share one physical-card ID helper, without changing existing IDs.
+
+Continue skips blocked dwellings. If opening a dwelling discovers that none of its
+pending fields can be acted on, that dwelling stays visible as blocked for this
+region visit and Continue moves to another dwelling. Selecting its row explicitly
+allows a retry after the scan or data problem is fixed. Completion summaries index
+diagnostics once per request, rather than scanning the whole diagnostic list for
+each completed dwelling while holding the save lock.
+
+The backend additions in PR 3 are display context: printed column, household
+count, dwelling flags, card scores and coding-card tabs even when no field on a
+card is queued. They do not expand the supported mutation actions. Printed-column
+text describes the fixed form layout; the reviewer still finds the field on the
+whole scan. There is no automatic field detection, crop, highlight or zoom.
+Reconcile this textual guidance with IT-115's scope wording before full-ticket
+acceptance; this implementation note does not claim new product-owner approval.
+
+The low-fi design includes history and queue averages; hi-fi adds explicit
+Save and Exit and multi-household context. Keep these design references and the
+API changes in the PR description. Independent TC-M07, IT-116, production flag
+integration (#60), browser-test integration (#62), data-branch rollout and physical
+Windows acceptance retain their separate acceptance requirements.
+
+Follow-up validation: Ruff lint/format and whitespace checks pass; the full backend
+suite reports **705 passed, 17 skipped**, with the existing Starlette/httpx
+warning. The frontend reports **51 passing tests**, and the TypeScript/Vite build
+passes. New regressions cover reviewer changes, finish-time session/conflict
+errors, context-only columns, unqueued tabs, blocked Continue navigation, history
+labels/undo targets, and bounded diagnostic reads during completion summaries.

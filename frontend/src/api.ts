@@ -15,6 +15,7 @@ export interface Field {
 export interface Decision {
   id: string;
   action: Action | 'undo';
+  undo_target?: string;
   reviewer: string;
   timestamp: string;
   before: Field;

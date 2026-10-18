@@ -67,6 +67,7 @@ export default function App() {
   const [dwellingItems, setDwellingItems] = useState<Queue | null>(null);
   const [item, setItem] = useState<Item | null>(null);
   const [page, setPage] = useState(0);
+  const [blockedDwellings, setBlockedDwellings] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState('');
@@ -177,6 +178,25 @@ export default function App() {
     };
   }, [reviewer]);
 
+  function clearReviewer() {
+    setReviewer('');
+    setLastSaved(null);
+    setScanLoaded('');
+    setShowHistory(false);
+  }
+  function handleFailure(error: unknown) {
+    const failure =
+      error instanceof ApiError
+        ? error
+        : new ApiError(error instanceof Error ? error.message : 'Request failed.');
+    if (failure.code === 'no_op')
+      setNotice('Already saved. To amend the value, choose Correct.');
+    else setError(failure.message);
+    if (stopCodes.has(failure.code)) setStopped(true);
+    if (failure.status === 409) setNeedsReload(true);
+    if (failure.status === 401) clearReviewer();
+    return failure;
+  }
   async function run(work: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -186,16 +206,7 @@ export default function App() {
     try {
       await work();
     } catch (e) {
-      const failure =
-        e instanceof ApiError
-          ? e
-          : new ApiError(e instanceof Error ? e.message : 'Request failed.');
-      if (failure.code === 'no_op')
-        setNotice('Already saved. To amend the value, choose Correct.');
-      else setError(failure.message);
-      if (stopCodes.has(failure.code)) setStopped(true);
-      if (failure.status === 409) setNeedsReload(true);
-      if (failure.status === 401) setReviewer('');
+      handleFailure(e);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -203,6 +214,7 @@ export default function App() {
   }
   async function loadRegion(id: string) {
     setRegion(id);
+    setBlockedDwellings([]);
     setQueue(null);
     setItem(null);
     setPage(0);
@@ -244,6 +256,7 @@ export default function App() {
     setScanLoaded('');
     setScanFailed(false);
     setScanAttempt((attempt) => attempt + 1);
+    setLastSaved(null);
     setReviewer(data.reviewer);
     setExited(false);
     if (!readPreference(HELP_KEY)) setShowHelp(true);
@@ -260,7 +273,15 @@ export default function App() {
       `/api/dwellings/${row.id}/items?${new URLSearchParams({ region })}`,
     );
     setDwellingItems(data);
-    const next = data.items.find((i) => !i.resolved) ?? data.items[0];
+    const actionable = data.items.find(
+      (i) => !i.resolved && !i.diagnostics.length && i.allowed_actions.length,
+    );
+    if (actionable) {
+      setBlockedDwellings((previous) => previous.filter((id) => id !== row.id));
+    } else if (data.items.some((i) => !i.resolved)) {
+      setBlockedDwellings((previous) => [...new Set([...previous, row.id])]);
+    }
+    const next = actionable ?? data.items[0];
     if (next) await openItem(next.id);
     else {
       await refreshQueue();
@@ -366,8 +387,10 @@ export default function App() {
       setFinishError('');
       try {
         await share();
-      } catch (failure) {
+      } catch (error) {
+        const failure = handleFailure(error);
         setSyncUnknown(true);
+        if (failure.status === 401) return;
         setFinishError(
           failure instanceof Error ? failure.message : 'Sharing has not been confirmed.',
         );
@@ -380,8 +403,14 @@ export default function App() {
     setShowHelp(false);
   }
 
-  const groups = queue?.dwellings ?? [];
-  const continueDwelling = groups.find((d) => d.unresolved > 0 && d.first_item_id);
+  const groups = (queue?.dwellings ?? []).map((dwelling) =>
+    blockedDwellings.includes(dwelling.id)
+      ? { ...dwelling, status: 'blocked' as const }
+      : dwelling,
+  );
+  const continueDwelling = groups.find(
+    (d) => d.status !== 'blocked' && d.unresolved > 0 && d.next_item_id,
+  );
   const dwelling = dwellingItems?.items ?? [];
   const cardItems = item
     ? dwelling.filter((i) => i.source.card_id === item.source.card_id)
@@ -479,7 +508,7 @@ export default function App() {
                 className="link small"
                 disabled={!canNavigate}
                 onClick={() => {
-                  setReviewer('');
+                  clearReviewer();
                   setExited(false);
                 }}
               >
@@ -825,7 +854,7 @@ export default function App() {
             <nav className="tabs" aria-label="Coding cards in this dwelling">
               {cards.map((c) => (
                 <button
-                  key={c.card_id}
+                  key={`${c.household_index}:${c.card_id}`}
                   className={`tab ${c.card_id === item.source.card_id ? 'on' : ''}`}
                   aria-current={c.card_id === item.source.card_id ? 'page' : undefined}
                   disabled={!canNavigate || !c.first_item_id}
@@ -1016,6 +1045,7 @@ export default function App() {
                 const rows = cardFields.filter((field) => field.column === column);
                 const completed =
                   !!column &&
+                  rows.some((field) => field.id) &&
                   rows.every((field) => !field.id || field.review_state !== 'pending') &&
                   !rows.some((field) => field.id === item.id);
                 const folded = completed && !expandedColumns.includes(column!);
@@ -1411,7 +1441,7 @@ export default function App() {
               className="btn primary lg"
               onClick={() => {
                 setExited(false);
-                setReviewer('');
+                clearReviewer();
               }}
             >
               Close
