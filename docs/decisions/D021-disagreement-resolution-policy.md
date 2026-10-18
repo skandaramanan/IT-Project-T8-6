@@ -44,3 +44,19 @@ work, not by this resolver.
 rule. `score_fields` uses it before assigning the confidence score, and the
 IT-86 regression tests cover every paired outcome plus the whole-arm failure
 case.
+
+## IT-125 application (17 October 2026)
+
+The implementation is now `survey.confidence.field.resolve_primary_value`,
+called by `survey.merge_runs`. Explicit per-arm availability and field-state
+metadata distinguish an omitted key, a returned blank/null, a failed reading,
+and an absent arm. Missing **individual fields** use `no_second_opinion` as an
+evidence class but do not permit substituting Qwen: an available Gemini arm
+keeps its omitted value and scores zero. Only an unavailable entire Gemini arm
+permits Qwen selection. Ambiguous legacy paired records without availability
+metadata are refused rather than treating a null raw value as arm failure.
+
+The historical accuracy figures above are superseded by D016 Addendum D.
+Agreement/raw-state evidence is written to the local pairing sidecar; the D007
+schema remains unchanged. Active reviewed payloads, manual corrections and
+Gemini's published identity recovery remain authoritative over machine reads.

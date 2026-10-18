@@ -319,3 +319,39 @@ see [docs/review-backend.md](docs/review-backend.md) and
 [D029](docs/decisions/D029-review-persistence.md). Live use requires matching
 extracted records/flags, branch provisioning/rules/credentials, and Windows
 acceptance. Use one dataset writer; stop extraction while reviewing.
+
+### Merge the two saved runs (IT-125, offline)
+
+**18 October status:** PRs #63/#64 are now included. The 43 unchanged regions
+retain paired scores; 216436 uses the new standalone Gemini baseline while
+Jacob’s refreshed raw Qwen cache is pending. The original baseline path below
+is the 17 October snapshot. Current integration must use
+`data/it125-inputs-after216436/results/` and a separate cache tree containing
+216436’s fresh Qwen readings. The stale-cache guard refuses the old handoff;
+see [the integration status](docs/runs/it125-216436-integration.md).
+
+The final local dataset is `results/<region>.jsonl`. The independent Qwen run
+stays in `results/qwen2.5-vl-server-2000000px/`. See the
+[merge report](docs/runs/it125-merge-report.md) for source coverage, regional
+agreement, review share, calibration limitations and the unresolved full-corpus
+secondary-form census.
+
+```bash
+uv run python scripts/merge_scored_results.py \
+  --primary data/it125-originals/results \
+  --qwen-cache data/it124-review-20261017/handoff/data/runs \
+  --output data/it125-new-candidate
+uv run survey validate-results data/it125-new-candidate
+uv run python scripts/report_scored_results.py \
+  --dataset data/it125-new-candidate --output data/it125-new-report
+```
+
+The output must be separate from all inputs and new or empty. `--primary` can
+also name a reviewed Gemini dataset: human decisions and their full payloads
+are preserved. Raw caches are required for every published source; no model
+clients are constructed. A missing or incompatible configuration refuses the
+merge. The supplied archive was safety-checked and matched to the separate
+extraction above; `--qwen-cache` can point to another safely extracted copy.
+Pairing evidence remains beside the candidate in `pairing/`, outside Git.
+Original inputs and caches are unchanged. A normal single-extractor rerun does
+not recreate paired confidence; run this offline merge again after extraction.

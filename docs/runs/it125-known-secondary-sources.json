@@ -1,0 +1,294 @@
+{
+  "R1": [
+    {
+      "region": "216431",
+      "pdf": "423631_1973-0002-00020-00001.pdf",
+      "page": 268,
+      "sample_page_role": "survey-back",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216431_p0268"
+    },
+    {
+      "region": "216431",
+      "pdf": "423631_1973-0002-00020-00001.pdf",
+      "page": 292,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [
+        "dwelling:survey-front"
+      ],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216431_p0292"
+    },
+    {
+      "region": "216431",
+      "pdf": "423631_1973-0002-00020-00001.pdf",
+      "page": 316,
+      "sample_page_role": "survey-back",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216431_p0316"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 74,
+      "sample_page_role": "coding-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0074"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 240,
+      "sample_page_role": "coding-back",
+      "gemini_published_roles": [
+        "dwelling:survey-front"
+      ],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0240"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 332,
+      "sample_page_role": "survey-back",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0332"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 14,
+      "sample_page_role": "survey-back",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0014"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 66,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0066"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 72,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0072"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 98,
+      "sample_page_role": "survey-back",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0098"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 118,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0118"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 124,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0124"
+    }
+  ],
+  "S3": [
+    {
+      "region": "216431",
+      "pdf": "423631_1973-0002-00020-00001.pdf",
+      "page": 219,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [
+        "dwelling:survey-front"
+      ],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216431_p0219"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 277,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [
+        "dwelling:survey-front"
+      ],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0277"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 295,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [
+        "dwelling:survey-front"
+      ],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0295"
+    },
+    {
+      "region": "216459",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "page": 313,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216459_p0313"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 7,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0007"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 27,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0027"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 33,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0033"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 79,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0079"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 105,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0105"
+    },
+    {
+      "region": "216461",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "page": 111,
+      "sample_page_role": "survey-front",
+      "gemini_published_roles": [],
+      "qwen_published_roles": [],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216461_p0111"
+    }
+  ],
+  "C3": [
+    {
+      "region": "216463",
+      "pdf": "1262761_1973-0002-00052.pdf",
+      "page": 247,
+      "sample_page_role": "coding-front",
+      "gemini_published_roles": [
+        "household:coding-front"
+      ],
+      "qwen_published_roles": [
+        "household:coding-front"
+      ],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216463_p0247"
+    },
+    {
+      "region": "216463",
+      "pdf": "1262761_1973-0002-00052.pdf",
+      "page": 345,
+      "sample_page_role": "coding-front",
+      "gemini_published_roles": [
+        "household:coding-front"
+      ],
+      "qwen_published_roles": [
+        "household:coding-front"
+      ],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216463_p0345"
+    },
+    {
+      "region": "216463",
+      "pdf": "1262761_1973-0002-00052.pdf",
+      "page": 419,
+      "sample_page_role": "coding-front",
+      "gemini_published_roles": [
+        "household:coding-front"
+      ],
+      "qwen_published_roles": [
+        "household:coding-front"
+      ],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216463_p0419"
+    },
+    {
+      "region": "216463",
+      "pdf": "1262761_1973-0002-00052.pdf",
+      "page": 443,
+      "sample_page_role": "coding-front",
+      "gemini_published_roles": [
+        "household:coding-front"
+      ],
+      "qwen_published_roles": [
+        "household:coding-front"
+      ],
+      "excluded_coding_source": false,
+      "evidence": "data/structure/pages.jsonl 216463_p0443"
+    }
+  ]
+}

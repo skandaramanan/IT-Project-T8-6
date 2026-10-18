@@ -1,0 +1,1820 @@
+{
+  "acceptance": {
+    "AC1": "met for retained corpus with documented uncalibrated null fields",
+    "AC2": "met; no-evidence cards have numeric zero",
+    "AC3": "partial: agreement and review share complete; secondary counts are evidenced sample/lower bounds, full census unavailable"
+  },
+  "card_counts": {
+    "coding-front": 5411,
+    "survey-front": 4634
+  },
+  "coding_cards": 5411,
+  "comparison_fields": 335482,
+  "current_local_dataset": {
+    "coding_sources": 5430,
+    "complete_scan_sha256": "6d7b64bc0bb82e499ac35a6d32872409572ec484f8670a9368b834ab9c3796f0",
+    "current_AC2": "temporarily pending: retained216436baseline has151nullfront/backcards; pairedmerge will apply no-evidence fallback",
+    "date": "2026-10-18",
+    "dwellings": 5375,
+    "fresh_qwen_raw_handoff_required": true,
+    "git_head": "50ad42bffbe38df0399ab4f615396569ec5cb66c",
+    "paired_regions": 43,
+    "qwen_coding_sources": 5429,
+    "qwen_dwellings": 5422,
+    "reason": "PR64 fresh Qwen readings differ from old supplied caches; do not reuse old paired scores",
+    "region_216436_coding_sources": 146,
+    "region_216436_no_score_based_review_bypass": true,
+    "region_216436_unscored_non_coding_cards": 151,
+    "standalone_regions": [
+      "216436"
+    ]
+  },
+  "dwelling_flags": {
+    "duplicate_dwelling_no": 215,
+    "duplicate_record_id": 351,
+    "fronts_disagree": 195,
+    "identity_reread": 116,
+    "missing_dwelling_no": 238,
+    "missing_record_id": 64,
+    "municipality_mismatch": 5,
+    "out_of_order": 855,
+    "paired_by_position": 451,
+    "persons_unassigned": 43,
+    "unplaced": 978
+  },
+  "dwellings": 5356,
+  "effective_classes": {
+    "agree": 264214,
+    "both_blank": 1129,
+    "disagree": 61095,
+    "no_second_opinion": 1733,
+    "one_blank": 7311
+  },
+  "empty_regions": {
+    "216461": "front-only material; no coding records in either arm"
+  },
+  "exported_fields": 891553,
+  "full_corpus_secondary_census": null,
+  "known_secondary_sample": {
+    "C3": {
+      "identified": 4,
+      "published_sources": 4
+    },
+    "R1": {
+      "identified": 12,
+      "published_sources": 2
+    },
+    "S3": {
+      "identified": 10,
+      "published_sources": 3
+    }
+  },
+  "local_merge_runtime": {
+    "elapsed_seconds": 89.39844079106115,
+    "model_calls": 0,
+    "scope": "full offline merge, including input and output validation and staged writes"
+  },
+  "lost_published_coding_sources": 0,
+  "mean_card_confidence": 0.38572224987556,
+  "mean_numeric_field_confidence": 0.9036323866663919,
+  "missing_secondary": [
+    {
+      "page": 103,
+      "pdf": "423497_1973-0002-00008-00001.pdf",
+      "region": "216419",
+      "state": "failed"
+    }
+  ],
+  "nonempty_regions": 44,
+  "null_field_scores": {
+    "survey-front": 551870
+  },
+  "null_household_ids": 460,
+  "numeric_field_scores": 339683,
+  "overrides": {
+    "gemini_identity_recovery_uncalibrated": 121,
+    "human_review_preserved": 10,
+    "primary_label_alias_recovered": 1106
+  },
+  "protected_fields": 13,
+  "raw_agreement_both_coded": 0.8120849913195778,
+  "raw_agreement_share_all": 0.787788912668936,
+  "raw_classes": {
+    "agree": 264289,
+    "both_blank": 1238,
+    "disagree": 61156,
+    "no_second_opinion": 1371,
+    "one_blank": 7428
+  },
+  "regions": [
+    {
+      "agreement_both_coded": 0.7593919652551574,
+      "agreement_share_all": 0.7520430107526882,
+      "classes": {
+        "agree": 3497,
+        "disagree": 1108,
+        "no_second_opinion": 9,
+        "one_blank": 36
+      },
+      "coding_cards": 75,
+      "comparison_fields": 4650,
+      "dwellings": 75,
+      "exported_fields": 13588,
+      "flags": {
+        "duplicate_dwelling_no": 5,
+        "duplicate_record_id": 1,
+        "missing_dwelling_no": 3,
+        "out_of_order": 53,
+        "paired_by_position": 11,
+        "unplaced": 8
+      },
+      "mean_numeric_field_confidence": 0.8900740740740741,
+      "null_ids": 1,
+      "numeric_field_scores": 4725,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7520430107526882,
+      "raw_classes": {
+        "agree": 3497,
+        "disagree": 1108,
+        "no_second_opinion": 9,
+        "one_blank": 36
+      },
+      "region": "216412",
+      "skip_review_fields": 3506,
+      "skip_review_share": 0.25802178392699443
+    },
+    {
+      "agreement_both_coded": 0.8566011235955057,
+      "agreement_share_all": 0.8480255839822024,
+      "classes": {
+        "agree": 6099,
+        "disagree": 1021,
+        "no_second_opinion": 1,
+        "one_blank": 71
+      },
+      "coding_cards": 116,
+      "comparison_fields": 7192,
+      "dwellings": 113,
+      "exported_fields": 17063,
+      "flags": {
+        "duplicate_dwelling_no": 7,
+        "duplicate_record_id": 12,
+        "fronts_disagree": 4,
+        "missing_dwelling_no": 4,
+        "out_of_order": 65,
+        "paired_by_position": 14,
+        "persons_unassigned": 2,
+        "unplaced": 28
+      },
+      "mean_numeric_field_confidence": 0.9278099972383319,
+      "null_ids": 15,
+      "numeric_field_scores": 7242,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8480255839822024,
+      "raw_classes": {
+        "agree": 6099,
+        "disagree": 1021,
+        "no_second_opinion": 1,
+        "one_blank": 71
+      },
+      "region": "216413",
+      "skip_review_fields": 6159,
+      "skip_review_share": 0.3609564554884839
+    },
+    {
+      "agreement_both_coded": 0.8451019393336648,
+      "agreement_share_all": 0.8306451612903226,
+      "classes": {
+        "agree": 6798,
+        "disagree": 1246,
+        "no_second_opinion": 14,
+        "one_blank": 126
+      },
+      "coding_cards": 132,
+      "comparison_fields": 8184,
+      "dwellings": 130,
+      "exported_fields": 19100,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "duplicate_record_id": 10,
+        "fronts_disagree": 1,
+        "missing_dwelling_no": 3,
+        "missing_record_id": 2,
+        "out_of_order": 81,
+        "paired_by_position": 9,
+        "persons_unassigned": 2,
+        "unplaced": 36
+      },
+      "mean_numeric_field_confidence": 0.919105415860735,
+      "null_ids": 14,
+      "numeric_field_scores": 8272,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8306451612903226,
+      "raw_classes": {
+        "agree": 6798,
+        "disagree": 1246,
+        "no_second_opinion": 14,
+        "one_blank": 126
+      },
+      "region": "216414",
+      "skip_review_fields": 6865,
+      "skip_review_share": 0.35942408376963353
+    },
+    {
+      "agreement_both_coded": 0.8543808672329012,
+      "agreement_share_all": 0.8445647370746796,
+      "classes": {
+        "agree": 7645,
+        "disagree": 1303,
+        "no_second_opinion": 14,
+        "one_blank": 90
+      },
+      "coding_cards": 146,
+      "comparison_fields": 9052,
+      "dwellings": 145,
+      "exported_fields": 24314,
+      "flags": {
+        "duplicate_dwelling_no": 6,
+        "duplicate_record_id": 9,
+        "fronts_disagree": 3,
+        "missing_dwelling_no": 4,
+        "out_of_order": 103,
+        "paired_by_position": 11,
+        "persons_unassigned": 1,
+        "unplaced": 21
+      },
+      "mean_numeric_field_confidence": 0.9258010026155187,
+      "null_ids": 10,
+      "numeric_field_scores": 9176,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8445647370746796,
+      "raw_classes": {
+        "agree": 7645,
+        "disagree": 1303,
+        "no_second_opinion": 14,
+        "one_blank": 90
+      },
+      "region": "216415",
+      "skip_review_fields": 7766,
+      "skip_review_share": 0.31940445833676073
+    },
+    {
+      "agreement_both_coded": 0.8530471329930952,
+      "agreement_share_all": 0.8409292690145014,
+      "classes": {
+        "agree": 5683,
+        "both_blank": 1,
+        "disagree": 979,
+        "no_second_opinion": 10,
+        "one_blank": 85
+      },
+      "coding_cards": 109,
+      "comparison_fields": 6758,
+      "dwellings": 109,
+      "exported_fields": 18747,
+      "flags": {
+        "duplicate_record_id": 4,
+        "fronts_disagree": 4,
+        "missing_dwelling_no": 3,
+        "out_of_order": 79,
+        "paired_by_position": 3,
+        "unplaced": 21
+      },
+      "mean_numeric_field_confidence": 0.9239362166885102,
+      "null_ids": 4,
+      "numeric_field_scores": 6867,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8409292690145014,
+      "raw_classes": {
+        "agree": 5683,
+        "both_blank": 1,
+        "disagree": 979,
+        "no_second_opinion": 10,
+        "one_blank": 85
+      },
+      "region": "216416",
+      "skip_review_fields": 5785,
+      "skip_review_share": 0.308582706566384
+    },
+    {
+      "agreement_both_coded": 0.8539676350165725,
+      "agreement_share_all": 0.8410138248847926,
+      "classes": {
+        "agree": 4380,
+        "disagree": 749,
+        "no_second_opinion": 7,
+        "one_blank": 72
+      },
+      "coding_cards": 84,
+      "comparison_fields": 5208,
+      "dwellings": 84,
+      "exported_fields": 14017,
+      "flags": {
+        "duplicate_record_id": 2,
+        "fronts_disagree": 5,
+        "missing_dwelling_no": 3,
+        "out_of_order": 55,
+        "paired_by_position": 10,
+        "unplaced": 15
+      },
+      "mean_numeric_field_confidence": 0.9241232048374906,
+      "null_ids": 2,
+      "numeric_field_scores": 5292,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8410138248847926,
+      "raw_classes": {
+        "agree": 4380,
+        "disagree": 749,
+        "no_second_opinion": 7,
+        "one_blank": 72
+      },
+      "region": "216417",
+      "skip_review_fields": 4463,
+      "skip_review_share": 0.31839908682314333
+    },
+    {
+      "agreement_both_coded": 0.7439965694682675,
+      "agreement_share_all": 0.7237208008898777,
+      "classes": {
+        "agree": 5205,
+        "disagree": 1791,
+        "no_second_opinion": 26,
+        "one_blank": 170
+      },
+      "coding_cards": 116,
+      "comparison_fields": 7192,
+      "dwellings": 116,
+      "exported_fields": 18789,
+      "flags": {
+        "duplicate_dwelling_no": 9,
+        "duplicate_record_id": 8,
+        "fronts_disagree": 4,
+        "identity_reread": 5,
+        "missing_dwelling_no": 2,
+        "out_of_order": 9,
+        "paired_by_position": 5,
+        "unplaced": 27
+      },
+      "mean_numeric_field_confidence": 0.8820224411603722,
+      "null_ids": 8,
+      "numeric_field_scores": 7308,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7237208008898777,
+      "raw_classes": {
+        "agree": 5205,
+        "disagree": 1791,
+        "no_second_opinion": 20,
+        "one_blank": 176
+      },
+      "region": "216418",
+      "skip_review_fields": 5316,
+      "skip_review_share": 0.2829315024748523
+    },
+    {
+      "agreement_both_coded": 0.7488092253697669,
+      "agreement_share_all": 0.724472471501334,
+      "classes": {
+        "agree": 5974,
+        "both_blank": 2,
+        "disagree": 2004,
+        "no_second_opinion": 79,
+        "one_blank": 187
+      },
+      "coding_cards": 133,
+      "comparison_fields": 8246,
+      "dwellings": 133,
+      "exported_fields": 23435,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "identity_reread": 2,
+        "missing_dwelling_no": 3,
+        "missing_record_id": 2,
+        "out_of_order": 2,
+        "paired_by_position": 3,
+        "unplaced": 11
+      },
+      "mean_numeric_field_confidence": 0.885500656402912,
+      "null_ids": 2,
+      "numeric_field_scores": 8379,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.724472471501334,
+      "raw_classes": {
+        "agree": 5974,
+        "both_blank": 2,
+        "disagree": 2004,
+        "no_second_opinion": 77,
+        "one_blank": 189
+      },
+      "region": "216419",
+      "skip_review_fields": 6102,
+      "skip_review_share": 0.2603797738425432
+    },
+    {
+      "agreement_both_coded": 0.7444451948402783,
+      "agreement_share_all": 0.728648863035431,
+      "classes": {
+        "agree": 11023,
+        "disagree": 3784,
+        "no_second_opinion": 53,
+        "one_blank": 268
+      },
+      "coding_cards": 244,
+      "comparison_fields": 15128,
+      "dwellings": 243,
+      "exported_fields": 42884,
+      "flags": {
+        "duplicate_dwelling_no": 2,
+        "duplicate_record_id": 16,
+        "fronts_disagree": 5,
+        "identity_reread": 5,
+        "missing_dwelling_no": 18,
+        "missing_record_id": 1,
+        "out_of_order": 9,
+        "paired_by_position": 18,
+        "persons_unassigned": 1,
+        "unplaced": 27
+      },
+      "mean_numeric_field_confidence": 0.8836013029315961,
+      "null_ids": 18,
+      "numeric_field_scores": 15350,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7287149656266526,
+      "raw_classes": {
+        "agree": 11024,
+        "disagree": 3785,
+        "no_second_opinion": 48,
+        "one_blank": 271
+      },
+      "region": "216420",
+      "skip_review_fields": 11202,
+      "skip_review_share": 0.26121630444921184
+    },
+    {
+      "agreement_both_coded": 0.8133035948569929,
+      "agreement_share_all": 0.7998709677419354,
+      "classes": {
+        "agree": 6199,
+        "disagree": 1423,
+        "no_second_opinion": 58,
+        "one_blank": 70
+      },
+      "coding_cards": 125,
+      "comparison_fields": 7750,
+      "dwellings": 123,
+      "exported_fields": 20785,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "duplicate_record_id": 10,
+        "fronts_disagree": 3,
+        "identity_reread": 3,
+        "missing_dwelling_no": 14,
+        "municipality_mismatch": 1,
+        "out_of_order": 5,
+        "paired_by_position": 11,
+        "persons_unassigned": 2,
+        "unplaced": 19
+      },
+      "mean_numeric_field_confidence": 0.9060630826203551,
+      "null_ids": 11,
+      "numeric_field_scores": 7831,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7998709677419354,
+      "raw_classes": {
+        "agree": 6199,
+        "disagree": 1423,
+        "no_second_opinion": 54,
+        "one_blank": 74
+      },
+      "region": "216421",
+      "skip_review_fields": 6264,
+      "skip_review_share": 0.30137118114024536
+    },
+    {
+      "agreement_both_coded": 0.7989359566352138,
+      "agreement_share_all": 0.7733190827827439,
+      "classes": {
+        "agree": 7959,
+        "disagree": 2003,
+        "no_second_opinion": 20,
+        "one_blank": 310
+      },
+      "coding_cards": 166,
+      "comparison_fields": 10292,
+      "dwellings": 165,
+      "exported_fields": 27256,
+      "flags": {
+        "duplicate_dwelling_no": 7,
+        "duplicate_record_id": 11,
+        "fronts_disagree": 5,
+        "identity_reread": 2,
+        "missing_dwelling_no": 4,
+        "missing_record_id": 1,
+        "out_of_order": 89,
+        "paired_by_position": 12,
+        "persons_unassigned": 1,
+        "unplaced": 37
+      },
+      "mean_numeric_field_confidence": 0.8983499425067076,
+      "null_ids": 13,
+      "numeric_field_scores": 10436,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7733190827827439,
+      "raw_classes": {
+        "agree": 7959,
+        "disagree": 2003,
+        "no_second_opinion": 18,
+        "one_blank": 312
+      },
+      "region": "216422",
+      "skip_review_fields": 8086,
+      "skip_review_share": 0.2966686234223657
+    },
+    {
+      "agreement_both_coded": 0.7747517730496454,
+      "agreement_share_all": 0.7465828321487151,
+      "classes": {
+        "agree": 5462,
+        "disagree": 1588,
+        "no_second_opinion": 35,
+        "one_blank": 231
+      },
+      "coding_cards": 118,
+      "comparison_fields": 7316,
+      "dwellings": 117,
+      "exported_fields": 18298,
+      "flags": {
+        "duplicate_dwelling_no": 6,
+        "duplicate_record_id": 6,
+        "identity_reread": 18,
+        "missing_dwelling_no": 3,
+        "missing_record_id": 5,
+        "out_of_order": 6,
+        "paired_by_position": 6,
+        "persons_unassigned": 1,
+        "unplaced": 35
+      },
+      "mean_numeric_field_confidence": 0.8876780895844577,
+      "null_ids": 12,
+      "numeric_field_scores": 7412,
+      "protected_fields": 4,
+      "raw_agreement_share_all": 0.7474029524330235,
+      "raw_classes": {
+        "agree": 5468,
+        "disagree": 1598,
+        "no_second_opinion": 15,
+        "one_blank": 235
+      },
+      "region": "216423",
+      "skip_review_fields": 5552,
+      "skip_review_share": 0.3034211389222866
+    },
+    {
+      "agreement_both_coded": 0.8217805104017519,
+      "agreement_share_all": 0.8070306038047974,
+      "classes": {
+        "agree": 9757,
+        "disagree": 2116,
+        "no_second_opinion": 60,
+        "one_blank": 157
+      },
+      "coding_cards": 195,
+      "comparison_fields": 12090,
+      "dwellings": 194,
+      "exported_fields": 31170,
+      "flags": {
+        "duplicate_dwelling_no": 17,
+        "duplicate_record_id": 17,
+        "fronts_disagree": 3,
+        "missing_dwelling_no": 15,
+        "missing_record_id": 1,
+        "out_of_order": 11,
+        "paired_by_position": 17,
+        "persons_unassigned": 1,
+        "unplaced": 43
+      },
+      "mean_numeric_field_confidence": 0.909660768164397,
+      "null_ids": 19,
+      "numeric_field_scores": 12263,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8070306038047974,
+      "raw_classes": {
+        "agree": 9757,
+        "disagree": 2116,
+        "no_second_opinion": 60,
+        "one_blank": 157
+      },
+      "region": "216424",
+      "skip_review_fields": 9899,
+      "skip_review_share": 0.31758100737888995
+    },
+    {
+      "agreement_both_coded": 0.8156923076923077,
+      "agreement_share_all": 0.7992161591799819,
+      "classes": {
+        "agree": 5302,
+        "disagree": 1198,
+        "no_second_opinion": 63,
+        "one_blank": 71
+      },
+      "coding_cards": 107,
+      "comparison_fields": 6634,
+      "dwellings": 107,
+      "exported_fields": 16986,
+      "flags": {
+        "duplicate_dwelling_no": 7,
+        "duplicate_record_id": 6,
+        "missing_dwelling_no": 12,
+        "missing_record_id": 1,
+        "out_of_order": 2,
+        "paired_by_position": 13,
+        "unplaced": 24
+      },
+      "mean_numeric_field_confidence": 0.9052143598872571,
+      "null_ids": 7,
+      "numeric_field_scores": 6741,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7992161591799819,
+      "raw_classes": {
+        "agree": 5302,
+        "disagree": 1198,
+        "no_second_opinion": 63,
+        "one_blank": 71
+      },
+      "region": "216425",
+      "skip_review_fields": 5404,
+      "skip_review_share": 0.31814435417402565
+    },
+    {
+      "agreement_both_coded": 0.8211991434689507,
+      "agreement_share_all": 0.7981269510926119,
+      "classes": {
+        "agree": 4602,
+        "disagree": 1002,
+        "no_second_opinion": 63,
+        "one_blank": 99
+      },
+      "coding_cards": 93,
+      "comparison_fields": 5766,
+      "dwellings": 93,
+      "exported_fields": 15490,
+      "flags": {
+        "duplicate_record_id": 2,
+        "fronts_disagree": 1,
+        "missing_dwelling_no": 14,
+        "paired_by_position": 3,
+        "unplaced": 18
+      },
+      "mean_numeric_field_confidence": 0.903258235193719,
+      "null_ids": 2,
+      "numeric_field_scores": 5859,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7981269510926119,
+      "raw_classes": {
+        "agree": 4602,
+        "disagree": 1002,
+        "no_second_opinion": 63,
+        "one_blank": 99
+      },
+      "region": "216426",
+      "skip_review_fields": 4693,
+      "skip_review_share": 0.30296965784377017
+    },
+    {
+      "agreement_both_coded": 0.8177702320316921,
+      "agreement_share_all": 0.803670745272525,
+      "classes": {
+        "agree": 4335,
+        "disagree": 966,
+        "no_second_opinion": 13,
+        "one_blank": 80
+      },
+      "coding_cards": 87,
+      "comparison_fields": 5394,
+      "dwellings": 86,
+      "exported_fields": 14477,
+      "flags": {
+        "duplicate_record_id": 4,
+        "identity_reread": 2,
+        "missing_dwelling_no": 9,
+        "out_of_order": 2,
+        "paired_by_position": 6,
+        "persons_unassigned": 1,
+        "unplaced": 12
+      },
+      "mean_numeric_field_confidence": 0.9106759479758197,
+      "null_ids": 5,
+      "numeric_field_scores": 5459,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.803670745272525,
+      "raw_classes": {
+        "agree": 4335,
+        "disagree": 966,
+        "no_second_opinion": 11,
+        "one_blank": 82
+      },
+      "region": "216427",
+      "skip_review_fields": 4401,
+      "skip_review_share": 0.30399944739932305
+    },
+    {
+      "agreement_both_coded": 0.8015207642815364,
+      "agreement_share_all": 0.7800759013282732,
+      "classes": {
+        "agree": 8222,
+        "both_blank": 27,
+        "disagree": 2036,
+        "no_second_opinion": 25,
+        "one_blank": 230
+      },
+      "coding_cards": 170,
+      "comparison_fields": 10540,
+      "dwellings": 168,
+      "exported_fields": 30048,
+      "flags": {
+        "duplicate_dwelling_no": 8,
+        "duplicate_record_id": 10,
+        "fronts_disagree": 5,
+        "identity_reread": 2,
+        "missing_dwelling_no": 6,
+        "out_of_order": 4,
+        "paired_by_position": 17,
+        "persons_unassigned": 2,
+        "unplaced": 14
+      },
+      "mean_numeric_field_confidence": 0.9027301706356647,
+      "null_ids": 12,
+      "numeric_field_scores": 10666,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7800759013282732,
+      "raw_classes": {
+        "agree": 8222,
+        "both_blank": 27,
+        "disagree": 2036,
+        "no_second_opinion": 23,
+        "one_blank": 232
+      },
+      "region": "216428",
+      "skip_review_fields": 8350,
+      "skip_review_share": 0.2778887113951012
+    },
+    {
+      "agreement_both_coded": 0.8571428571428571,
+      "agreement_share_all": 0.8354838709677419,
+      "classes": {
+        "agree": 1554,
+        "disagree": 259,
+        "no_second_opinion": 3,
+        "one_blank": 44
+      },
+      "coding_cards": 30,
+      "comparison_fields": 1860,
+      "dwellings": 30,
+      "exported_fields": 5323,
+      "flags": {
+        "identity_reread": 2,
+        "missing_dwelling_no": 1,
+        "unplaced": 1
+      },
+      "mean_numeric_field_confidence": 0.9207301587301587,
+      "null_ids": 0,
+      "numeric_field_scores": 1890,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8354838709677419,
+      "raw_classes": {
+        "agree": 1554,
+        "disagree": 259,
+        "no_second_opinion": 1,
+        "one_blank": 46
+      },
+      "region": "216429",
+      "skip_review_fields": 1583,
+      "skip_review_share": 0.29738869058801426
+    },
+    {
+      "agreement_both_coded": 0.767762992719056,
+      "agreement_share_all": 0.7588089330024814,
+      "classes": {
+        "agree": 3058,
+        "disagree": 925,
+        "no_second_opinion": 11,
+        "one_blank": 36
+      },
+      "coding_cards": 65,
+      "comparison_fields": 4030,
+      "dwellings": 65,
+      "exported_fields": 9592,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "fronts_disagree": 8,
+        "identity_reread": 1,
+        "missing_dwelling_no": 14,
+        "out_of_order": 24,
+        "paired_by_position": 1,
+        "unplaced": 20
+      },
+      "mean_numeric_field_confidence": 0.895023199023199,
+      "null_ids": 0,
+      "numeric_field_scores": 4095,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7588089330024814,
+      "raw_classes": {
+        "agree": 3058,
+        "disagree": 925,
+        "no_second_opinion": 10,
+        "one_blank": 37
+      },
+      "region": "216431",
+      "skip_review_fields": 3106,
+      "skip_review_share": 0.3238115095913261
+    },
+    {
+      "agreement_both_coded": 0.8200422498019541,
+      "agreement_share_all": 0.8014193548387096,
+      "classes": {
+        "agree": 6211,
+        "both_blank": 1,
+        "disagree": 1363,
+        "no_second_opinion": 12,
+        "one_blank": 163
+      },
+      "coding_cards": 125,
+      "comparison_fields": 7750,
+      "dwellings": 125,
+      "exported_fields": 19542,
+      "flags": {
+        "duplicate_dwelling_no": 8,
+        "duplicate_record_id": 17,
+        "fronts_disagree": 2,
+        "identity_reread": 1,
+        "missing_dwelling_no": 4,
+        "missing_record_id": 2,
+        "out_of_order": 9,
+        "paired_by_position": 17,
+        "unplaced": 32
+      },
+      "mean_numeric_field_confidence": 0.9094831746031746,
+      "null_ids": 19,
+      "numeric_field_scores": 7875,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8014193548387096,
+      "raw_classes": {
+        "agree": 6211,
+        "both_blank": 1,
+        "disagree": 1364,
+        "no_second_opinion": 11,
+        "one_blank": 163
+      },
+      "region": "216433",
+      "skip_review_fields": 6326,
+      "skip_review_share": 0.32371302834919663
+    },
+    {
+      "agreement_both_coded": 0.7332616707616708,
+      "agreement_share_all": 0.7065699911216337,
+      "classes": {
+        "agree": 4775,
+        "disagree": 1737,
+        "no_second_opinion": 33,
+        "one_blank": 213
+      },
+      "coding_cards": 109,
+      "comparison_fields": 6758,
+      "dwellings": 109,
+      "exported_fields": 18222,
+      "flags": {
+        "duplicate_dwelling_no": 12,
+        "duplicate_record_id": 13,
+        "fronts_disagree": 5,
+        "identity_reread": 3,
+        "missing_dwelling_no": 7,
+        "out_of_order": 60,
+        "paired_by_position": 19,
+        "unplaced": 22
+      },
+      "mean_numeric_field_confidence": 0.8741153342070773,
+      "null_ids": 13,
+      "numeric_field_scores": 6867,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7065699911216337,
+      "raw_classes": {
+        "agree": 4775,
+        "disagree": 1737,
+        "no_second_opinion": 30,
+        "one_blank": 216
+      },
+      "region": "216434",
+      "skip_review_fields": 4872,
+      "skip_review_share": 0.26736911425749094
+    },
+    {
+      "agreement_both_coded": 0.821280276816609,
+      "agreement_share_all": 0.8059422750424449,
+      "classes": {
+        "agree": 4747,
+        "disagree": 1033,
+        "no_second_opinion": 8,
+        "one_blank": 102
+      },
+      "coding_cards": 95,
+      "comparison_fields": 5890,
+      "dwellings": 95,
+      "exported_fields": 15793,
+      "flags": {
+        "duplicate_dwelling_no": 3,
+        "duplicate_record_id": 4,
+        "fronts_disagree": 2,
+        "identity_reread": 1,
+        "missing_dwelling_no": 6,
+        "out_of_order": 1,
+        "paired_by_position": 5,
+        "unplaced": 13
+      },
+      "mean_numeric_field_confidence": 0.9118262322472849,
+      "null_ids": 4,
+      "numeric_field_scores": 5985,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8059422750424449,
+      "raw_classes": {
+        "agree": 4747,
+        "disagree": 1033,
+        "no_second_opinion": 7,
+        "one_blank": 103
+      },
+      "region": "216435",
+      "skip_review_fields": 4839,
+      "skip_review_share": 0.30640157031596277
+    },
+    {
+      "agreement_both_coded": 0.8451545856066511,
+      "agreement_share_all": 0.826263652527305,
+      "classes": {
+        "agree": 6506,
+        "both_blank": 1,
+        "disagree": 1192,
+        "no_second_opinion": 19,
+        "one_blank": 156
+      },
+      "coding_cards": 127,
+      "comparison_fields": 7874,
+      "dwellings": 127,
+      "exported_fields": 21622,
+      "flags": {
+        "duplicate_dwelling_no": 6,
+        "duplicate_record_id": 8,
+        "fronts_disagree": 2,
+        "identity_reread": 3,
+        "missing_dwelling_no": 4,
+        "missing_record_id": 1,
+        "out_of_order": 7,
+        "paired_by_position": 11,
+        "unplaced": 18
+      },
+      "mean_numeric_field_confidence": 0.9174728158980128,
+      "null_ids": 9,
+      "numeric_field_scores": 8001,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8263906527813055,
+      "raw_classes": {
+        "agree": 6507,
+        "both_blank": 1,
+        "disagree": 1192,
+        "no_second_opinion": 16,
+        "one_blank": 158
+      },
+      "region": "216436",
+      "skip_review_fields": 6624,
+      "skip_review_share": 0.30635463879382113
+    },
+    {
+      "agreement_both_coded": 0.786822429906542,
+      "agreement_share_all": 0.7586051540818165,
+      "classes": {
+        "agree": 8419,
+        "disagree": 2281,
+        "no_second_opinion": 27,
+        "one_blank": 371
+      },
+      "coding_cards": 179,
+      "comparison_fields": 11098,
+      "dwellings": 179,
+      "exported_fields": 29433,
+      "flags": {
+        "duplicate_dwelling_no": 8,
+        "duplicate_record_id": 4,
+        "fronts_disagree": 1,
+        "identity_reread": 8,
+        "missing_dwelling_no": 9,
+        "missing_record_id": 6,
+        "out_of_order": 15,
+        "paired_by_position": 14,
+        "unplaced": 27
+      },
+      "mean_numeric_field_confidence": 0.8932810144541988,
+      "null_ids": 10,
+      "numeric_field_scores": 11277,
+      "protected_fields": 1,
+      "raw_agreement_share_all": 0.7586051540818165,
+      "raw_classes": {
+        "agree": 8419,
+        "disagree": 2282,
+        "no_second_opinion": 19,
+        "one_blank": 378
+      },
+      "region": "216437",
+      "skip_review_fields": 8593,
+      "skip_review_share": 0.29195121122549517
+    },
+    {
+      "agreement_both_coded": 0.8446089867126484,
+      "agreement_share_all": 0.8090750097162845,
+      "classes": {
+        "agree": 8327,
+        "disagree": 1532,
+        "no_second_opinion": 101,
+        "one_blank": 332
+      },
+      "coding_cards": 166,
+      "comparison_fields": 10292,
+      "dwellings": 166,
+      "exported_fields": 27858,
+      "flags": {
+        "duplicate_dwelling_no": 2,
+        "duplicate_record_id": 9,
+        "fronts_disagree": 3,
+        "identity_reread": 10,
+        "missing_dwelling_no": 4,
+        "missing_record_id": 2,
+        "out_of_order": 5,
+        "paired_by_position": 16,
+        "unplaced": 26
+      },
+      "mean_numeric_field_confidence": 0.9047590361445782,
+      "null_ids": 11,
+      "numeric_field_scores": 10458,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8090750097162845,
+      "raw_classes": {
+        "agree": 8327,
+        "disagree": 1533,
+        "no_second_opinion": 90,
+        "one_blank": 342
+      },
+      "region": "216438",
+      "skip_review_fields": 8463,
+      "skip_review_share": 0.30379065259530474
+    },
+    {
+      "agreement_both_coded": 0.8444552529182879,
+      "agreement_share_all": 0.8236242884250474,
+      "classes": {
+        "agree": 8681,
+        "disagree": 1599,
+        "no_second_opinion": 9,
+        "one_blank": 251
+      },
+      "coding_cards": 170,
+      "comparison_fields": 10540,
+      "dwellings": 170,
+      "exported_fields": 26455,
+      "flags": {
+        "duplicate_dwelling_no": 3,
+        "duplicate_record_id": 13,
+        "fronts_disagree": 1,
+        "identity_reread": 2,
+        "missing_dwelling_no": 6,
+        "missing_record_id": 1,
+        "out_of_order": 5,
+        "paired_by_position": 10,
+        "unplaced": 43
+      },
+      "mean_numeric_field_confidence": 0.9173043884220354,
+      "null_ids": 14,
+      "numeric_field_scores": 10710,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8236242884250474,
+      "raw_classes": {
+        "agree": 8681,
+        "disagree": 1600,
+        "no_second_opinion": 7,
+        "one_blank": 252
+      },
+      "region": "216439",
+      "skip_review_fields": 8848,
+      "skip_review_share": 0.33445473445473445
+    },
+    {
+      "agreement_both_coded": 0.8128044537230341,
+      "agreement_share_all": 0.7904353710805324,
+      "classes": {
+        "agree": 7008,
+        "disagree": 1614,
+        "no_second_opinion": 74,
+        "one_blank": 170
+      },
+      "coding_cards": 143,
+      "comparison_fields": 8866,
+      "dwellings": 143,
+      "exported_fields": 22541,
+      "flags": {
+        "duplicate_dwelling_no": 15,
+        "duplicate_record_id": 6,
+        "fronts_disagree": 2,
+        "identity_reread": 8,
+        "missing_dwelling_no": 6,
+        "missing_record_id": 21,
+        "out_of_order": 3,
+        "paired_by_position": 9,
+        "unplaced": 41
+      },
+      "mean_numeric_field_confidence": 0.9021156621156621,
+      "null_ids": 27,
+      "numeric_field_scores": 9009,
+      "protected_fields": 2,
+      "raw_agreement_share_all": 0.7907737423866457,
+      "raw_classes": {
+        "agree": 7011,
+        "disagree": 1619,
+        "no_second_opinion": 66,
+        "one_blank": 170
+      },
+      "region": "216440",
+      "skip_review_fields": 7148,
+      "skip_review_share": 0.3171110421010603
+    },
+    {
+      "agreement_both_coded": 0.7956989247311828,
+      "agreement_share_all": 0.7832661290322581,
+      "classes": {
+        "agree": 1554,
+        "disagree": 399,
+        "no_second_opinion": 1,
+        "one_blank": 30
+      },
+      "coding_cards": 32,
+      "comparison_fields": 1984,
+      "dwellings": 32,
+      "exported_fields": 5952,
+      "flags": {
+        "duplicate_dwelling_no": 2,
+        "missing_dwelling_no": 2,
+        "paired_by_position": 2,
+        "unplaced": 2
+      },
+      "mean_numeric_field_confidence": 0.9043849206349206,
+      "null_ids": 0,
+      "numeric_field_scores": 2016,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7832661290322581,
+      "raw_classes": {
+        "agree": 1554,
+        "disagree": 399,
+        "no_second_opinion": 1,
+        "one_blank": 30
+      },
+      "region": "216441",
+      "skip_review_fields": 1581,
+      "skip_review_share": 0.265625
+    },
+    {
+      "agreement_both_coded": 0.8227393113885736,
+      "agreement_share_all": 0.7971041055718475,
+      "classes": {
+        "agree": 4349,
+        "disagree": 937,
+        "no_second_opinion": 8,
+        "one_blank": 162
+      },
+      "coding_cards": 88,
+      "comparison_fields": 5456,
+      "dwellings": 88,
+      "exported_fields": 14562,
+      "flags": {
+        "duplicate_dwelling_no": 4,
+        "duplicate_record_id": 1,
+        "fronts_disagree": 4,
+        "missing_record_id": 2,
+        "out_of_order": 3,
+        "paired_by_position": 8,
+        "unplaced": 14
+      },
+      "mean_numeric_field_confidence": 0.9065909090909091,
+      "null_ids": 3,
+      "numeric_field_scores": 5544,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7971041055718475,
+      "raw_classes": {
+        "agree": 4349,
+        "disagree": 937,
+        "no_second_opinion": 8,
+        "one_blank": 162
+      },
+      "region": "216442",
+      "skip_review_fields": 4424,
+      "skip_review_share": 0.303804422469441
+    },
+    {
+      "agreement_both_coded": 0.8214082098061574,
+      "agreement_share_all": 0.8082748948106592,
+      "classes": {
+        "agree": 5763,
+        "disagree": 1253,
+        "no_second_opinion": 16,
+        "one_blank": 98
+      },
+      "coding_cards": 115,
+      "comparison_fields": 7130,
+      "dwellings": 107,
+      "exported_fields": 18179,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "duplicate_record_id": 8,
+        "fronts_disagree": 7,
+        "identity_reread": 3,
+        "missing_dwelling_no": 3,
+        "missing_record_id": 1,
+        "out_of_order": 12,
+        "paired_by_position": 5,
+        "persons_unassigned": 4,
+        "unplaced": 19
+      },
+      "mean_numeric_field_confidence": 0.9125194511246287,
+      "null_ids": 17,
+      "numeric_field_scores": 7069,
+      "protected_fields": 2,
+      "raw_agreement_share_all": 0.8082748948106592,
+      "raw_classes": {
+        "agree": 5763,
+        "disagree": 1253,
+        "no_second_opinion": 14,
+        "one_blank": 100
+      },
+      "region": "216443",
+      "skip_review_fields": 5732,
+      "skip_review_share": 0.3153088728752957
+    },
+    {
+      "agreement_both_coded": 0.8096835045063928,
+      "agreement_share_all": 0.7886892609228257,
+      "classes": {
+        "agree": 3863,
+        "disagree": 908,
+        "no_second_opinion": 10,
+        "one_blank": 117
+      },
+      "coding_cards": 79,
+      "comparison_fields": 4898,
+      "dwellings": 76,
+      "exported_fields": 12029,
+      "flags": {
+        "duplicate_dwelling_no": 6,
+        "duplicate_record_id": 11,
+        "fronts_disagree": 3,
+        "identity_reread": 3,
+        "missing_dwelling_no": 1,
+        "missing_record_id": 1,
+        "out_of_order": 5,
+        "paired_by_position": 11,
+        "persons_unassigned": 2,
+        "unplaced": 14
+      },
+      "mean_numeric_field_confidence": 0.9057870087558542,
+      "null_ids": 15,
+      "numeric_field_scores": 4911,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7888934258881176,
+      "raw_classes": {
+        "agree": 3864,
+        "disagree": 908,
+        "no_second_opinion": 7,
+        "one_blank": 119
+      },
+      "region": "216444",
+      "skip_review_fields": 3903,
+      "skip_review_share": 0.32446587413750105
+    },
+    {
+      "agreement_both_coded": 0.8683013965573239,
+      "agreement_share_all": 0.8538805493452571,
+      "classes": {
+        "agree": 5347,
+        "disagree": 811,
+        "no_second_opinion": 19,
+        "one_blank": 85
+      },
+      "coding_cards": 101,
+      "comparison_fields": 6262,
+      "dwellings": 100,
+      "exported_fields": 16036,
+      "flags": {
+        "duplicate_dwelling_no": 3,
+        "duplicate_record_id": 2,
+        "fronts_disagree": 3,
+        "identity_reread": 1,
+        "missing_dwelling_no": 4,
+        "out_of_order": 5,
+        "paired_by_position": 7,
+        "persons_unassigned": 1,
+        "unplaced": 17
+      },
+      "mean_numeric_field_confidence": 0.9274593912632076,
+      "null_ids": 3,
+      "numeric_field_scores": 6341,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8538805493452571,
+      "raw_classes": {
+        "agree": 5347,
+        "disagree": 811,
+        "no_second_opinion": 18,
+        "one_blank": 86
+      },
+      "region": "216445",
+      "skip_review_fields": 5429,
+      "skip_review_share": 0.3385507607882265
+    },
+    {
+      "agreement_both_coded": 0.8302325581395349,
+      "agreement_share_all": 0.8136395511921458,
+      "classes": {
+        "agree": 4641,
+        "disagree": 949,
+        "no_second_opinion": 24,
+        "one_blank": 90
+      },
+      "coding_cards": 92,
+      "comparison_fields": 5704,
+      "dwellings": 88,
+      "exported_fields": 12058,
+      "flags": {
+        "duplicate_dwelling_no": 7,
+        "duplicate_record_id": 16,
+        "fronts_disagree": 8,
+        "identity_reread": 4,
+        "missing_record_id": 1,
+        "out_of_order": 1,
+        "paired_by_position": 7,
+        "persons_unassigned": 4,
+        "unplaced": 34
+      },
+      "mean_numeric_field_confidence": 0.9127978276103714,
+      "null_ids": 21,
+      "numeric_field_scores": 5708,
+      "protected_fields": 3,
+      "raw_agreement_share_all": 0.8136395511921458,
+      "raw_classes": {
+        "agree": 4641,
+        "disagree": 953,
+        "no_second_opinion": 20,
+        "one_blank": 90
+      },
+      "region": "216446",
+      "skip_review_fields": 4657,
+      "skip_review_share": 0.3862166196715873
+    },
+    {
+      "agreement_both_coded": 0.745159505808593,
+      "agreement_share_all": 0.7215212474705393,
+      "classes": {
+        "agree": 12123,
+        "disagree": 4146,
+        "no_second_opinion": 114,
+        "one_blank": 419
+      },
+      "coding_cards": 271,
+      "comparison_fields": 16802,
+      "dwellings": 270,
+      "exported_fields": 48193,
+      "flags": {
+        "duplicate_dwelling_no": 17,
+        "duplicate_record_id": 20,
+        "fronts_disagree": 8,
+        "identity_reread": 8,
+        "missing_dwelling_no": 16,
+        "missing_record_id": 2,
+        "out_of_order": 9,
+        "paired_by_position": 20,
+        "persons_unassigned": 1,
+        "unplaced": 32
+      },
+      "mean_numeric_field_confidence": 0.8792463785115243,
+      "null_ids": 23,
+      "numeric_field_scores": 17051,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7215212474705393,
+      "raw_classes": {
+        "agree": 12123,
+        "disagree": 4146,
+        "no_second_opinion": 106,
+        "one_blank": 427
+      },
+      "region": "216447",
+      "skip_review_fields": 12373,
+      "skip_review_share": 0.25673853049198014
+    },
+    {
+      "agreement_both_coded": 0.8349514563106796,
+      "agreement_share_all": 0.8014336917562724,
+      "classes": {
+        "agree": 6708,
+        "both_blank": 61,
+        "disagree": 1326,
+        "no_second_opinion": 70,
+        "one_blank": 205
+      },
+      "coding_cards": 135,
+      "comparison_fields": 8370,
+      "dwellings": 133,
+      "exported_fields": 21664,
+      "flags": {
+        "duplicate_dwelling_no": 4,
+        "duplicate_record_id": 17,
+        "fronts_disagree": 9,
+        "identity_reread": 3,
+        "missing_record_id": 2,
+        "out_of_order": 5,
+        "paired_by_position": 19,
+        "persons_unassigned": 2,
+        "unplaced": 24
+      },
+      "mean_numeric_field_confidence": 0.9066174211086161,
+      "null_ids": 20,
+      "numeric_field_scores": 8461,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8014336917562724,
+      "raw_classes": {
+        "agree": 6708,
+        "both_blank": 61,
+        "disagree": 1327,
+        "no_second_opinion": 68,
+        "one_blank": 206
+      },
+      "region": "216448",
+      "skip_review_fields": 6784,
+      "skip_review_share": 0.31314623338257014
+    },
+    {
+      "agreement_both_coded": 0.8323319826743049,
+      "agreement_share_all": 0.8142427556041553,
+      "classes": {
+        "agree": 11914,
+        "disagree": 2400,
+        "no_second_opinion": 33,
+        "one_blank": 285
+      },
+      "coding_cards": 236,
+      "comparison_fields": 14632,
+      "dwellings": 233,
+      "exported_fields": 43613,
+      "flags": {
+        "duplicate_dwelling_no": 9,
+        "duplicate_record_id": 14,
+        "fronts_disagree": 8,
+        "identity_reread": 4,
+        "missing_dwelling_no": 3,
+        "missing_record_id": 1,
+        "out_of_order": 12,
+        "paired_by_position": 18,
+        "persons_unassigned": 3,
+        "unplaced": 10
+      },
+      "mean_numeric_field_confidence": 0.9136609917578705,
+      "null_ids": 17,
+      "numeric_field_scores": 14802,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8142427556041553,
+      "raw_classes": {
+        "agree": 11914,
+        "disagree": 2400,
+        "no_second_opinion": 30,
+        "one_blank": 288
+      },
+      "region": "216449",
+      "skip_review_fields": 12085,
+      "skip_review_share": 0.27709627863251785
+    },
+    {
+      "agreement_both_coded": 0.843795858470569,
+      "agreement_share_all": 0.8183111954459203,
+      "classes": {
+        "agree": 5175,
+        "disagree": 958,
+        "no_second_opinion": 18,
+        "one_blank": 173
+      },
+      "coding_cards": 102,
+      "comparison_fields": 6324,
+      "dwellings": 102,
+      "exported_fields": 16423,
+      "flags": {
+        "duplicate_dwelling_no": 3,
+        "duplicate_record_id": 4,
+        "fronts_disagree": 2,
+        "identity_reread": 1,
+        "missing_dwelling_no": 2,
+        "missing_record_id": 3,
+        "out_of_order": 3,
+        "paired_by_position": 14,
+        "unplaced": 17
+      },
+      "mean_numeric_field_confidence": 0.9134500466853408,
+      "null_ids": 7,
+      "numeric_field_scores": 6426,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8183111954459203,
+      "raw_classes": {
+        "agree": 5175,
+        "disagree": 958,
+        "no_second_opinion": 18,
+        "one_blank": 173
+      },
+      "region": "216450",
+      "skip_review_fields": 5269,
+      "skip_review_share": 0.32083054253181514
+    },
+    {
+      "agreement_both_coded": 0.8273028686752198,
+      "agreement_share_all": 0.8119694397283531,
+      "classes": {
+        "agree": 5739,
+        "both_blank": 1,
+        "disagree": 1198,
+        "no_second_opinion": 8,
+        "one_blank": 122
+      },
+      "coding_cards": 114,
+      "comparison_fields": 7068,
+      "dwellings": 112,
+      "exported_fields": 19718,
+      "flags": {
+        "duplicate_record_id": 7,
+        "fronts_disagree": 7,
+        "missing_dwelling_no": 3,
+        "out_of_order": 2,
+        "paired_by_position": 8,
+        "persons_unassigned": 2,
+        "unplaced": 8
+      },
+      "mean_numeric_field_confidence": 0.9140431493415522,
+      "null_ids": 9,
+      "numeric_field_scores": 7138,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8119694397283531,
+      "raw_classes": {
+        "agree": 5739,
+        "both_blank": 1,
+        "disagree": 1198,
+        "no_second_opinion": 8,
+        "one_blank": 122
+      },
+      "region": "216451",
+      "skip_review_fields": 5814,
+      "skip_review_share": 0.2948574906177097
+    },
+    {
+      "agreement_both_coded": 0.8386135663918959,
+      "agreement_share_all": 0.815530229862855,
+      "classes": {
+        "agree": 8444,
+        "both_blank": 6,
+        "disagree": 1625,
+        "no_second_opinion": 46,
+        "one_blank": 233
+      },
+      "coding_cards": 167,
+      "comparison_fields": 10354,
+      "dwellings": 162,
+      "exported_fields": 25174,
+      "flags": {
+        "duplicate_dwelling_no": 9,
+        "duplicate_record_id": 21,
+        "fronts_disagree": 9,
+        "identity_reread": 5,
+        "missing_dwelling_no": 6,
+        "out_of_order": 8,
+        "paired_by_position": 21,
+        "persons_unassigned": 3,
+        "unplaced": 45
+      },
+      "mean_numeric_field_confidence": 0.9126798578426664,
+      "null_ids": 25,
+      "numeric_field_scores": 10411,
+      "protected_fields": 1,
+      "raw_agreement_share_all": 0.815530229862855,
+      "raw_classes": {
+        "agree": 8444,
+        "both_blank": 6,
+        "disagree": 1626,
+        "no_second_opinion": 41,
+        "one_blank": 237
+      },
+      "region": "216452",
+      "skip_review_fields": 8520,
+      "skip_review_share": 0.3384444267895448
+    },
+    {
+      "agreement_both_coded": 0.8395866306675356,
+      "agreement_share_all": 0.812578843034781,
+      "classes": {
+        "agree": 9018,
+        "both_blank": 6,
+        "disagree": 1723,
+        "no_second_opinion": 140,
+        "one_blank": 211
+      },
+      "coding_cards": 179,
+      "comparison_fields": 11098,
+      "dwellings": 176,
+      "exported_fields": 28708,
+      "flags": {
+        "duplicate_dwelling_no": 4,
+        "duplicate_record_id": 7,
+        "fronts_disagree": 8,
+        "identity_reread": 3,
+        "missing_dwelling_no": 9,
+        "missing_record_id": 2,
+        "out_of_order": 5,
+        "paired_by_position": 11,
+        "persons_unassigned": 1,
+        "unplaced": 39
+      },
+      "mean_numeric_field_confidence": 0.9068138435465167,
+      "null_ids": 12,
+      "numeric_field_scores": 11211,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.812578843034781,
+      "raw_classes": {
+        "agree": 9018,
+        "both_blank": 6,
+        "disagree": 1723,
+        "no_second_opinion": 138,
+        "one_blank": 213
+      },
+      "region": "216453",
+      "skip_review_fields": 9136,
+      "skip_review_share": 0.3182388184478194
+    },
+    {
+      "agreement_both_coded": 0.8119984715322889,
+      "agreement_share_all": 0.7789589442815249,
+      "classes": {
+        "agree": 2125,
+        "disagree": 492,
+        "no_second_opinion": 52,
+        "one_blank": 59
+      },
+      "coding_cards": 44,
+      "comparison_fields": 2728,
+      "dwellings": 44,
+      "exported_fields": 6988,
+      "flags": {
+        "duplicate_dwelling_no": 1,
+        "duplicate_record_id": 9,
+        "fronts_disagree": 1,
+        "missing_dwelling_no": 1,
+        "missing_record_id": 1,
+        "out_of_order": 3,
+        "paired_by_position": 7,
+        "unplaced": 12
+      },
+      "mean_numeric_field_confidence": 0.8912662337662338,
+      "null_ids": 10,
+      "numeric_field_scores": 2772,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.7789589442815249,
+      "raw_classes": {
+        "agree": 2125,
+        "disagree": 492,
+        "no_second_opinion": 52,
+        "one_blank": 59
+      },
+      "region": "216454",
+      "skip_review_fields": 2169,
+      "skip_review_share": 0.31038923869490553
+    },
+    {
+      "agreement_both_coded": 0.847400611620795,
+      "agreement_share_all": 0.8276583034647551,
+      "classes": {
+        "agree": 2771,
+        "disagree": 499,
+        "no_second_opinion": 2,
+        "one_blank": 76
+      },
+      "coding_cards": 54,
+      "comparison_fields": 3348,
+      "dwellings": 54,
+      "exported_fields": 13168,
+      "flags": {
+        "duplicate_dwelling_no": 2,
+        "duplicate_record_id": 1,
+        "fronts_disagree": 30,
+        "identity_reread": 2,
+        "missing_dwelling_no": 3,
+        "out_of_order": 28,
+        "paired_by_position": 3,
+        "unplaced": 2
+      },
+      "mean_numeric_field_confidence": 0.9183539094650205,
+      "null_ids": 1,
+      "numeric_field_scores": 3402,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8276583034647551,
+      "raw_classes": {
+        "agree": 2771,
+        "disagree": 499,
+        "one_blank": 78
+      },
+      "region": "216459",
+      "skip_review_fields": 2818,
+      "skip_review_share": 0.21400364520048604
+    },
+    {
+      "agreement_both_coded": 0.8494952584888346,
+      "agreement_share_all": 0.8294504181600956,
+      "classes": {
+        "agree": 5554,
+        "disagree": 984,
+        "no_second_opinion": 15,
+        "one_blank": 143
+      },
+      "coding_cards": 108,
+      "comparison_fields": 6696,
+      "dwellings": 105,
+      "exported_fields": 15995,
+      "flags": {
+        "duplicate_dwelling_no": 2,
+        "duplicate_record_id": 10,
+        "fronts_disagree": 2,
+        "missing_dwelling_no": 2,
+        "missing_record_id": 2,
+        "municipality_mismatch": 1,
+        "out_of_order": 32,
+        "paired_by_position": 15,
+        "persons_unassigned": 3,
+        "unplaced": 30
+      },
+      "mean_numeric_field_confidence": 0.9176862570495696,
+      "null_ids": 14,
+      "numeric_field_scores": 6738,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.8294504181600956,
+      "raw_classes": {
+        "agree": 5554,
+        "disagree": 984,
+        "no_second_opinion": 15,
+        "one_blank": 143
+      },
+      "region": "216460",
+      "skip_review_fields": 5586,
+      "skip_review_share": 0.3492341356673961
+    },
+    {
+      "agreement_both_coded": 0.727818259751393,
+      "agreement_share_all": 0.39691444600280507,
+      "classes": {
+        "agree": 1698,
+        "both_blank": 1023,
+        "disagree": 635,
+        "no_second_opinion": 310,
+        "one_blank": 612
+      },
+      "coding_cards": 69,
+      "comparison_fields": 4278,
+      "dwellings": 64,
+      "exported_fields": 10265,
+      "flags": {
+        "duplicate_dwelling_no": 6,
+        "duplicate_record_id": 1,
+        "fronts_disagree": 17,
+        "identity_reread": 1,
+        "missing_dwelling_no": 2,
+        "municipality_mismatch": 3,
+        "out_of_order": 18,
+        "paired_by_position": 4,
+        "persons_unassigned": 3,
+        "unplaced": 20
+      },
+      "mean_numeric_field_confidence": 0.788392730705688,
+      "null_ids": 1,
+      "numeric_field_scores": 4237,
+      "protected_fields": 0,
+      "raw_agreement_share_all": 0.41164095371669,
+      "raw_classes": {
+        "agree": 1761,
+        "both_blank": 1132,
+        "disagree": 670,
+        "no_second_opinion": 63,
+        "one_blank": 652
+      },
+      "region": "216463",
+      "skip_review_fields": 1651,
+      "skip_review_share": 0.160837798343887
+    }
+  ],
+  "regions_accounted": 45,
+  "skip_review_fields": 268146,
+  "skip_review_share_coding": 0.7894007059523144,
+  "skip_review_share_exported": 0.3007628262144819,
+  "snapshot_date": "2026-10-17",
+  "snapshot_status": "historical figures; current216436standalone replacement recorded separately",
+  "true_missed_or_unclassified_archive_cards": null
+}

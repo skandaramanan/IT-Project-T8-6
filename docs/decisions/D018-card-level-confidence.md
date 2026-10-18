@@ -119,3 +119,21 @@ reviewer behaviour; this is a judgement, marked provisional.
 - **Reviewers say the ranking is wrong.** The cut is a judgement; if the
   cards reviewers send back do not match the cards this ranks lowest, the
   quarter is the first thing to move.
+
+## IT-125 application (17 October 2026)
+
+`survey.merge_runs` applies the same lowest-quarter rule to all 62 fields of
+**each physical coding card's own raw reading**, including fields that its
+processed dwelling envelope only stores from the first household. An unreturned
+field contributes zero; an explicit blank receives its applicable D016 score.
+Human-reviewed payloads and their historical confidence remain unchanged; the
+card summarizes machine evidence and is not a posterior score on corrections.
+
+Stored fronts, backs and secondary cards have no calibrated fields under D028.
+Their numeric card score is **0.0**, D018's no-evidence fallback, extended here
+so every stored card has a sortable score (IT-125 AC2). This is a conservative
+triage marker, not measured handwriting accuracy. Their field confidence stays
+null. Known C3 cards are outside the C1/C2 calibration: coding fields and card
+scores are zero, with the unsupported form recorded in the pairing audit. They
+must remain in review. Sample subtype evidence does not establish a full corpus
+census.

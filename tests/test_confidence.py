@@ -1,18 +1,8 @@
-"""Agreement class to a number (IT-99).
+"""Confidence for the current normalized Q6 pairing (IT-125, D016 addendum D).
 
-Every constant here is measured, and the tests that prove it are
-test_constants_still_match_the_benchmark and test_band_constants_still_match_
-the_live_run. The rest of this file guards the properties the formula has to
-hold whatever the numbers are: in range, ordered, deterministic, and never
-treating a missing arm as agreement.
-
-Calibrated to gemini-3.5-flash-lite (the model that ships), not flash --
-recalibrated 2026-09-09 after pairing flash-lite against qwen directly and
-finding it meaningfully less reliable in every class than flash, worst on
-ONE_BLANK (73.7% vs flash's 85.1%).
+Synthetic policy checks always run; saved-input checks pin exact denominators
+and rounded constants when the local benchmark inputs are available.
 """
-
-from collections import Counter
 
 import pytest
 
@@ -49,13 +39,10 @@ def test_scores_are_in_range(agreement):
 
 
 def test_agreement_scores_higher_than_disagreement():
-    """AC2: the whole point. Agreement high, disagreement materially lower.
+    """AC2: agreement materially outranks both disagreement classes.
 
-    AC2 does not require one_blank to outrank disagree, only that both sit
-    well below agree -- and on flash-lite they no longer do (73.7% vs 75.1%,
-    a near-tie, reversed from flash's 85.1% vs 79.1%). Asserting that
-    ordering here would be testing an artefact of which model got measured,
-    not a property the formula actually promises."""
+    Their relative ordering is measured, not a requirement of the formula.
+    """
     assert confidence_for(AGREE) > confidence_for(ONE_BLANK)
     assert confidence_for(AGREE) > confidence_for(DISAGREE)
     assert confidence_for(AGREE) - confidence_for(DISAGREE) > 0.1
@@ -121,7 +108,7 @@ def test_each_field_gets_the_triple():
     scored = score_fields(paired, MODELS)
     assert set(scored["Municipality"]) == {"value", "confidence", "source_agreement"}
     assert scored["Municipality"]["source_agreement"] == AGREE
-    assert scored["Municipality"]["confidence"] == 0.97
+    assert scored["Municipality"]["confidence"] == 0.98
 
 
 def test_the_value_is_the_primary_arms_reading():
@@ -137,15 +124,15 @@ def test_the_value_is_the_primary_arms_reading():
 
 
 def test_a_blank_primary_reading_is_still_the_primary_reading():
-    """A dropped key is a reading of "no code", not a dead arm. The one_blank
+    """An explicit null is a blank reading, not an unavailable arm. The one_blank
     constant is P(gemini-lite correct) measured over exactly these cases, so
     the value has to stay gemini-lite's blank -- swapping in qwen's value
-    would attach 0.74 to a reading it was never measured about."""
+    would attach 0.51 to a reading it was never measured about."""
     paired = compare_fields({"Municipality": None}, {"Municipality": "56"}, FIELDS)
     scored = score_fields(paired, MODELS)
     assert scored["Municipality"]["source_agreement"] == ONE_BLANK
     assert scored["Municipality"]["value"] == ""
-    assert scored["Municipality"]["confidence"] == 0.74
+    assert scored["Municipality"]["confidence"] == 0.51
 
 
 @pytest.mark.parametrize(
@@ -185,7 +172,7 @@ def test_the_surviving_arm_can_be_the_second_one():
     so."""
     paired = compare_fields(None, {"Municipality": "56"}, FIELDS)
     scored = score_fields(paired, MODELS)
-    assert scored["Municipality"]["confidence"] == 0.75
+    assert scored["Municipality"]["confidence"] == 0.85
     assert scored["Municipality"]["value"] == "56"
 
 
@@ -242,18 +229,18 @@ def test_a_non_numeric_score_is_rejected():
 
 # --- the self-reported band, inside AGREE/DISAGREE/ONE_BLANK ----------------
 #
-# Extended 2026-09-09: pairing the banded gemini-3.5-flash-lite run against
+# Recomputed 2026-10-17: pairing the saved banded gemini-3.5-flash-lite run against
 # qwen (rather than scoring it standalone) gives real (class, band) accuracy,
 # not just accuracy-by-band unconditioned on class. Cells with n < 10
-# (agree/low n=2, disagree/low n=8) are deliberately excluded from
+# (agree/low n=4, disagree/low n=7) are deliberately excluded from
 # BAND_ACCURACY_BY_CLASS and fall back to the flat class constant -- one
 # documented threshold, not a per-cell judgement call.
 
 
 def test_a_recognised_band_overrides_agree():
-    """agree/high (96.9%) tracks the flat constant closely; agree/medium
-    (91.3%) is a real, measurable drop -- worth surfacing rather than
-    flattening into the same 0.97 every agree field gets."""
+    """agree/high (98.5%) tracks the flat constant closely; agree/medium
+    (88.5%) is a real, measurable drop -- worth surfacing rather than
+    flattening into the same 0.98 every agree field gets."""
     assert (
         confidence_for(AGREE, band="medium")
         == BAND_ACCURACY_BY_CLASS[(AGREE, "medium")]
@@ -263,7 +250,7 @@ def test_a_recognised_band_overrides_agree():
 
 def test_a_recognised_band_overrides_disagree():
     """A disagreeing field where gemini-lite also sounds unsure (medium) is
-    barely better than a coin flip -- far below the flat disagree constant,
+    worse than a coin flip -- far below the flat disagree constant,
     and worth knowing separately from a disagreeing field gemini-lite called
     high."""
     assert (
@@ -295,18 +282,17 @@ def test_a_too_thin_cell_falls_back_to_the_flat_constant():
 
 
 def test_both_blank_never_gets_a_band_override():
-    """BOTH_BLANK has n=1 total, band or not -- nowhere near enough to
+    """BOTH_BLANK has n=0 total, band or not -- nowhere near enough to
     calibrate a band cell. It always reads as the flat (inherited) constant."""
     assert confidence_for(BOTH_BLANK, band="low") == confidence_for(BOTH_BLANK)
     assert confidence_for(BOTH_BLANK, band="high") == confidence_for(BOTH_BLANK)
 
 
 def test_no_band_falls_back_to_the_flat_class_constant():
-    """The normal case for an unbanded run: no regression for every field
-    scored before band-awareness existed."""
-    assert confidence_for(AGREE) == 0.97
-    assert confidence_for(DISAGREE) == 0.75
-    assert confidence_for(ONE_BLANK) == 0.74
+    """D028's unbanded run uses the newly measured flat constants."""
+    assert confidence_for(AGREE) == 0.98
+    assert confidence_for(DISAGREE) == 0.64
+    assert confidence_for(ONE_BLANK) == 0.51
     assert confidence_for(AGREE, band=None) == confidence_for(AGREE)
 
 
@@ -340,7 +326,7 @@ def test_score_fields_passes_the_primary_arms_band_through_on_disagree():
         first_bands={"Municipality": "low"},
     )
     scored = score_fields(paired, MODELS)
-    # disagree/low is too thin (n=8) -- falls back to the flat constant.
+    # disagree/low is too thin (n=7) -- falls back to the flat constant.
     assert scored["Municipality"]["confidence"] == confidence_for(DISAGREE)
 
 
@@ -359,7 +345,7 @@ def test_a_band_refines_no_second_opinion():
 
 
 def test_low_band_beats_disagree_as_a_warning_signal():
-    """9.1% right is a stronger 'do not trust this' than disagree's 75.1% --
+    """9.1% right is a stronger 'do not trust this' than disagree's 63.9% --
     the band is worth using precisely because it is more decisive."""
     assert confidence_for(
         NO_SECOND_OPINION, "gemini-3.5-flash-lite", band="low"
@@ -403,188 +389,239 @@ def test_score_fields_uses_the_second_arms_band_when_it_survived():
     )
 
 
-# --- the constants are measured, and stay measured --------------------------
+# --- reproducible supplied-Q6 benchmark regression --------------------------
 
+import json
 from pathlib import Path
+
+from calibrate_confidence import calibrate, compact_calibration, measure_pair
 
 REPO_ROOT = Path(__file__).parent.parent
 GROUND_TRUTH = REPO_ROOT / "data/benchmark/c1c2/coding-card-c1-c2-ground-truth.xlsx"
 RESULTS = REPO_ROOT / "data/benchmark/results"
-PRIMARY_ARM = "gemini-3.5-flash-lite"
-
-# D016 was measured before IT-124 read misspelt labels (FIELD_ALIASES): every
-# saved Qwen reply says "Washhouse", so its Washouse counted as blank. Read
-# under the schema's labels the pairing changes class -- ONE_BLANK alone goes
-# from 121 fields to 41 -- and the constants no longer hold. The constants are
-# checked as measured; the normalised pairing is expected to fail until IT-125
-# recalibrates, and this xfail is strict so that day is noticed.
-AS_MEASURED = pytest.param(False, id="as-measured")
-NORMALISED = pytest.param(
-    True,
-    id="normalised",
-    marks=pytest.mark.xfail(
-        strict=True, reason="IT-125: D016 predates FIELD_ALIASES; recalibrate"
-    ),
+Q6_RAW = (
+    REPO_ROOT
+    / "data/it124-review-20261017/handoff/data/benchmark/results/q6-2mp-rp1.05/raw"
 )
-
-
-@pytest.fixture
-def label_aliases(request, monkeypatch):
-    from survey.extraction import json_extraction
-
-    if not request.param:
-        monkeypatch.setattr(json_extraction, "FIELD_ALIASES", {})
-        monkeypatch.setattr(json_extraction, "_NESTED", {})
-
-
-@pytest.mark.skipif(
-    not GROUND_TRUTH.is_file(),
-    reason="needs data/ (Drive), absent in CI -- see D004",
-)
-@pytest.mark.parametrize("label_aliases", [AS_MEASURED, NORMALISED], indirect=True)
-def test_constants_still_match_the_benchmark(label_aliases):
-    """AC3/AC6: the constants are measured, not chosen. Re-derives them from
-    gemini-3.5-flash-lite paired against qwen -- the model that ships -- and
-    fails if they have drifted. Reads the sheet, never writes it.
-    """
-    from dual_extract import pair_cards
-    from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
-    from survey.extraction.record import normalise
-
-    cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
-    truth = {c.page_id: c.fields for c in cards}
-    records = pair_cards(
-        PRIMARY_ARM,
-        "qwen2.5-vl",
-        RESULTS,
-        page_ids=[c.page_id for c in cards],
+SAVED_INPUTS = (
+    GROUND_TRUTH.is_file()
+    and Q6_RAW.is_dir()
+    and all(
+        (RESULTS / model / "raw").is_dir()
+        for model in ("gemini-3.5-flash-lite", "gemini-3.5-flash-lite-banded")
     )
+)
 
-    right: Counter = Counter()
-    seen: Counter = Counter()
-    for record in records:
-        for name, field in record["fields"].items():
-            if name not in truth[record["page_id"]]:
-                continue
-            seen[field["agreement"]] += 1
-            right[field["agreement"]] += field["a"] == normalise(
-                truth[record["page_id"]][name]
-            )
 
-    for agreement in (AGREE, ONE_BLANK, DISAGREE):
-        measured = right[agreement] / seen[agreement]
-        assert abs(measured - CONFIDENCE_BY_CLASS[agreement]) < 0.03, (
-            f"{agreement}: constant is {CONFIDENCE_BY_CLASS[agreement]}, "
-            f"benchmark now says {measured:.3f} over {seen[agreement]} fields. "
-            f"Recalibrate D016 rather than widening this tolerance."
+PINNED_CALIBRATION = REPO_ROOT / "docs/runs/it125-calibration.json"
+
+
+@pytest.fixture(scope="module", params=["pinned", "live"])
+def calibration(request):
+    """Tracked evidence always checks constants; raw remeasurement checks drift."""
+    pinned = json.loads(PINNED_CALIBRATION.read_text())
+    if request.param == "pinned":
+        return pinned
+    if not SAVED_INPUTS:
+        pytest.skip(
+            "raw remeasurement requires supplied Q6 handoff and benchmark inputs (D004)"
         )
-
-
-@pytest.mark.skipif(
-    not GROUND_TRUTH.is_file(),
-    reason="needs data/ (Drive), absent in CI -- see D004",
-)
-def test_both_blank_is_still_too_thin_to_measure():
-    """BOTH_BLANK moved from n=0 (flash vs qwen) to n=1 (flash-lite vs qwen)
-    once recalibrated -- still far short of anything trustworthy. Fails
-    loudly once a benchmark produces enough to replace the inherited AGREE
-    constant with a real measurement."""
-    from dual_extract import pair_cards
-    from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
-
-    cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
-    records = pair_cards(
-        PRIMARY_ARM,
-        "qwen2.5-vl",
-        RESULTS,
-        page_ids=[c.page_id for c in cards],
+    measured = calibrate(
+        GROUND_TRUTH,
+        RESULTS / "gemini-3.5-flash-lite/raw",
+        RESULTS / "gemini-3.5-flash-lite-banded/raw",
+        Q6_RAW,
     )
-    observed: Counter = Counter()
-    for record in records:
-        observed.update(record["counts"])
-
-    assert observed[BOTH_BLANK] < 10, (
-        "both_blank now has enough fields to measure -- replace the "
-        "inherited AGREE constant with a real one in D016"
-    )
-    assert observed[NO_SECOND_OPINION] == 0, (
-        "no arm has ever failed on this benchmark -- if one now has, "
-        "NO_SECOND_OPINION is reachable here and worth a dedicated check"
-    )
+    assert compact_calibration(measured) == pinned
+    return measured
 
 
-@pytest.mark.skipif(
-    not (RESULTS / "gemini-3.5-flash-lite-banded" / "raw").is_dir(),
-    reason="needs the banded run's saved output, absent in CI -- see D004",
-)
-@pytest.mark.parametrize("label_aliases", [AS_MEASURED, NORMALISED], indirect=True)
-def test_band_constants_still_match_the_live_run(label_aliases):
-    """The band constants are measured against a real API call, not assumed.
-    Re-derives NO_SECOND_OPINION_BAND_ACCURACY (standalone) from the saved
-    banded output, and BAND_ACCURACY_BY_CLASS (paired against qwen) from the
-    same run -- wider tolerance than the flat constants' because every one of
-    these cells has thinner support.
-    """
-    from dual_extract import pair_cards
-    from ground_truth import DEFAULT_IMAGES_DIR, load_ground_truth
-    from survey.extraction.json_extraction import (
-        parse_confidence_bands,
-        parse_json_fields,
-    )
-    from survey.extraction.record import normalise
-
-    banded_raw = RESULTS / "gemini-3.5-flash-lite-banded" / "raw"
-    cards = load_ground_truth(GROUND_TRUTH, REPO_ROOT / DEFAULT_IMAGES_DIR)
-
-    # Standalone: band alone, unconditioned on class (NO_SECOND_OPINION's case).
-    right: Counter = Counter()
-    seen: Counter = Counter()
-    for card in cards:
-        path = banded_raw / f"{card.page_id}.txt"
-        if not path.is_file():
-            continue
-        text = path.read_text()
-        fields = parse_json_fields(text) or {}
-        bands = parse_confidence_bands(text)
-        for name, expected in card.fields.items():
-            band = bands.get(name)
-            if band is None:
-                continue
-            seen[band] += 1
-            right[band] += normalise(fields.get(name)) == normalise(expected)
-
-    for band in ("high", "medium", "low"):
-        measured = right[band] / seen[band]
-        assert abs(measured - NO_SECOND_OPINION_BAND_ACCURACY[band]) < 0.05, (
-            f"{band}: constant is {NO_SECOND_OPINION_BAND_ACCURACY[band]}, live "
-            f"run now says {measured:.3f} over {seen[band]} fields. "
-            f"Recalibrate D016."
+def test_tracked_calibration_evidence_is_complete_and_portable():
+    report = json.loads(PINNED_CALIBRATION.read_text())
+    assert "paths" not in report
+    assert report["minimum_band_sample"] == 10
+    assert len(report["ground_truth_sha256"]) == 64
+    for mode in ("unbanded", "banded"):
+        measurement = report[mode]
+        assert measurement["cards"] == 30
+        assert measurement["fields"] == 1860
+        assert sum(cell["total"] for cell in measurement["classes"].values()) == 1860
+        assert (
+            sum(cell["correct"] for cell in measurement["classes"].values())
+            == measurement["standalone"]["a"]["correct"]
         )
+        for table in ("classes", "class_bands", "standalone", "standalone_bands"):
+            for cell in measurement[table].values():
+                assert cell["accuracy"] == cell["correct"] / cell["total"]
+                assert 0 <= cell["correct"] <= cell["total"]
+        for arm in ("a", "b"):
+            assert sum(measurement["field_states"][arm].values()) == 1860
+            manifest = measurement["raw_input_manifests"][arm]
+            assert manifest["readings"] == 30
+            assert len(manifest["sha256"]) == 64
 
-    # Paired against qwen: (class, band), BAND_ACCURACY_BY_CLASS's case.
-    truth = {c.page_id: c.fields for c in cards}
-    records = pair_cards(
-        "gemini-3.5-flash-lite-banded",
-        "qwen2.5-vl",
-        RESULTS,
-        page_ids=[c.page_id for c in cards],
-    )
-    class_right: Counter = Counter()
-    class_seen: Counter = Counter()
-    for record in records:
-        for name, field in record["fields"].items():
-            if name not in truth[record["page_id"]]:
-                continue
-            band = field.get("a_band")
-            key = (field["agreement"], band)
-            class_seen[key] += 1
-            class_right[key] += field["a"] == normalise(truth[record["page_id"]][name])
 
-    for key, constant in BAND_ACCURACY_BY_CLASS.items():
-        n = class_seen[key]
-        assert n >= 10, f"{key}: only {n} fields now -- below the n>=10 threshold"
-        measured = class_right[key] / n
-        assert abs(measured - constant) < 0.05, (
-            f"{key}: constant is {constant}, live run now says {measured:.3f} "
-            f"over {n} fields. Recalibrate D016."
+def test_constants_still_match_the_benchmark(calibration):
+    """Pin the actual unbanded production pairing, including omitted fields."""
+    measured = calibration["unbanded"]
+    expected = {
+        AGREE: (1486, 1523),
+        DISAGREE: (191, 299),
+        ONE_BLANK: (18, 35),
+        NO_SECOND_OPINION: (0, 3),
+    }
+    assert measured["fields"] == 1860
+    assert {
+        k: (v["correct"], v["total"]) for k, v in measured["classes"].items()
+    } == expected
+    for agreement in (AGREE, DISAGREE, ONE_BLANK):
+        assert CONFIDENCE_BY_CLASS[agreement] == round(
+            measured["classes"][agreement]["accuracy"], 2
         )
+    assert measured["standalone"]["a"] == {
+        "correct": 1695,
+        "total": 1860,
+        "accuracy": 1695 / 1860,
+    }
+    assert measured["standalone"]["b"] == {
+        "correct": 1574,
+        "total": 1860,
+        "accuracy": 1574 / 1860,
+    }
+    assert STANDALONE_ACCURACY["qwen2.5-vl"] == round(1574 / 1860, 2)
+    assert STANDALONE_ACCURACY["gemini-3.5-flash-lite"] == round(1695 / 1860, 2)
+    assert measured["field_states"]["a"]["omitted"] == 3
+    assert measured["field_states"]["b"] == {"blank": 1, "value": 1859}
+
+
+def test_band_constants_still_match_the_live_run(calibration):
+    """Only n>=10 cells qualify; pin measurements without drift tolerances."""
+    measured = calibration["banded"]
+    expected = {
+        AGREE: (1450, 1490),
+        DISAGREE: (177, 320),
+        ONE_BLANK: (12, 49),
+        NO_SECOND_OPINION: (0, 1),
+    }
+    assert {
+        k: (v["correct"], v["total"]) for k, v in measured["classes"].items()
+    } == expected
+    qualifying = {
+        tuple(key.split("/")): round(cell["accuracy"], 2)
+        for key, cell in measured["class_bands"].items()
+        if cell["total"] >= 10
+    }
+    assert BAND_ACCURACY_BY_CLASS == qualifying
+    assert NO_SECOND_OPINION_BAND_ACCURACY == {
+        band: round(cell["accuracy"], 2)
+        for band, cell in measured["standalone_bands"].items()
+    }
+    assert measured["standalone"]["a"]["correct"] == 1639
+    assert STANDALONE_ACCURACY["gemini-3.5-flash-lite-banded"] == round(1639 / 1860, 2)
+
+
+def test_both_blank_is_still_too_thin_to_measure(calibration):
+    for config in ("unbanded", "banded"):
+        assert calibration[config]["classes"].get(BOTH_BLANK, {}).get("total", 0) == 0
+    # A reasoned inherited fallback, never a newly measured blank probability.
+    assert CONFIDENCE_BY_CLASS[BOTH_BLANK] == CONFIDENCE_BY_CLASS[AGREE]
+
+
+def test_omitted_primary_is_not_substituted_or_scored_as_blank():
+    paired = compare_fields({}, {"Municipality": "56"}, ["Municipality"])
+    field = paired["Municipality"]
+    assert field["a_available"] is True
+    assert field["a_state"] == "omitted"
+    scored = score_fields(paired, MODELS)["Municipality"]
+    assert scored == {
+        "value": "",
+        "confidence": 0.0,
+        "source_agreement": NO_SECOND_OPINION,
+    }
+
+
+def test_explicit_primary_blank_survives_an_omitted_secondary_field():
+    paired = compare_fields({"Municipality": None}, {}, ["Municipality"])
+    scored = score_fields(paired, MODELS)["Municipality"]
+    assert scored == {
+        "value": "",
+        "confidence": 0.91,
+        "source_agreement": NO_SECOND_OPINION,
+    }
+
+
+def test_qwen_band_does_not_inherit_gemini_band_calibration():
+    assert confidence_for(NO_SECOND_OPINION, "qwen2.5-vl", "high") == 0.85
+    assert confidence_for(NO_SECOND_OPINION, "unknown-model", "high") == min(
+        STANDALONE_ACCURACY.values()
+    )
+
+
+def test_calibration_counts_omissions_as_incorrect_even_when_truth_is_blank(tmp_path):
+    from ground_truth import BenchmarkCard
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "p.txt").write_text('{"Municipality": null}')
+    (second / "p.txt").write_text('{"Municipality": null, "Garden": null}')
+    cards = [
+        BenchmarkCard("p", 1, tmp_path / "p.png", {"Municipality": "", "Garden": ""})
+    ]
+    measured = measure_pair(cards, first, second)
+    assert measured["classes"][BOTH_BLANK] == {
+        "correct": 1,
+        "total": 1,
+        "accuracy": 1.0,
+    }
+    assert measured["classes"][NO_SECOND_OPINION] == {
+        "correct": 0,
+        "total": 1,
+        "accuracy": 0.0,
+    }
+    assert measured["standalone"]["a"]["correct"] == 1
+    assert measured["field_states"]["a"] == {"blank": 1, "omitted": 1}
+
+
+def test_calibration_does_not_drop_absent_or_failed_benchmark_arms(tmp_path):
+    from ground_truth import BenchmarkCard
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "failed.txt").write_text("no usable reading")
+    cards = [
+        BenchmarkCard(page, 1, tmp_path / "p.png", {"Municipality": ""})
+        for page in ("failed", "absent")
+    ]
+    measured = measure_pair(cards, first, second)
+    assert measured["classes"] == {
+        NO_SECOND_OPINION: {"correct": 0, "total": 2, "accuracy": 0.0}
+    }
+    assert [item["state"] for item in measured["raw_inputs"]["a"]] == [
+        "failed",
+        "absent",
+    ]
+    assert measured["standalone"]["a"]["total"] == 2
+
+
+@pytest.mark.parametrize("raw_primary", [None, "", "56"])
+def test_legacy_no_second_opinion_requires_explicit_availability(raw_primary):
+    field = {
+        "a": raw_primary or "",
+        "b": "57",
+        "a_raw": raw_primary,
+        "b_raw": "57",
+        "agreement": NO_SECOND_OPINION,
+    }
+    with pytest.raises(ValueError, match="a_available is required"):
+        resolve_primary_value(field)
+    with pytest.raises(ValueError, match="a_available is required"):
+        score_fields({"Municipality": field}, MODELS)
+
+
+def test_availability_metadata_cannot_be_a_truthy_string():
+    paired = compare_fields(None, {"Municipality": "56"}, ["Municipality"])
+    paired["Municipality"]["a_available"] = "false"
+    with pytest.raises(ValueError, match="explicit boolean"):
+        score_fields(paired, MODELS)

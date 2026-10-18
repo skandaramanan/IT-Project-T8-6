@@ -537,3 +537,67 @@ Until then:
 - No benchmark figure in this document or in D019's addendum validates the
   normalised pairing. Calibrated scores, and any review bypass that relies on
   them (D022's `agree` threshold), need IT-125's comparison first.
+
+
+## Addendum D — IT-125 recalibration to the actual normalized Q6 pairing (17/10/2026)
+
+This supersedes the flat and band-conditioned values in the preceding sections
+for IT-125. IT-124's supplied Qwen2.5-VL-7B Q6_K / 2MP / repeat-penalty 1.05
+benchmark is paired with the saved unbanded Flash-Lite benchmark matching D028,
+using current explicit label aliases. The historical Qwen run is not the
+production configuration and does not validate these values.
+
+| Unbanded class | Primary correct / n | Constant |
+| -- | -- | -- |
+| agree | 1486/1523 (97.5706%) | 0.98 |
+| disagree | 191/299 (63.8796%) | 0.64 |
+| one_blank | 18/35 (51.4286%) | 0.51 |
+| no_second_opinion, primary field omitted | 0/3 | 0.00 |
+| both_blank | 0 observations | 0.98, reasoned agree fallback |
+
+Explicit blanks and omitted keys are distinct. A selected omitted primary field
+has no reading to validate, receives zero confidence, and never selects Qwen
+while the Gemini arm is available. Whole-arm absence/failure uses the surviving
+arm's standalone accuracy: Gemini unbanded 1695/1860 -> 0.91; Q6 Qwen
+1574/1860 -> 0.85. Both absent arms score zero. No whole-arm failures occur in
+the benchmark, so the failure-conditioned accuracy itself remains unmeasured.
+
+The saved banded benchmark independently confirms the prior calculations
+1450/1490 agree, 177/320 disagree and 12/50 one_blank under historical
+missing-key-as-blank classification. One of the latter fields was omitted,
+so correct absence handling gives 12/49 one_blank plus 0/1 omitted. Banded
+standalone accuracy is 1639/1860 -> 0.88. Current n>=10 band cells are
+agree/high 1334/1355 -> 0.98, agree/medium 116/131 -> 0.89,
+disagree/high 155/251 -> 0.62, disagree/medium 22/62 -> 0.35,
+one_blank/high 9/27 -> 0.33 and one_blank/low 3/22 -> 0.14.
+Agree/low n=4, disagree/low n=7, and absent one_blank/medium retain the flat
+class fallback under the unchanged n>=10 rule. The band-only Gemini table
+remains high 1498/1633 -> 0.92, medium 138/193 -> 0.72, low 3/33 -> 0.09;
+a different model cannot inherit those band-conditioned probabilities.
+
+`benchmark/calibrate_confidence.py` reproduces every denominator and raw-file
+hash without a model call. `data/it125-calibration/calibration.json` and
+`README.md` contain source attribution, omitted field identities, all measured
+cells and limitations. `tests/test_confidence.py` now checks exact Q6 benchmark
+counts and rounded constants with normal alias parsing; the strict expected
+failures and superseded old-Qwen constant checks are removed. Synthetic absence
+and blank tests run even when the local benchmark inputs are unavailable.
+
+The 30-card C1/C2 sample is dense, fields are correlated, no independent held-out
+set was supplied, and BOTH_BLANK has n=0. These field-level empirical scores do
+not validate C3, fronts, notes, or any automatic review bypass. IT-125 must keep
+review routing conservative and report the effective skip-review policy.
+
+
+The portable measured counts and input-manifest hashes are also retained in
+`docs/runs/it125-calibration.json`, generated using the calibration CLI's
+`--summary-output` option. It includes no raw readings or machine-specific paths.
+CI always checks these pinned denominators and derived constants; when local
+benchmark inputs are supplied, an additional remeasurement must reproduce the
+entire compact artifact, including the input hashes. A passing pinned-evidence
+check alone is not a fresh validation of unavailable raw inputs.
+
+Legacy `no_second_opinion` paired fields lacking explicit whole-arm availability
+are rejected by scoring and resolution. A raw null cannot establish whether the
+primary arm failed or deliberately read a blank: callers must re-pair raw inputs
+rather than silently substituting Qwen.
