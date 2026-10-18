@@ -16,9 +16,21 @@ from survey.records import (
     ReviewError,
     current_fields,
     digest,
+    physical_card_id,
     resolve_field,
 )
 from survey.review.scans import ScanSource
+
+FIELD_POSITIONS = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
+
+
+def printed_column(label: str) -> str:
+    position = FIELD_POSITIONS[label]
+    if position < FIELD_POSITIONS["Normal Household I."]:
+        return "Left column"
+    if position < FIELD_POSITIONS["Length of Residence"]:
+        return "Middle column"
+    return "Right column"
 
 
 def state(field: dict) -> str:
@@ -310,6 +322,9 @@ class ReviewService:
             if card["role"] == "coding-front"
         )
         details = {
+            "column": printed_column(resolved.label),
+            "household_count": len(resolved.record["dwelling"]["households"]),
+            "dwelling_flags": resolved.record["dwelling"].get("flags", []),
             "dwelling_id": self.dwelling_id(ref.region, resolved.record),
             "address": resolved.record["dwelling"].get("address", {}).get("value"),
             "region_title": self.region_titles.get(ref.region) or None,
@@ -350,6 +365,7 @@ class ReviewService:
                     if field_ref.item_id in self.references
                     else None,
                     "label": label,
+                    "column": printed_column(label),
                     "field_path": pointer,
                     "field": snapshot(field),
                     "review_state": state(field),
@@ -386,29 +402,27 @@ class ReviewService:
                     if candidate.pdf == card["image"]
                     and candidate.page == card.get("page")
                 ]
-                if refs:
-                    cards.append(
-                        {
-                            "card_id": refs[0].card_id,
-                            "household_index": index,
-                            "household_no": household.get("household_no", {}).get(
-                                "value"
+                cards.append(
+                    {
+                        "card_id": physical_card_id(
+                            ref.region, card["image"], card.get("page")
+                        ),
+                        "score": card.get("confidence"),
+                        "household_index": index,
+                        "household_no": household.get("household_no", {}).get("value"),
+                        "record_id": household.get("record_id"),
+                        "page": card.get("page"),
+                        "first_item_id": refs[0].item_id if refs else None,
+                        "next_item_id": next(
+                            (
+                                candidate.item_id
+                                for candidate in refs
+                                if not self.item_resolved.get(candidate.item_id, False)
                             ),
-                            "record_id": household.get("record_id"),
-                            "page": card.get("page"),
-                            "first_item_id": refs[0].item_id,
-                            "next_item_id": next(
-                                (
-                                    candidate.item_id
-                                    for candidate in refs
-                                    if not self.item_resolved.get(
-                                        candidate.item_id, False
-                                    )
-                                ),
-                                None,
-                            ),
-                        }
-                    )
+                            None,
+                        ),
+                    }
+                )
         details["cards"] = cards
         return details
 
@@ -447,33 +461,49 @@ class ReviewService:
         with self.store.lock:
             for key in list(self.progress):
                 self.batch_complete(*key)
+            all_diagnostics = [*self.diagnostics, *self.progress_diagnostics.values()]
+            diagnostic_index = {}
+            for position, diagnostic in enumerate(all_diagnostics):
+                key = (
+                    diagnostic.get("region") or None,
+                    diagnostic.get("batch") or None,
+                    diagnostic.get("page") or None,
+                )
+                diagnostic_index.setdefault(key, []).append((position, diagnostic))
+
+            def errors_for(
+                region: str, locations: set[tuple[str, int | None]]
+            ) -> list[dict]:
+                # Match broad region/batch errors as well as exact physical cards.
+                keys = {(None, None, None), (region, None, None)}
+                for image, page in locations:
+                    for scope in (None, region):
+                        keys.add((scope, image, None))
+                        keys.add((scope, image, page))
+                matches = {
+                    position: diagnostic
+                    for key in keys
+                    for position, diagnostic in diagnostic_index.get(key, [])
+                }
+                return [deepcopy(matches[position]) for position in sorted(matches)]
+
             diagnostics = [
                 deepcopy(d)
-                for d in [*self.diagnostics, *self.progress_diagnostics.values()]
+                for d in all_diagnostics
                 if not region or not d.get("region") or d["region"] == region
             ]
+            groups = self.dwelling_groups()
             rows = []
-            for identity, (record, refs) in self.dwelling_groups(region).items():
+            for identity, (record, refs) in groups.items():
+                if region and refs[0].region != region:
+                    continue
                 cards = self.coding_cards(record)
                 scores = [card.get("confidence") for card in cards]
                 count = sum(self.item_resolved.get(ref.item_id, False) for ref in refs)
-                errors = [
-                    d
-                    for d in diagnostics
-                    if (not d.get("region") or d["region"] == refs[0].region)
-                    and (
-                        not d.get("batch")
-                        or d["batch"] in {card["image"] for card in cards}
-                    )
-                    and (
-                        not d.get("page")
-                        or any(
-                            card["image"] == d.get("batch")
-                            and card.get("page") == d["page"]
-                            for card in cards
-                        )
-                    )
-                ]
+                errors = errors_for(
+                    refs[0].region,
+                    {(card["image"], card.get("page")) for card in cards},
+                )
                 histories = [
                     event
                     for _, field in current_fields(record)
@@ -544,32 +574,13 @@ class ReviewService:
                 row["status"] == "complete" for row in rows
             )
             all_regions = self.region_summary()
-            all_regions["queued_dwellings"] = len(self.dwelling_groups())
+            all_regions["queued_dwellings"] = len(groups)
             all_regions["completed_dwellings"] = sum(
                 all(self.item_resolved.get(ref.item_id, False) for ref in refs)
-                and not any(
-                    (
-                        not diagnostic.get("region")
-                        or diagnostic["region"] == refs[0].region
-                    )
-                    and (
-                        not diagnostic.get("batch")
-                        or diagnostic["batch"] in {ref.pdf for ref in refs}
-                    )
-                    and (
-                        not diagnostic.get("page")
-                        or any(
-                            ref.pdf == diagnostic.get("batch")
-                            and ref.page == diagnostic["page"]
-                            for ref in refs
-                        )
-                    )
-                    for diagnostic in [
-                        *self.diagnostics,
-                        *self.progress_diagnostics.values(),
-                    ]
+                and not errors_for(
+                    refs[0].region, {(ref.pdf, ref.page) for ref in refs}
                 )
-                for _, refs in self.dwelling_groups().values()
+                for _, refs in groups.values()
             )
             return {
                 "dwellings": rows,
