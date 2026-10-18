@@ -79,6 +79,8 @@ const test = base.extend<{ demo: string; app: string }>({
 });
 
 async function signIn(page: Page, name = 'Playwright Reviewer') {
+  // The first-use welcome dialog (#59) blocks Review; Vitest covers the dialog itself.
+  await page.addInitScript(() => localStorage.setItem('review-help-seen', 'true'));
   await page.goto('/');
   await page.getByLabel('Your name').fill(name);
   await page.getByRole('button', { name: 'Start reviewing' }).click();
