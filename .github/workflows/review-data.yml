@@ -1,7 +1,7 @@
 name: Validate review data
 on:
   push:
-    branches: [review-data]
+    branches: [review-data, review-data-acceptance]
   workflow_dispatch:
 jobs:
   validate:

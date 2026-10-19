@@ -107,10 +107,21 @@ class GitSync:
             },
         )
         if check and result.returncode:
-            if args[0] == "push" and any(
-                "[rejected]" in line
-                and ("(fetch first)" in line or "(non-fast-forward)" in line)
-                for line in result.stdout.splitlines()
+            stale_remote_ref = (
+                "[remote rejected]" in result.stdout
+                and re.search(
+                    r"cannot lock ref 'refs/heads/[^']+': is at [0-9a-f]+ but expected [0-9a-f]+",
+                    result.stdout + "\n" + result.stderr,
+                )
+                is not None
+            )
+            if args[0] == "push" and (
+                stale_remote_ref
+                or any(
+                    "[rejected]" in line
+                    and ("(fetch first)" in line or "(non-fast-forward)" in line)
+                    for line in result.stdout.splitlines()
+                )
             ):
                 raise ReviewError(
                     "push_rejected", "Data branch advanced during sharing", 409
