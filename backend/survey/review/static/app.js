@@ -62,7 +62,15 @@ async function openItem(id,retainInput=false) {
   $('source').textContent=`${current.source.pdf} · original page ${current.source.page}`;
   $('warnings').replaceChildren();
   for (const text of [...current.warnings,...current.diagnostics.map(d=>d.message)]) {const li=document.createElement('li');li.textContent=text;$('warnings').append(li);}
-  if (!retainInput) $('correction').value=current.field.value || '';
+  const oldControl=$('correction');
+  const control=document.createElement(current.field_kind==='text'?'textarea':'input');
+  control.id='correction';control.setAttribute('aria-describedby','correction-help');
+  control.maxLength=current.field_kind==='text'?10000:64;
+  if(current.field_kind==='text') control.rows=5;
+  else {control.pattern='[0-9]{1,64}';control.inputMode='numeric';control.autocomplete='off';}
+  control.value=retainInput?oldControl.value:(current.field.value ?? '');
+  control.oninput=()=>setBusy(busy);
+  oldControl.replaceWith(control);
   scanReady=false;
   const serial=++scanSerial;
   const scan=document.createElement('img');scan.id='scan';scan.alt='Original card scan';scan.style.width=`${zoom*100}%`;

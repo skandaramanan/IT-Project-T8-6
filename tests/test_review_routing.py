@@ -7,7 +7,7 @@ import pytest
 
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME
 from survey.extraction.record import build_field
-from survey.review.routing import needs_review
+from survey.review.routing import AGREE_CONFIDENCE, needs_review
 
 
 def field(status: str, confidence: float | None) -> dict:
@@ -16,7 +16,7 @@ def field(status: str, confidence: float | None) -> dict:
 
 def test_confident_clean_field_is_left_alone():
     """AC1."""
-    assert needs_review(field("ok", 0.97)) is False
+    assert needs_review(field("ok", AGREE_CONFIDENCE)) is False
 
 
 @pytest.mark.parametrize("confidence", [0.91, 0.75, 0.74, 0.14, 0.0])
@@ -33,7 +33,7 @@ def test_missing_score_is_flagged():
 @pytest.mark.parametrize("status", ["no_data", "illegible", "damaged", "omitted"])
 @pytest.mark.parametrize("confidence", [0.97, 1.0, 0.5, None])
 def test_unclean_status_is_always_flagged(status, confidence):
-    """AC3: status decides, whatever the score. Both-blank fields score 0.97."""
+    """AC3: status decides, whatever the score. Both-blank fields retain their non-ok status."""
     assert needs_review(field(status, confidence)) is True
 
 
@@ -51,3 +51,19 @@ def test_freshly_built_fields_are_flagged_today():
     spec = FIELD_SCHEMA_BY_NAME["Municipality"]
     assert needs_review(build_field(spec, "27")) is True
     assert needs_review(build_field(spec, "")) is True
+
+
+def test_cutoff_tracks_current_calibration_and_rejects_just_below():
+    assert needs_review(field("ok", AGREE_CONFIDENCE - 0.001)) is True
+    assert needs_review(field("ok", AGREE_CONFIDENCE)) is False
+    assert needs_review(field("ok", 1.0)) is False
+
+
+def test_every_calibrated_nonagreement_and_single_arm_requires_review():
+    from survey.confidence.field import CONFIDENCE_BY_CLASS, STANDALONE_ACCURACY
+
+    for name, score in CONFIDENCE_BY_CLASS.items():
+        if name in {"disagree", "one_blank"}:
+            assert needs_review(field("ok", score)) is True
+    for score in STANDALONE_ACCURACY.values():
+        assert needs_review(field("ok", score)) is True

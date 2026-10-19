@@ -15,7 +15,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 REPO = Path(__file__).resolve().parents[1]
 
 
-def prepare_release(output: Path):
+def prepare_release(output: Path, *, allow_dirty: bool = False):
     output = output.resolve()
     if output.exists() or output.is_relative_to(REPO):
         raise ValueError("Choose a new ZIP path outside the source checkout")
@@ -53,6 +53,8 @@ def prepare_release(output: Path):
             ["git", "-C", str(REPO), "status", "--porcelain"], text=True
         ).strip()
     )
+    if dirty and not allow_dirty:
+        raise ValueError("Working tree is dirty; commit changes or pass --allow-dirty")
     manifest = {
         "base_revision": revision,
         "working_tree_dirty": dirty,
@@ -79,8 +81,11 @@ def prepare_release(output: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--allow-dirty", action="store_true", help="Package uncommitted changes"
+    )
     args = parser.parse_args()
     try:
-        prepare_release(args.output)
+        prepare_release(args.output, allow_dirty=args.allow_dirty)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.error(str(error))

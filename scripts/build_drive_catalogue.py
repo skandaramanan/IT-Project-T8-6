@@ -1,17 +1,19 @@
-"""Rebuild pinned public scan metadata after checking the local extraction source.
+"""Rebuild public scan mappings and metadata from authoritative Google Drive files.
 
 Requires SURVEY_REVIEW_DRIVE_API_KEY. Never downloads or changes PDFs.
-A mismatch aborts the entire build, leaving the existing catalogue unchanged.
+Local archival PDFs are never used to establish source metadata.
 """
 
 import argparse
-import hashlib
 import json
 import os
+import re
+import sys
 from pathlib import Path
 from threading import Event
 
 from survey.cli import load_env
+from survey.records import safe_pdf
 from survey.review.drive import CATALOGUE, DriveClient
 
 ROOT_ID = "1z8_i1IYzUCZYtE5NxB9xQ8kAQ_rh-DMV"
@@ -36,15 +38,16 @@ def children(client, folder_id, resource_key=None):
             break
 
 
-def build(root, client):
+def build(root=None, client=None):
+    # Keep build(root, client) compatible with older maintenance callers.
+    if client is None:
+        client = root
     batches = []
     regions = set()
     for folder in children(client, ROOT_ID):
         region = folder["name"]
-        if (
-            folder["mimeType"] != "application/vnd.google-apps.folder"
-            or not (len(region) == 6 and region.isdigit())
-            or not (root / region).is_dir()
+        if folder["mimeType"] != "application/vnd.google-apps.folder" or not (
+            len(region) == 6 and region.isdigit()
         ):
             continue
         if region in regions:
@@ -58,16 +61,13 @@ def build(root, client):
         if len(files) != 1:
             raise ValueError(f"Region {region} must contain exactly one PDF")
         pdf = files[0]
-        # Bind the Drive file to the existing extraction source, never a guessed file.
-        local = root / region / pdf["name"]
-        if not local.resolve().is_relative_to((root / region).resolve()):
-            raise ValueError(f"Unsafe PDF filename for {region}")
-        with local.open("rb") as stream:
-            checksum = hashlib.file_digest(stream, "md5").hexdigest()
-        if local.stat().st_size != int(pdf["size"]) or checksum != pdf["md5Checksum"]:
-            raise ValueError(
-                f"Region {region}: Drive differs from local extraction source; reconcile before rebuilding"
-            )
+        if (
+            not safe_pdf(pdf["name"])
+            or not re.fullmatch(r"[0-9]{1,20}", str(pdf.get("size", "")))
+            or int(pdf["size"]) <= 0
+            or not re.fullmatch(r"[0-9a-f]{32}", str(pdf.get("md5Checksum", "")))
+        ):
+            raise ValueError(f"Region {region}: invalid Drive PDF metadata")
         batches.append(
             {
                 "region": region,
@@ -75,12 +75,12 @@ def build(root, client):
                 "file_id": pdf["id"],
                 "pdf": pdf["name"],
                 "size": int(pdf["size"]),
-                "md5": checksum,
+                "md5": pdf["md5Checksum"],
                 "resource_key": pdf.get("resourceKey"),
             }
         )
     if not batches:
-        raise ValueError("No region PDFs matched the local scan root")
+        raise ValueError("No region PDFs found in Drive")
     return {
         "version": 1,
         "root_id": ROOT_ID,
@@ -90,16 +90,22 @@ def build(root, client):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scan_root", type=Path)
+    parser.add_argument(
+        "scan_root", type=Path, nargs="?", help="Deprecated; local PDFs are not checked"
+    )
     parser.add_argument("--output", type=Path, default=CATALOGUE)
     args = parser.parse_args()
+    if args.scan_root is not None:
+        print(
+            "The scan_root argument is deprecated and ignored; Drive is authoritative.",
+            file=sys.stderr,
+        )
     load_env()
     try:
         catalogue = build(
-            args.scan_root.resolve(),
-            DriveClient(os.environ.get("SURVEY_REVIEW_DRIVE_API_KEY")),
+            client=DriveClient(os.environ.get("SURVEY_REVIEW_DRIVE_API_KEY")),
         )
         args.output.write_text(json.dumps(catalogue, indent=2) + "\n", encoding="utf-8")
     except (OSError, ValueError, KeyError) as error:
         parser.error(str(error))
-    print(f"Pinned {len(catalogue['batches'])} verified region PDFs in {args.output}")
+    print(f"Recorded {len(catalogue['batches'])} Drive region PDFs in {args.output}")

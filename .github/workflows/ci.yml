@@ -26,6 +26,33 @@ jobs:
           name: reviewer-frontend
           path: frontend/dist
 
+  # The built reviewer in Chromium against the real backend, on synthetic demo
+  # data. Playwright's webServer builds the page, seeds the demo and starts it.
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-traces
+          path: frontend/test-results
+
   check:
     runs-on: ubuntu-latest
     steps:
@@ -80,4 +107,4 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       # Synthetic scans and a local bare Git remote, including Windows file locks.
-      - run: uv run pytest tests/test_review_records.py tests/test_review_service.py tests/test_review_text.py tests/test_review_dwellings.py tests/test_review_scans.py tests/test_review_rerun.py tests/test_review_sync.py tests/test_review_api.py tests/test_review_assets.py tests/test_review_frontend.py tests/test_review_benchmark.py tests/test_cli.py tests/test_record.py tests/test_output_schema.py
+      - run: uv run pytest tests/test_review_records.py tests/test_review_service.py tests/test_review_text.py tests/test_review_dwellings.py tests/test_review_scans.py tests/test_review_drive.py tests/test_review_rerun.py tests/test_review_sync.py tests/test_review_api.py tests/test_review_queue_integration.py tests/test_review_flags.py tests/test_review_flags_examples.py tests/test_review_routing.py tests/test_review_assets.py tests/test_review_frontend.py tests/test_review_benchmark.py tests/test_cli.py tests/test_record.py tests/test_output_schema.py

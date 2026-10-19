@@ -10,6 +10,7 @@ export interface ScanBatchStatus {
   automatic_download: boolean;
   active_region: string | null;
   local_file_exists: boolean;
+  local_ready?: boolean;
   drive_url: string;
   error: { code: string; message: string } | null;
 }
@@ -84,19 +85,20 @@ export default function ScanBatch({ region, onReady }: { region: string; onReady
 
   async function importPdf(file: File) {
     if (!batch) return;
-    if (file.size !== batch.size) {
-      setError(`Choose the original ${batch.pdf} (${megabytes(batch.size)}). This file has a different size.`);
+    if (!file.size || file.size > 1024 ** 3) {
+      setError('Choose a PDF between 1 byte and 1 GiB.');
       return;
     }
     setBusy(true);
     setUploading(true);
+    setBatch({ ...batch, size: file.size, downloaded: 0, state: 'importing' });
     awaitingReady.current = true;
     setError('');
     const controller = new AbortController();
     upload.current = controller;
     try {
       const response = await fetch(`/api/scan-batches/${encodeURIComponent(region)}/import`, {
-        method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file, signal: controller.signal,
+        method: 'POST', headers: { 'Content-Type': 'application/pdf', 'X-Scan-Size': String(file.size) }, body: file, signal: controller.signal,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error?.message ?? 'Could not import the PDF.');
@@ -110,34 +112,47 @@ export default function ScanBatch({ region, onReady }: { region: string; onReady
     }
   }
 
+  async function openFolder() {
+    setError('');
+    setBusy(true);
+    try {
+      await api(`/api/scan-batches/${encodeURIComponent(region)}/open-folder`, {});
+    } catch (e) {
+      if (scope.current === region) setError(e instanceof Error ? e.message : 'Could not open the scan folder.');
+    } finally { if (scope.current === region) setBusy(false); }
+  }
+
   if (!batch && !error) return null;
   const active = transferring(batch?.state) || uploading;
   const otherActive = batch?.active_region && batch.active_region !== region;
   return <section className="scan-batch" aria-label="Scans for this region">
     {batch && <>
-      <strong>{batch.state === 'ready' ? 'Scans ready' : active ? 'Preparing scans…' : 'Scans not ready'}</strong>
+      <strong>{active ? 'Preparing scans…' : batch.local_ready || batch.state === 'ready' ? 'Scans ready' : 'Scans not ready'}</strong>
       <span className="scan-batch-file">{batch.pdf} · {megabytes(batch.size)}</span>
       {active && <div role="status">
         <progress aria-label="Scan transfer progress" value={batch.downloaded} max={batch.size} />
-        <span>{batch.state === 'validating' ? 'Checking the original PDF…' : `${megabytes(batch.downloaded)} of ${megabytes(batch.size)}`}</span>
+        <span>{batch.state === 'validating' ? 'Checking PDF…' : `${megabytes(batch.downloaded)} of ${megabytes(batch.size)}`}</span>
       </div>}
-      {batch.error && !active && batch.state !== 'ready' && <p role="alert">{batch.error.message}</p>}
+      {batch.error && !active && !batch.local_ready && batch.state !== 'ready' && <p role="alert">{batch.error.message}</p>}
       {otherActive && <p role="status">A scan transfer is running for region {batch.active_region}.</p>}
       <div className="scan-batch-actions">
-        {batch.state !== 'ready' && !active && <button disabled={busy || !batch.automatic_download || !!otherActive || batch.local_file_exists} onClick={() => void action('download')}>
+        {!active && !batch.local_file_exists && <button disabled={busy || !batch.automatic_download || !!otherActive} onClick={() => void action('download')}>
           {batch.state === 'failed' || batch.state === 'cancelled' ? 'Retry download' : 'Download scans'}
         </button>}
         {active && <button disabled={busy && !uploading} onClick={() => void action('cancel')}>Cancel transfer</button>}
         <a href={batch.drive_url} target="_blank" rel="noopener noreferrer">Open in Drive</a>
-        {batch.state !== 'ready' && <>
-          <button disabled={busy || active || !!otherActive || batch.local_file_exists} onClick={() => input.current?.click()}>Import downloaded PDF</button>
+        {!batch.local_file_exists && <>
+          <button disabled={busy || active || !!otherActive} onClick={() => input.current?.click()}>Import downloaded PDF</button>
           <input ref={input} hidden type="file" accept="application/pdf,.pdf" aria-label="Choose downloaded PDF" onChange={(event) => {
             const file = event.target.files?.[0]; event.target.value = ''; if (file) void importPdf(file);
           }} />
         </>}
       </div>
-      {!batch.automatic_download && batch.state !== 'ready' && <p>Open the PDF in Drive, download it, then import it here. Automatic downloads need a configured Drive API key.</p>}
-      {batch.local_file_exists && batch.state !== 'ready' && !active && <p>A different PDF exists in the scan folder. Move it aside before downloading or importing the original.</p>}
+      {!batch.automatic_download && !batch.local_file_exists && <p>Open the PDF in Drive, download it, then import it here. Automatic downloads need a configured Drive API key.</p>}
+      {batch.local_file_exists && !active && <p>{!batch.local_ready && batch.state !== 'ready' && <>The existing PDF cannot be used. Move it out of the scan folder before downloading or importing another copy.{' '}</>}
+        <button disabled={busy} onClick={() => void openFolder()}>Open scan folder</button>
+      </p>}
+      {!batch.local_file_exists && <p>Manual imports are checked for a readable PDF and valid page references; their bytes are not verified against Drive.</p>}
     </>}
     {error && <p role="alert">{error}</p>}
   </section>;

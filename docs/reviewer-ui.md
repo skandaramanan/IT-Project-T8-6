@@ -46,10 +46,10 @@ Keep the proposed three-PR split:
   provisional. D022 and IT-109's newer client-confirmation comment settle it.
   The UI takes the supplied order; it does not implement routing or move
   in-progress dwellings ahead of lower-scoring ones as the mockup suggests.
-- #53's current `build_flags` traverses front/person fields too, although its
-  IT-109 comment says coding-only. #52 rejects those as unsupported diagnostics.
-  They stay visible and unresolved here; supplying only supported C1/C2 flags
-  is an upstream queue responsibility, not a silent frontend filter.
+- IT-109's coding-only generator fixes merged as #60 and are included here.
+  Generated assignments use the shared record reader and printed field order.
+  Explicit/manual flags can still contain unsupported entries; those remain
+  visible diagnostics rather than being silently filtered by the frontend.
 - Standup 17 predates #52's fixes to performance, disjoint-region sharing and
   the schema clash. One backend owns each checkout; separate checkouts can
   share different regions. Same-region changes stop for manual reconciliation,
@@ -245,9 +245,9 @@ text is kept literal when opened in spreadsheet software.
 
 - #52 is merged and provides the store/save/sync implementation. Linear's IT-111/112/113
   database wording/status remains older than D029 and the implementation.
-- #53 (IT-109) still needs its review fixes/rebase and coding-only flags. #54 (IT-110)
-  is stacked on it. Unsupported supplied flags are surfaced; the frontend does not
-  silently discard them or rebuild routing.
+- IT-109's generator fixes and labelled queue examples are integrated from #60.
+  Generated-assignment HTTP lifecycle tests are described in review-backend.md.
+  Unsupported supplied flags remain visible; the frontend does not rebuild routing.
 - #51 (IT-123) is open. Its published data count changed from 3,590 to 3,717; read
   counts from data. The other agent's local schema 0.5 follow-up allows null/lettered
   IDs and dwelling flags. Its schema predates review metadata: it must be integrated
@@ -307,8 +307,9 @@ both fixes; the focused backend suite passed 62 tests and the frontend suite 25.
 
 ## PR 3: magnifier, help, history, finish and laptop review
 
-PR 3 is a local branch `skandar/it-115-reviewer-polish-pr-3`, stacked on
-PR 2 (`0eaea42`, GitHub #57). PR 1 and PR 2 branches remain unchanged.
+PR 3 is [GitHub #59](https://github.com/skandaramanan/IT-Project-T8-6/pull/59),
+from `skandar/it-115-reviewer-polish-pr-3`. PRs #56 and #57 are merged; #59
+builds on their working reviewer and dwelling queue.
 
 The scan viewer fits the entire original card into its viewport using the image's
 real dimensions. Use +/− to zoom, or drag with the mouse to move an enlarged scan.
@@ -371,7 +372,8 @@ the complete name remains in every saved audit decision.
 - IT-116 has no findings yet. The unaided non-technical participant test and
   independent manual UI acceptance remain required; developer/subagent checks
   cannot claim NFR-09 or physical Windows desktop acceptance.
-- #53 still needs production queue fixes/integration. #51 now retains 5,356
+- Historical PR 3 boundary: the queue fixes subsequently merged as #60 and are
+  included here. Full dual-corpus acceptance is still pending. #51 retains 5,356
   records/5,411 households and schema 0.5.0; this stack's 0.4 schema must integrate
   with it before validating that latest corpus. Counts are always data-derived.
   The old PR 2 load comparison remains a historical measurement of its cited commit.
@@ -433,6 +435,50 @@ controls (source/geometry are covered by component tests). All review tests used
 disposable data/local remotes; that reviewer's server/tab and viewport were cleaned up.
 
 
+### Follow-up fixes from teammate review
+
+Changing reviewer clears the previous session's saved-decision Undo banner and
+scan evidence. Undo remains an append-only action attributed to the current
+reviewer; this does not add an ownership restriction to the backend's history.
+Save and Exit now applies the same session-expiry, version-conflict and
+reconciliation handling as other actions. Ordinary sharing failures still explain
+that confirmed decisions remain saved locally.
+
+History distinguishes Accept, Correct, Blank and Illegible, and explicitly marks
+the decisions targeted by undo events. A column containing no queued fields stays
+expanded as context, rather than claiming "0 decided". Unqueued card tabs remain
+disabled; their React keys include their household position, so optional cards
+without a usable page cannot collide in the tab list. The API and item references
+share one physical-card ID helper, without changing existing IDs.
+
+Continue skips blocked dwellings. If opening a dwelling discovers that none of its
+pending fields can be acted on, that dwelling stays visible as blocked for this
+region visit and Continue moves to another dwelling. Selecting its row explicitly
+allows a retry after the scan or data problem is fixed. Completion summaries index
+diagnostics once per request, rather than scanning the whole diagnostic list for
+each completed dwelling while holding the save lock.
+
+The backend additions in PR 3 are display context: printed column, household
+count, dwelling flags, card scores and coding-card tabs even when no field on a
+card is queued. They do not expand the supported mutation actions. Printed-column
+text describes the fixed form layout; the reviewer still finds the field on the
+whole scan. There is no automatic field detection, crop, highlight or zoom.
+Reconcile this textual guidance with IT-115's scope wording before full-ticket
+acceptance; this implementation note does not claim new product-owner approval.
+
+The low-fi design includes history and queue averages; hi-fi adds explicit
+Save and Exit and multi-household context. Keep these design references and the
+API changes in the PR description. Independent TC-M07, IT-116, production flag
+integration (#60), browser-test integration (#62), data-branch rollout and physical
+Windows acceptance retain their separate acceptance requirements.
+
+Follow-up validation: Ruff lint/format and whitespace checks pass; the full backend
+suite reports **705 passed, 17 skipped**, with the existing Starlette/httpx
+warning. The frontend reports **51 passing tests**, and the TypeScript/Vite build
+passes. New regressions cover reviewer changes, finish-time session/conflict
+errors, context-only columns, unqueued tabs, blocked Continue navigation, history
+labels/undo targets, and bounded diagnostic reads during completion summaries.
+
 ## IT-113 text continuation (14 October 2026)
 
 On `eric/it-113-build-the-review-queue-data-store-follow-up`, the existing stack is
@@ -460,13 +506,20 @@ Choose a region and use **Download scans** in the queue. Progress, Cancel and
 Retry concern only the region's original PDF; review completion still comes from
 saved field decisions. Downloaded scans remain available after restart. If the
 transfer fails or automatic downloading is not configured, use **Open in Drive**,
-download the PDF, then **Import downloaded PDF**. The imported bytes must match
-the approved original. The backend never overwrites an existing different PDF.
+download the PDF, then **Import downloaded PDF**. Manual imports are checked for
+completeness, PDF readability and page bounds,
+without requiring a Drive checksum. A usable local PDF is used directly, with
+Download and Import hidden. If the existing PDF is unusable, move it out of its
+region folder before downloading or importing another copy. Existing files are
+never overwritten, and no automatic backups are created.
+When a local PDF exists, **Open scan folder** opens its region folder in Finder,
+File Explorer or the system file manager. If opening fails, the error includes
+the folder path so you can open it manually.
 
 No Google login is required while the scans remain shared with anyone with the
 link. Automatic downloading requires the backend's optional Drive API key;
 manual import does not. Extracted records and supplied review flags must already
-be configured. See [backend setup and catalogue reconciliation](review-backend.md#download-scans-for-one-region),
-including the three known differing source versions. Build the React frontend
-to make these controls available; the plain integration fallback remains for
+be configured. See [backend setup and Drive catalogue refresh](review-backend.md#download-scans-for-one-region).
+Drive is authoritative; historical local hashes do not restrict transfers.
+Build the React frontend to make these controls available; the plain integration fallback remains for
 backend testing.

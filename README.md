@@ -127,6 +127,20 @@ The coverage table lists, per module, the share of lines and branches the
 tests run and the line numbers they miss. In CI it also appears on the
 run's Summary page. It is reported, not enforced.
 
+The reviewer UI has two more layers, both in CI. `npm test` runs the Vitest
+suite against a fake API. `npm run e2e` builds the page and runs Playwright in
+Chromium against the real backend, each test on its own synthetic demo and
+server: the correct/undo/share/reload journey, a lost save response, two
+reviewers on one field, a missing scan, a failed share and a lost session.
+
+```bash
+cd frontend
+npm ci
+npx playwright install chromium   # once
+npm test
+npm run e2e
+```
+
 Some tests skip on purpose, and pytest lists them as `s`:
 
 | Test | Skips unless |
@@ -240,13 +254,24 @@ reviewer's correction that way stops instead.
 ### Building the review queue
 
 ```bash
-uv run survey flags results/*.jsonl > flags.jsonl
+uv run survey flags results > flags.jsonl
 ```
 
-One line per field that needs review (D022), least sure card first, in the
-format `survey review --flags` reads. Accepted and corrected fields are left
-out. Each file must be named after its region (`216412.jsonl`), as
-`survey extract` writes it.
+One line per coding-card field that needs review (D022), in the format
+`survey review --flags` reads: least sure card first, each card's fields in
+form order. Accepted and corrected fields are left out. Takes files or
+folders; each file must be named after its region (`216412.jsonl`). A
+household it can't flag is reported and skipped, and the command exits 1.
+Skipped-card diagnostics go to stderr. Duplicate card ownership must still be
+repaired in the source records before launching the review tool: its backend
+rejects ambiguous datasets even when the flags file contains only valid cards.
+Regenerate the flags after repairing the records.
+
+For handover, generate from the matching review-data checkout's `results`
+directory and retain the flags file across launches. Decisions and audit history
+are saved in regional records; flags define a stable assignment and are not
+rewritten as work completes. See [the review runbook](docs/review-backend.md#generate-and-retain-a-review-assignment)
+for preparation, regeneration and integration-test instructions.
 
 ## Contributing
 
@@ -319,3 +344,49 @@ see [docs/review-backend.md](docs/review-backend.md) and
 [D029](docs/decisions/D029-review-persistence.md). Live use requires matching
 extracted records/flags, branch provisioning/rules/credentials, and Windows
 acceptance. Use one dataset writer; stop extraction while reviewing.
+
+### Merge the two saved runs (IT-125, offline)
+
+**19 October status:** PRs #63/#64 and Jacob’s refreshed 216436 raw
+handoff are integrated. The local publication is `results/<region>.jsonl`:
+5,375 dwellings / 5,430 coding sources across 44 nonempty regions; front-only
+216461 accounts for the 45th region. All 34 protected field payloads are
+preserved. Every stored card has a numeric score; uncalibrated fronts/backs
+use zero as a no-evidence marker and supplementary handwriting stays as-is.
+See [the integration evidence](docs/runs/it125-216436-integration.md).
+
+The independent Qwen export stays in
+`results/qwen2.5-vl-server-2000000px/`. The [merge report](docs/runs/it125-merge-report.md)
+contains per-region agreement, review eligibility, calibration limitations and
+known C3/S3/R1 sample counts. Unsupported forms are outside the agreed scored
+scope; these counts do not claim full-corpus prevalence. Review queue behaviour
+and handwriting priority belong to IT-109/IT-115.
+
+```bash
+uv run python scripts/merge_scored_results.py \
+  --primary data/it125-inputs-after216436/results \
+  --qwen-cache data/it125-closeout-20261019/qwen-cache \
+  --output data/it125-new-candidate
+uv run survey validate-results data/it125-new-candidate
+uv run python scripts/report_scored_results.py \
+  --dataset data/it125-new-candidate --output data/it125-new-report
+```
+
+The primary snapshot includes the source-verified Gemini additions. The isolated
+Qwen cache tree uses the fresh 216436 handoff for that entire region and the
+original handoff for the other regions; extracting the replacement over old
+caches is unsafe. Both original archives and the original Gemini snapshot are
+preserved. The completed candidate, pairing audit and repeat build are in
+`data/it125-closeout-20261019/`. Optional report `--runtime` and `--evidence`
+arguments attach measured runtime and candidate-specific verification; report
+generation never invents validation or publication evidence.
+
+The output must be separate from all inputs and new or empty. `--primary` can
+also name a reviewed Gemini dataset: human decisions and their full payloads
+are preserved. Raw caches are required for every published source; no model
+clients are constructed. A missing or incompatible configuration refuses the
+merge. The supplied archive was safety-checked and matched to the separate
+extraction above; `--qwen-cache` can point to another safely extracted copy.
+Pairing evidence remains beside the candidate in `pairing/`, outside Git.
+Original inputs and caches are unchanged. A normal single-extractor rerun does
+not recreate paired confidence; run this offline merge again after extraction.

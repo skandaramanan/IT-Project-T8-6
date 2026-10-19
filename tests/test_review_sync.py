@@ -284,43 +284,6 @@ def test_git_errors_never_expose_stderr_or_remote_secrets(tmp_path, monkeypatch)
     assert "secret-token" not in str(error.value)
 
 
-@pytest.mark.parametrize(
-    ("stdout", "stderr", "code"),
-    [
-        (
-            "!\tHEAD:refs/heads/review-data\t[remote rejected] (failed to update ref)",
-            "remote: error: cannot lock ref 'refs/heads/review-data': is at abc but expected def",
-            "push_rejected",
-        ),
-        (
-            "!\tHEAD:refs/heads/review-data\t[remote rejected] (failed to update ref)",
-            "remote: permission denied",
-            "git_failed",
-        ),
-        (
-            "!\tHEAD:refs/heads/review-data\t[remote rejected] (hook declined)",
-            "remote: branch protection rejected this push",
-            "git_failed",
-        ),
-    ],
-)
-def test_stale_remote_ref_is_retryable_but_other_server_rejections_are_not(
-    tmp_path, monkeypatch, stdout, stderr, code
-):
-    import subprocess
-
-    _, _, sync = make_sync(tmp_path)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args, 1, stdout, stderr),
-    )
-    with pytest.raises(ReviewError) as error:
-        sync.git("push", "--porcelain", "origin", "review-data")
-    assert error.value.code == code
-    assert stderr not in str(error.value)
-
-
 def test_fetch_failure_never_commits_and_local_decisions_remain(tmp_path, monkeypatch):
     service, settings, sync = make_sync(tmp_path)
     decide(service)

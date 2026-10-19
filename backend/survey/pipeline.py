@@ -63,11 +63,11 @@ from survey.extraction.json_extraction import (
 )
 from survey.extraction.record import (
     FIELD_MAP,
-    SCHEMA_VERSION,
     build_record_id,
     fill_identity,
     identity_of,
     normalise,
+    review_schema_version,
 )
 from survey.extraction.survey_front import build_survey_front
 from survey.records import current_fields, safe_pdf, schema_errors, write_atomic
@@ -1041,9 +1041,7 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
             else:
                 destination[last] = deepcopy(field)
             if review:
-                new["schema_version"] = (
-                    "0.5.0" if new["schema_version"] == "0.5.0" else SCHEMA_VERSION
-                )
+                new["schema_version"] = review_schema_version(new["schema_version"])
         except (KeyError, IndexError) as error:
             where = "/".join(map(str, path))
             raise MergeRefused(

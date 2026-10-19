@@ -365,3 +365,63 @@ def test_unqueued_card_without_page_cannot_block_supported_field(tmp_path, page)
     assert item["cards"][1]["page"] is None
     assert item["cards"][1]["first_item_id"] is None
     assert "accept" in item["allowed_actions"]
+
+
+@pytest.mark.parametrize(
+    "scope", ["global", "region", "batch", "page", "other-page", "other-region"]
+)
+def test_completion_diagnostics_keep_their_physical_scope(tmp_path, scope):
+    service, _ = setup_review(tmp_path)
+    service.replace_queue([refs()[0]], [])
+    decide(service, refs()[0], action="accept")
+    diagnostic = {"code": "test_block", "message": "Needs reconciliation"}
+    if scope != "global":
+        diagnostic["region"] = "other" if scope == "other-region" else "demo"
+    if scope in {"batch", "page", "other-page"}:
+        diagnostic["batch"] = "synthetic.pdf"
+    if scope in {"page", "other-page"}:
+        diagnostic["page"] = 1 if scope == "page" else 99
+    service.diagnostics = [diagnostic]
+    queue = service.dwellings("demo")
+    blocked = scope not in {"other-page", "other-region"}
+    assert (queue["dwellings"][0]["status"] == "blocked") == blocked
+    assert queue["all_regions"]["completed_dwellings"] == (0 if blocked else 1)
+
+
+def test_completion_indexes_diagnostics_once_instead_of_per_dwelling(
+    tmp_path, monkeypatch
+):
+    service, _ = setup_review(tmp_path)
+    records = service.store.regions["demo"][0]
+    template = deepcopy(records[0])
+    references = []
+    for index in range(25):
+        record = deepcopy(template)
+        for household in record["dwelling"]["households"]:
+            for card in household["cards"]:
+                card["page"] += index * 10
+        if index == 0:
+            records[0] = record
+        else:
+            records.append(record)
+        references.append(replace(refs()[0], page=1 + index * 10))
+    service.store.cards["demo"] = card_index(records)
+    service.replace_queue(references, [])
+    # Exercise the completion path using cached decisions, without rendering scans.
+    service.item_resolved = {ref.item_id: True for ref in references}
+    monkeypatch.setattr(service, "batch_complete", lambda *_args: None)
+
+    class CountedDiagnostic(dict):
+        reads = 0
+
+        def get(self, key, default=None):
+            type(self).reads += 1
+            return super().get(key, default)
+
+    service.diagnostics = [
+        CountedDiagnostic(region="other", code="test_block", message="Other region")
+        for _ in range(200)
+    ]
+    queue = service.dwellings("demo")
+    assert queue["all_regions"]["completed_dwellings"] == 25
+    assert CountedDiagnostic.reads < 2000

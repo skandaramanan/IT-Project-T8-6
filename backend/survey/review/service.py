@@ -12,17 +12,29 @@ from survey.extraction.card_fields import (
     SURVEY_FRONT_DWELLING_FIELDS,
 )
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
-from survey.extraction.survey_front import record_key
+from survey.extraction.record import review_schema_version
 from survey.records import (
     RecordStore,
     Reference,
     ReviewError,
     current_fields,
     digest,
+    physical_card_id,
     resolve_field,
 )
+from survey.review.fields import field_pointers
 from survey.review.scans import ScanSource
+
+FIELD_POSITIONS = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
+
+
+def printed_column(label: str) -> str:
+    position = FIELD_POSITIONS[label]
+    if position < FIELD_POSITIONS["Normal Household I."]:
+        return "Left column"
+    if position < FIELD_POSITIONS["Length of Residence"]:
+        return "Middle column"
+    return "Right column"
 
 
 def state(field: dict) -> str:
@@ -139,6 +151,10 @@ class ReviewService:
                 )
                 if done:
                     self.scans.probe(ref)
+                    if resolved.front_page is not None:
+                        self.scans.probe(
+                            Reference(ref.region, ref.pdf, resolved.front_page, "/")
+                        )
             except ReviewError as error:
                 done = False
                 self.progress_diagnostics[ref.item_id] = {
@@ -335,22 +351,12 @@ class ReviewService:
             and card["image"] == ref.pdf
             and card.get("page") == ref.page
         )
-        positions = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
-
-        def column(label):
-            if resolved.descriptor.role != "coding-front":
-                return (
-                    "Interview notes" if resolved.group == "notes" else "Survey front"
-                )
-            position = positions[label]
-            if position < positions["Normal Household I."]:
-                return "Left column"
-            if position < positions["Length of Residence"]:
-                return "Middle column"
-            return "Right column"
-
         details = {
-            "column": column(resolved.label),
+            "column": printed_column(resolved.label)
+            if resolved.descriptor.role == "coding-front"
+            else "Interview notes"
+            if resolved.group == "notes"
+            else "Survey front",
             "household_count": len(resolved.record["dwelling"]["households"]),
             "dwelling_flags": resolved.record["dwelling"].get("flags", []),
             "dwelling_id": self.dwelling_id(ref.region, resolved.record),
@@ -366,38 +372,37 @@ class ReviewService:
             return details
         fields = []
         index = resolved.record["dwelling"]["households"].index(resolved.household)
-        pointers = []
-        for field_spec in FIELD_SCHEMA:
-            label = field_spec.name
-            key, group = FIELD_MAP[label]
-            if label == "Municipality" and "municipality" in resolved.household:
-                group = "household"
-            if group in {"dwelling", "house"} and index != 0:
-                continue
-            pointers.append(
-                (
-                    label,
-                    (
-                        f"/dwelling/{key}"
-                        if group == "dwelling"
-                        else f"/dwelling/house/{key}"
-                        if group == "house"
-                        else f"/dwelling/households/{index}/{key}"
-                        if group == "household"
-                        else f"/dwelling/households/{index}/{group}/{key}"
-                    ),
-                )
+        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
+        household_ref = Reference(
+            ref.region,
+            ref.pdf,
+            ref.page,
+            f"/dwelling/households/{index}/municipality",
+        )
+        # Generated assignments flag the shared alias on the first coding card.
+        # Prefer it when the household copy is not independently queued.
+        prefer_shared = (
+            index == 0
+            and shared.item_id in self.references
+            and household_ref.item_id not in self.references
+        )
+        pointers = [
+            (label, path)
+            for label, path, _ in field_pointers(
+                index,
+                household_municipality=(
+                    "municipality" in resolved.household and not prefer_shared
+                ),
+                include_shared=index == 0,
             )
-        for label in SURVEY_FRONT_DWELLING_FIELDS:
-            key = record_key(label)
-            pointers.append(
-                (
-                    label,
-                    f"/dwelling/{key}"
-                    if key in {"address", "families_in_dwelling"}
-                    else f"/dwelling/handwritten/{key}",
-                )
-            )
+        ]
+        if (
+            index == 0
+            and shared.item_id in self.references
+            and not any(pointer == shared.field_path for _, pointer in pointers)
+        ):
+            # Explicit assignments can include both independently stored copies.
+            pointers.insert(0, ("Municipality", shared.field_path))
         pointers.extend(
             ("Interview Notes", f"/dwelling/notes/{n}/text")
             for n in range(len(resolved.record["dwelling"].get("notes", [])))
@@ -417,29 +422,15 @@ class ReviewService:
                     if field_ref.item_id in self.references
                     else None,
                     "label": label,
-                    "column": column(label),
+                    "column": printed_column(label)
+                    if candidate.descriptor.role == "coding-front"
+                    else "Interview notes"
+                    if candidate.group == "notes"
+                    else "Survey front",
                     "field_path": pointer,
                     "field": snapshot(field),
                     "review_state": state(field),
                 }
-            )
-        # Keep supplied flags for the legacy shared alias actionable as well.
-        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
-        if (
-            index == 0
-            and shared.item_id in self.references
-            and not any(field["field_path"] == shared.field_path for field in fields)
-        ):
-            field = self.store.current(shared)[0].field
-            fields.insert(
-                0,
-                {
-                    "id": shared.item_id,
-                    "label": "Municipality",
-                    "field_path": shared.field_path,
-                    "field": snapshot(field),
-                    "review_state": state(field),
-                },
             )
         details["card_fields"] = fields
         cards = []
@@ -460,10 +451,8 @@ class ReviewService:
                     continue
                 cards.append(
                     {
-                        "card_id": digest(
-                            json.dumps(
-                                [ref.region, card["image"], card.get("page")]
-                            ).encode()
+                        "card_id": physical_card_id(
+                            ref.region, card["image"], card.get("page")
                         ),
                         "score": card.get("confidence"),
                         "household_index": index,
@@ -520,34 +509,52 @@ class ReviewService:
         with self.store.lock:
             for key in list(self.progress):
                 self.batch_complete(*key)
+            all_diagnostics = [*self.diagnostics, *self.progress_diagnostics.values()]
+            diagnostic_index = {}
+            for position, diagnostic in enumerate(all_diagnostics):
+                key = (
+                    diagnostic.get("region") or None,
+                    diagnostic.get("batch") or None,
+                    diagnostic.get("page") or None,
+                )
+                diagnostic_index.setdefault(key, []).append((position, diagnostic))
+
+            def errors_for(
+                region: str, locations: set[tuple[str, int | None]]
+            ) -> list[dict]:
+                # Match broad region/batch errors as well as exact physical cards.
+                keys = {(None, None, None), (region, None, None)}
+                for image, page in locations:
+                    for scope in (None, region):
+                        keys.add((scope, image, None))
+                        keys.add((scope, image, page))
+                matches = {
+                    position: diagnostic
+                    for key in keys
+                    for position, diagnostic in diagnostic_index.get(key, [])
+                }
+                return [deepcopy(matches[position]) for position in sorted(matches)]
+
             diagnostics = [
                 deepcopy(d)
-                for d in [*self.diagnostics, *self.progress_diagnostics.values()]
+                for d in all_diagnostics
                 if not region or not d.get("region") or d["region"] == region
             ]
+            groups = self.dwelling_groups()
             rows = []
-            for identity, (record, refs) in self.dwelling_groups(region).items():
+            for identity, (record, refs) in groups.items():
+                if region and refs[0].region != region:
+                    continue
                 cards = self.coding_cards(record)
                 scores = [card.get("confidence") for card in cards]
                 count = sum(self.item_resolved.get(ref.item_id, False) for ref in refs)
-                errors = [
-                    d
-                    for d in diagnostics
-                    if (not d.get("region") or d["region"] == refs[0].region)
-                    and (
-                        not d.get("batch")
-                        or d["batch"]
-                        in {card["image"] for card in self.physical_cards(record)}
-                    )
-                    and (
-                        not d.get("page")
-                        or any(
-                            card["image"] == d.get("batch")
-                            and card.get("page") == d["page"]
-                            for card in self.physical_cards(record)
-                        )
-                    )
-                ]
+                errors = errors_for(
+                    refs[0].region,
+                    {
+                        (card["image"], card.get("page"))
+                        for card in self.physical_cards(record)
+                    },
+                )
                 histories = [
                     event
                     for _, field in current_fields(record)
@@ -618,32 +625,17 @@ class ReviewService:
                 row["status"] == "complete" for row in rows
             )
             all_regions = self.region_summary()
-            all_regions["queued_dwellings"] = len(self.dwelling_groups())
+            all_regions["queued_dwellings"] = len(groups)
             all_regions["completed_dwellings"] = sum(
                 all(self.item_resolved.get(ref.item_id, False) for ref in refs)
-                and not any(
-                    (
-                        not diagnostic.get("region")
-                        or diagnostic["region"] == refs[0].region
-                    )
-                    and (
-                        not diagnostic.get("batch")
-                        or diagnostic["batch"] in {ref.pdf for ref in refs}
-                    )
-                    and (
-                        not diagnostic.get("page")
-                        or any(
-                            ref.pdf == diagnostic.get("batch")
-                            and ref.page == diagnostic["page"]
-                            for ref in refs
-                        )
-                    )
-                    for diagnostic in [
-                        *self.diagnostics,
-                        *self.progress_diagnostics.values(),
-                    ]
+                and not errors_for(
+                    refs[0].region,
+                    {
+                        (card["image"], card.get("page"))
+                        for card in self.physical_cards(record)
+                    },
                 )
-                for _, refs in self.dwelling_groups().values()
+                for record, refs in groups.values()
             )
             return {
                 "dwellings": rows,
@@ -912,8 +904,8 @@ class ReviewService:
             history.append(event)
             field.clear()
             field.update(after, review={"state": after_state, "history": history})
-            resolved.record["schema_version"] = (
-                "0.5.0" if record["schema_version"] == "0.5.0" else SCHEMA_VERSION
+            resolved.record["schema_version"] = review_schema_version(
+                record["schema_version"]
             )
             self.store.save_record(
                 ref.region, expected_version, current.record_index, record

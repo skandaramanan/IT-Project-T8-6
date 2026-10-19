@@ -51,6 +51,11 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def physical_card_id(region: str, image: str, page: int | None) -> str:
+    """Stable physical identity, including read-only cards without a page."""
+    return digest(json.dumps([region, image, page]).encode())
+
+
 def schema_errors(record: dict) -> list[str]:
     errors = [
         f"{'/'.join(map(str, e.absolute_path)) or '<record>'}: {e.message}"
@@ -63,7 +68,9 @@ def schema_errors(record: dict) -> list[str]:
     return errors
 
 
-def validate_records(records: list[dict], region: str) -> None:
+def validate_records(
+    records: list[dict], region: str, *, allow_duplicate_cards: bool = False
+) -> None:
     seen = set()
     for number, record in enumerate(records, 1):
         if errors := schema_errors(record):
@@ -81,7 +88,7 @@ def validate_records(records: list[dict], region: str) -> None:
                 if card["role"] != "coding-front":
                     continue
                 key = card["image"], card.get("page")
-                if key in seen:
+                if key in seen and not allow_duplicate_cards:
                     raise ReviewError("ambiguous_card", f"duplicate coding card {key}")
                 seen.add(key)
     audit_index({region: records})
@@ -235,7 +242,9 @@ def validate_history(field: dict, spec=None) -> None:
         )
 
 
-def parse_records(raw: bytes, region: str, name: str) -> tuple[list[dict], str]:
+def parse_records(
+    raw: bytes, region: str, name: str, *, allow_duplicate_cards: bool = False
+) -> tuple[list[dict], str]:
     try:
         records = [
             json.loads(line)
@@ -244,18 +253,22 @@ def parse_records(raw: bytes, region: str, name: str) -> tuple[list[dict], str]:
         ]
     except (ValueError, UnicodeError) as error:
         raise ReviewError("invalid_records", f"Cannot read {name}: {error}") from error
-    validate_records(records, region)
+    validate_records(records, region, allow_duplicate_cards=allow_duplicate_cards)
     return records, digest(raw)
 
 
-def read_records(path: Path, region: str) -> tuple[list[dict], str]:
+def read_records(
+    path: Path, region: str, *, allow_duplicate_cards: bool = False
+) -> tuple[list[dict], str]:
     try:
         raw = path.read_bytes()
     except OSError as error:
         raise ReviewError(
             "invalid_records", f"Cannot read {path.name}: {error}"
         ) from error
-    return parse_records(raw, region, path.name)
+    return parse_records(
+        raw, region, path.name, allow_duplicate_cards=allow_duplicate_cards
+    )
 
 
 def validate_dataset(regions: dict[str, tuple[list[dict], str]]) -> None:
@@ -268,7 +281,13 @@ def validate_dataset(regions: dict[str, tuple[list[dict], str]]) -> None:
     audit_index({region: records for region, (records, _) in regions.items()})
 
 
-def read_dataset(paths: list[Path]) -> dict[str, tuple[list[dict], str]]:
+def read_dataset(
+    paths: list[Path], *, allow_duplicate_cards: bool = False
+) -> dict[str, tuple[list[dict], str]]:
+    """Read validated regions. Queue generation may retain duplicate cards so
+    it can report and skip them; schema and review-history checks still apply.
+    Review loading and persistence reject duplicates by default.
+    """
     candidate = {}
     for path in paths:
         if not REGION.fullmatch(path.stem) or path.is_symlink():
@@ -277,7 +296,9 @@ def read_dataset(paths: list[Path]) -> dict[str, tuple[list[dict], str]]:
             )
         if path.stem in candidate:
             raise ReviewError("invalid_path", f"Duplicate region file: {path.name}")
-        candidate[path.stem] = read_records(path, path.stem)
+        candidate[path.stem] = read_records(
+            path, path.stem, allow_duplicate_cards=allow_duplicate_cards
+        )
     validate_dataset(candidate)
     return candidate
 
@@ -336,7 +357,7 @@ class Reference:
 
     @property
     def card_id(self) -> str:
-        return digest(json.dumps([self.region, self.pdf, self.page]).encode())
+        return physical_card_id(self.region, self.pdf, self.page)
 
     @property
     def item_id(self) -> str:
@@ -379,6 +400,17 @@ def card_index(records: list[dict]) -> dict:
     return matches
 
 
+def field_pointer(key: str, group: str, index: int) -> str:
+    """The JSON pointer to a FIELD_MAP field on household ``index``."""
+    if group == "dwelling":
+        return f"/dwelling/{key}"
+    if group == "house":
+        return f"/dwelling/house/{key}"
+    if group == "household":
+        return f"/dwelling/households/{index}/{key}"
+    return f"/dwelling/households/{index}/{group}/{key}"
+
+
 def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolved:
     locations = card_index(records) if locations is None else locations
     matches = locations.get((ref.pdf, ref.page), [])
@@ -412,14 +444,7 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             spec,
         )
     for label, (key, group) in FIELD_MAP.items():
-        if group == "dwelling":
-            pointer = f"/dwelling/{key}"
-        elif group == "house":
-            pointer = f"/dwelling/house/{key}"
-        elif group == "household":
-            pointer = f"/dwelling/households/{index}/{key}"
-        else:
-            pointer = f"/dwelling/households/{index}/{group}/{key}"
+        pointer = field_pointer(key, group, index)
         if pointer != ref.field_path:
             continue
         if group in {"dwelling", "house"} and index != 0:

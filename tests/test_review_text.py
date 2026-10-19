@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
+from pypdf import PdfReader, PdfWriter
 from review_support import decide, refs, setup_review, write_record
 
 from survey.pipeline import MergeRefused, _keep_corrections
@@ -321,3 +322,116 @@ def test_note_with_out_of_bounds_front_cannot_be_decided(tmp_path):
     with pytest.raises(ReviewError):
         decide(service, ref, value=TEXT)
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_reviewed_note_progress_requires_readable_front(tmp_path, restart):
+    service, settings = text_service(tmp_path)
+    ref = note_ref(service)
+    service.replace_queue([ref], [])
+    decide(service, ref, value=TEXT)
+    assert service.batch_complete(ref.region, ref.pdf)
+    saved = (service.store.directory / "demo.jsonl").read_bytes()
+
+    pdf = settings.scan_root / ref.region / ref.pdf
+    original = pdf.read_bytes()
+    reader, writer = PdfReader(pdf), PdfWriter()
+    for page_number, page in enumerate(reader.pages, 1):
+        if page_number == ref.front_page:
+            writer.add_blank_page(
+                width=float(page.mediabox.width), height=float(page.mediabox.height)
+            )
+        else:
+            writer.add_page(page)
+    replacement = tmp_path / "unreadable-front.pdf"
+    writer.write(replacement)
+    replacement.replace(pdf)
+
+    if restart:
+        service = ReviewService(
+            RecordStore(service.store.directory), [ref], [], service.scans
+        )
+    assert not service.batch_complete(ref.region, ref.pdf)
+    queue = service.dwellings(ref.region)
+    assert queue["dwellings"][0]["status"] == "blocked"
+    assert queue["resolved"] == 0
+    assert queue["diagnostics"][0]["code"] == "unreadable_scan"
+    assert not service.item(ref.item_id)["resolved"]
+    assert (service.store.directory / "demo.jsonl").read_bytes() == saved
+
+    pdf.write_bytes(original)
+    assert service.batch_complete(ref.region, ref.pdf)
+    assert service.dwellings(ref.region)["dwellings"][0]["status"] == "complete"
+    assert service.item(ref.item_id)["field"]["value"] == TEXT
+
+
+@pytest.mark.parametrize("page", [3, 4, 99])
+def test_front_note_diagnostics_block_only_their_dwelling(tmp_path, page):
+    service, _ = text_service(tmp_path)
+    service.replace_queue([refs()[0]], [])
+    decide(service, refs()[0], "accept")
+    service.diagnostics = [
+        {
+            "region": "demo",
+            "batch": "synthetic.pdf",
+            "page": page,
+            "code": "test_block",
+            "message": "Source needs reconciliation",
+        }
+    ]
+    queue = service.dwellings("demo")
+    blocked = page in {3, 4}
+    assert (queue["dwellings"][0]["status"] == "blocked") == blocked
+    assert queue["summary"]["completed_dwellings"] == (0 if blocked else 1)
+    assert queue["all_regions"]["completed_dwellings"] == (0 if blocked else 1)
+
+
+@pytest.mark.parametrize("ref", [FRONT, NOTE])
+@pytest.mark.parametrize("value", ["x" * 10_001, "text\x00text"])
+def test_text_limits_reject_without_writing(tmp_path, ref, value):
+    service, _ = text_service(tmp_path)
+    ref = note_ref(service) if ref == NOTE else ref
+    path = service.store.directory / "demo.jsonl"
+    before = path.read_bytes()
+    with pytest.raises(ReviewError):
+        decide(service, ref, value=value)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("ref", [FRONT, NOTE])
+def test_text_limit_unicode_boundary_survives_restart(tmp_path, ref):
+    service, _ = text_service(tmp_path)
+    ref = note_ref(service) if ref == NOTE else ref
+    value = "王\n😀 " * 2500
+    decide(service, ref, value=value)
+    store = RecordStore(service.store.directory)
+    assert store.current(ref)[0].field["value"] == value
+
+
+@pytest.mark.parametrize("value", ["x" * 10_001, "text\x00text"])
+def test_history_rejects_invalid_text_correction(tmp_path, value):
+    from survey.records import validate_history
+    from survey.review.fields import descriptor
+
+    service, _ = text_service(tmp_path)
+    saved = decide(service, FRONT, value=TEXT)
+    field = deepcopy(saved["item"]["field"])
+    event = field["review"]["history"][0]
+    event["request"]["value"] = value
+    event["after"]["value"] = field["value"] = value
+    with pytest.raises(ReviewError, match="established field type"):
+        validate_history(field, descriptor(FRONT.field_path))
+
+
+def test_api_rejects_oversized_correction():
+    from pydantic import ValidationError
+
+    from survey.review.api import DecisionBody
+
+    with pytest.raises(ValidationError):
+        DecisionBody(
+            action="correct",
+            value="x" * 10_001,
+            expected_version="v",
+            request_id="too-long",
+        )

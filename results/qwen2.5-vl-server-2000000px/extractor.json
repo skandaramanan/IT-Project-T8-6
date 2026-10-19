@@ -1,0 +1,11 @@
+{
+  "extractor": "qwen2.5-vl-server-2000000px",
+  "model": "qwen/qwen2.5-vl-7b",
+  "weights": "Q6_K",
+  "max_pixels": 2000000,
+  "repeat_penalty": 1.05,
+  "struck_detection": false,
+  "max_tokens": 2048,
+  "decoding": "greedy",
+  "prompt_sha256": "2ef780a239078c7d"
+}

@@ -111,8 +111,8 @@ Head and Sex of Head are manually flagged on original page 3. Follow the printed
 launch command (port 8876). Sharing goes to the local test remote. The sample has
 one dwelling/one household and does not verify multiple-household ownership.
 
-Queue generation need not be ready. Once an extracted regional JSONL exists,
-prepare a separate local test using explicitly selected field names:
+For a deliberately small manual test queue, once an extracted regional JSONL
+exists, prepare a separate local test using explicitly selected field names:
 
 ```sh
 uv run python scripts/review_sample.py "/actual/path/216412.jsonl" \
@@ -136,6 +136,69 @@ review backend when opened. If extraction has not produced regional JSONL yet,
 that remains the prerequisite; PDFs alone are insufficient. Windows paths differ.
 
 ## Teammate flag contract
+
+### Generate and retain a review assignment
+
+The merged IT-109 generator emits the format below. After preparing the matching
+extracted dataset in the separate data checkout, run from the code checkout:
+
+```sh
+uv run survey validate-results "../survey-review-data/results"
+uv run survey flags "../survey-review-data/results" > "/path/to/flagged-fields.jsonl"
+```
+
+Check both commands' exit codes before handing over the assignment. `flags`
+can emit a partial queue and exit 1 when it skips cards; repair the source and
+regenerate rather than handing over that partial output. Dataset validation
+remains stricter about duplicate physical card ownership than queue generation.
+Keep the flags outside the results directory, whose JSONL files are records.
+
+Pair the saved flags with the matching dataset and scan-location/launch
+instructions. Generate once after the intended extraction/dual-extractor merge,
+then reuse that file across launches. Decisions atomically update each field's
+`review.state` and history in regional JSONL; they never edit flags. Refresh queue
+retrieves current progress within that assignment. Restart reconstructs progress
+from records, retaining completed items for history and undo. Sharing transfers
+regional records; distribute the assignment file separately to other reviewers.
+
+Regenerate deliberately after new extraction, routing changes, or repairs that
+change pointers/card ownership. New generation excludes accepted/corrected fields
+and can change totals and navigation; it is a new assignment, not a progress
+refresh. A valid empty flags file is allowed and means no supplied work, not
+certification of the corpus. Missing/unreadable flags still prevent startup;
+malformed or unsupported entries remain visible diagnostics.
+
+### Integration verification
+
+`tests/test_review_queue_integration.py` builds synthetic extractor readings,
+runs the existing pairing/scoring functions, adapts scored cards to validated
+D007 records, invokes the real flags CLI, then exercises the HTTP backend with
+synthetic PDFs and local Git remotes. It covers multi-household ownership,
+printed order, accept/correct/blank/illegible, exact digits, retry, restart, undo,
+sharing/imported progress, stale versions, identity warnings, missing scans and
+an empty assignment. It is included in the Windows CI review job.
+
+An optional test uses the first common saved Gemini/Qwen raw benchmark card in
+`data/benchmark/results`. It skips explicitly when paired readings are absent;
+it never calls models. This is a test adapter into D007, not the production
+corpus merger. The source card is mapped to synthetic scan evidence solely for
+backend acceptance, so this test does not verify the actual scan transcription.
+Run with `uv run pytest tests/test_review_queue_integration.py -rs` to distinguish
+executed checks from unavailable real-data acceptance. Full-corpus dual-output
+and physical Windows acceptance remain separate requirements.
+
+The integration with the Drive-download branch required two compatibility fixes:
+ignore dwelling survey-front/back entries in the shared physical-card index when
+generating coding flags, and expose the generated dwelling Municipality pointer
+as an actionable field on the first coding card. Explicit household Municipality
+flags remain supported, including assignments containing both stored copies.
+Both `/dwelling/municipality` and `/dwelling/households/<index>/municipality`
+are accept-only identity fields. Acceptance preserves the stored value;
+correction, no-data and illegible decisions are rejected. If a Municipality is
+wrong, leave it pending for a separate data repair. Reviewing either copy does
+not rewrite the other copy. The shared path aliases the first household only;
+later households retain their own Municipality values.
+An empty generated assignment is now a healthy startup case.
 
 Each nonblank line is an object with exactly these keys, plus optional `reason`:
 
@@ -519,6 +582,19 @@ review action or scan route. The frontend labels it “Not queued”. Queue coun
 field ownership, routing, persistence and allowed actions are unchanged.
 
 
+### Reviewer follow-up: display identity and completion
+
+Card tabs and `Reference.card_id` use the shared `physical_card_id` helper, which
+preserves the existing region/image/page digest. Optional read-only cards may
+lack a page; they have no decision target. The frontend keys tab instances by
+household position plus physical ID and disables tabs without queued items.
+
+The dwelling summary builds a diagnostic lookup once per request, preserving
+region-wide, batch-wide and page-specific blocking. Both regional rows and global
+completion use this lookup, so unrelated diagnostics do not cause a full-list
+scan per completed dwelling. Tests cover diagnostic scope and bound diagnostic
+reads across multiple dwellings without relying on machine-specific timings.
+
 ## IT-113 follow-up (14 October 2026)
 
 The follow-up extends the locally available IT-115 stack, reusing its endpoints,
@@ -540,115 +616,101 @@ production provisioning remain separate delivery gates.
 
 ## Download scans for one region
 
-The built React reviewer now offers **Download scans**, **Open in Drive** and
-**Import downloaded PDF** for a region whose record provenance matches the pinned
-Drive catalogue. One region is one original PDF. Extracted JSONL, supplied flags,
-review decisions and Git sharing retain their existing setup. No extraction or
-Google account login is added to the reviewer name-entry screen.
+The built React reviewer offers **Download scans**, **Open in Drive** and
+**Import downloaded PDF** for regions mapped to a Drive PDF in the catalogue.
+Google Drive is authoritative; historical local sizes/checksums do not restrict
+transfers or offline use. No image comparison or pixel hashing is performed.
+Record/region/PDF mappings and page bounds still apply.
 
-Create an empty writable scans directory outside the data checkout and use it
-as `--scan-root`. It must exist before launch, but its region folders need not.
-Existing PDFs are never overwritten. Transfers write temporary files beside
-the destination, validate the complete size/checksum and referenced PDF pages,
-then create the original filename atomically. PNG rendering remains on demand.
-Progress and missing-scan diagnostics refresh after installation. Cancelled or
-failed transfers remove their temporary files; retry starts from byte zero.
-Only one transfer runs per backend. A stopped/crashed process may leave an
-ignored `.scan-*.part` file; remove it while the backend is stopped.
-
-For automatic downloads, create a Google Cloud project, enable **Google Drive
-API**, create an API key restricted to that API, and put it in the code
-checkout's untracked `.env`:
+Create an existing writable `--scan-root` outside the data checkout. Region
+folders are created on demand. Automatic downloads require a Google Drive API
+key restricted to that API in the code checkout's untracked `.env`:
 
 ```dotenv
 SURVEY_REVIEW_DRIVE_API_KEY=your-key
 ```
 
-Restart the backend after changing configuration. The key is used only by Python
-and is never returned through the API or embedded in frontend assets. A locally
-distributed application cannot conceal a key from its operator; do not package
-`.env` or distribute a private service-account key with the reviewer release.
-Anyone-with-link sharing must remain enabled on the source PDFs. If permissions
-change, downloads fail honestly; private access needs a separate OAuth or hosted
-access design. Download permission must also be enabled. Google's documentation:
-[public folder API-key access](https://developers.google.com/workspace/drive/api/guides/search-files),
-[PDF downloads](https://developers.google.com/workspace/drive/api/guides/manage-downloads).
+Source PDFs must allow public-link access and downloading. The key is only used
+by Python, never sent to the browser or logged. Restart after configuring it.
+Private access needs a separate authentication design. Without a key, reviewers
+can use **Open in Drive**, download in their browser, and import.
 
-With no API key, use **Open in Drive**, download that PDF in the browser, then
-**Import downloaded PDF** and choose it. The browser streams it to the loopback
-backend; importing uses the same pinned byte and page validation and does not
-require an API key. A different filename is harmless if its bytes match the
-approved PDF; the installed filename always comes from the catalogue. A
-wrong-size or wrong-checksum PDF is refused. Matching existing scans work offline.
+### Transfer integrity and refresh
 
-The endpoints are:
+Each explicit download fetches current Drive size/MD5 metadata, streams to a
+temporary file, checks metadata again, and verifies the completed bytes against
+that version. Catalogue sizes/checksums are informational snapshots. A Drive
+change during transfer restarts the download once with fresh metadata; a second
+change produces a retryable error. Corrupt/truncated transfers fail. Connection
+setup retries temporary failures up to three times; interrupted media streams
+can be retried explicitly. Cancelled/failed temporary files are removed.
 
-- `GET /api/scan-batches?region=…`: PDF name, byte size, state, progress, source
-  link, automatic-download availability and any error. Unmapped/custom datasets
-  return `batch_not_available` (404) and retain local scan review.
-- `POST /api/scan-batches/{region}/download` and `/cancel`: JSON requests, existing
-  reviewer session and same-origin checks. Starting the same active download
-  returns its status; another transfer returns `download_busy` (409).
-- `POST /api/scan-batches/{region}/import`: raw `application/pdf` body, existing
-  reviewer session and same-origin checks. No multipart dependency is needed.
+Manual imports work offline without matching Drive or historical file sizes.
+The frontend sends `X-Scan-Size`; existing clients may use `Content-Length`.
+When both exist they must agree, and the streamed body must match that length.
+Imports are limited to **1 GiB**. Both paths reject unreadable/encrypted PDFs
+and references outside the PDF's page count. Manual imports do not establish
+that uploaded bytes match Drive.
 
-Network metadata/connection requests retry temporary errors up to three times.
-An interrupted media stream fails and can be retried explicitly. Errors never
-include credential-bearing URLs. Download jobs are ephemeral; PDFs survive
-restart and are rechecked against the catalogue.
+A usable local PDF is used directly; download and import controls are hidden.
+If the expected filename already exists but its PDF is unusable, move it out of
+its region folder using **Open scan folder** before downloading or importing.
+Both transfer endpoints reject an existing destination with `scan_exists` (409).
+Publication is atomic and refuses a file that appears during transfer. No files
+are overwritten and no automatic backups are created; existing backups are left
+untouched. Scan/progress caches refresh after installation; PNG rendering remains
+on demand.
 
-### Catalogue provenance and reconciliation
+Readable local PDFs with valid page references remain usable offline regardless
+of catalogue hashes. Polling never contacts Drive or hashes PDFs; local metadata
+is cached until the file changes. One transfer runs per backend. A crash may
+leave `.scan-*.part` files; remove them while the backend is stopped.
 
-`backend/survey/review/drive-catalogue.json` pins the 45 region/file mappings
-observed in the supplied Drive root. Checksums pin the local archival source at
-`Wilfred_Prest_Survey_Data`; automatic downloading checks Drive metadata against
-those pins before transferring. This does not prove which scan version produced
-an arbitrary separately supplied results checkout; the operator must supply
-records extracted from the approved originals.
+Endpoints retain the existing session and same-origin boundary:
 
-Three sources differ in size between Drive and the local archive used for this
-catalogue: **216413, 216414 and 216415**. Their entries retain the local-source
-size/checksum and record `drive_size_at_catalogue_build`. Automatic downloads
-will report `source_changed`, and importing the differing Drive version will
-fail validation. Existing matching local originals remain usable. Reconcile
-these originals with extraction provenance before changing their catalogue pins;
-never bypass the checksum or update the PDFs silently. The remaining 42 matched
-by filename and size; their Drive MD5 values are checked at download time.
+- `GET /api/scan-batches?region=…`: source link, state, progress, transfer size
+  (or local/snapshot size when idle), `local_file_exists`, and `local_ready`.
+- `POST /api/scan-batches/{region}/download` and `/cancel`: JSON requests.
+- `POST /api/scan-batches/{region}/import`: raw `application/pdf` with upload size.
 
-A maintainer can rebuild all pins after reconciliation:
+Unmapped datasets return `batch_not_available` and continue local review.
+Transfers never modify records, decisions, flags, or Drive files.
+
+### Refresh the Drive catalogue
+
+The catalogue records region-to-file mappings and a Drive metadata snapshot.
+With the API key configured, rebuild directly from Drive:
 
 ```sh
-uv run python scripts/build_drive_catalogue.py /path/to/approved/original/scans
+uv run python scripts/build_drive_catalogue.py
 ```
 
-The helper loads the code checkout's `.env`, lists public Drive folders with
-pagination, requires exactly one PDF per matching numeric region folder, and
-verifies local size and MD5 against Drive. Any mismatch aborts before writing the
-catalogue. Review the resulting diff with the matching extraction source before
-shipping it. No PDFs, credentials, records or review decisions are modified.
+The old positional scan-root argument remains accepted, deprecated and ignored.
+The builder paginates public folders, requires one PDF per numeric region, and
+validates Drive metadata. It never reads or hashes local archival PDFs.
+Use `--output /tmp/drive-catalogue.json` to inspect a proposed catalogue first.
 
-Build the React UI before distributing the release (`npm --prefix frontend run
-build`); the plain fallback integration page does not provide scan preparation.
-The existing release helper includes the catalogue and new backend/component
-source with the frontend build. Independent Windows and real-network acceptance
-remain required before rollout.
+Regions **216413, 216414 and 216415** previously had historical local pins that
+rejected Drive copies. Those pins no longer control acceptance. No manual scan
+comparison, historical-source reconciliation, or checksum editing is needed.
+
+Build the React frontend before distributing the release; the plain integration
+fallback page does not provide scan preparation. Physical Windows/operator
+acceptance remains separate from developer and CI verification.
 
 ### Implementation verification
 
-Synthetic transfer/API tests cover download and manual import, exact source bytes,
-restart detection, cancellation/retry, wrong or corrupt PDFs, source changes,
-page bounds, existing-file races, symlink rejection, connection retries,
-resource keys, catalogue pagination, and credential-safe errors. Browser smoke
-verification used a synthetic PDF and a local bare Git remote; download progress,
-readiness, and opening the installed scan were observed. Original archival PDFs
-and extracted results were not written during verification.
+Transfer/API regressions cover authoritative current Drive metadata, bounded
+source-change retries, corruption/truncation, offline imports, the 1 GiB limit,
+existing-file rejection, failure preservation, file races, symlinks, cache invalidation,
+and catalogue pagination without local-source checks. Frontend tests cover
+changed-size imports and hidden transfer controls for existing files. A browser
+test imports a synthetic PDF, verifies reuse without transfer controls, then moves
+the file aside and imports another copy without creating a backup.
 
-Ruff lint/format, TypeScript/Vite build and all **51 frontend tests** pass. The
-full backend suite reports **653 passed, 14 skipped, 2 deselected** when excluding
-two unrelated calibration checks that require the missing local Qwen benchmark
-arm. The initial full run failed those checks because all 1,860 benchmark fields
-had no second opinion; no confidence/benchmark data was changed. The final
-focused transfer/API/launcher/benchmark regression suite also passes **33 tests**.
-Actual Google API transfer latency has not been measured: a Drive-enabled API
-key is needed for the real-network smoke test. The shipped public file mappings
-were read through Drive, and local archival PDFs were hashed read-only.
+The catalogue was refreshed directly from Drive for all 45 regions. Real API
+smoke downloads for **216413, 216414 and 216415** passed current size/MD5 integrity
+and referenced-page checks in a temporary scan folder. Download plus validation
+took approximately 16, 13 and 15 seconds respectively on the developer machine.
+No original archival PDFs, extraction results, or Drive files were changed.
+This is developer/network evidence, not physical Windows or operator acceptance.

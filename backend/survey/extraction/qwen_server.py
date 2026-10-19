@@ -22,7 +22,7 @@ Env vars, because ``run_benchmark.py`` constructs extractors with no args:
     QWEN_REPEAT_PENALTY blank = 1.05, what the model's own generation_config.json
                         sets and the calibration ran with
     QWEN_MAX_PIXELS     pixel budget per card; blank = qwen.MAX_PIXELS, the
-                        ~1MP the calibration was measured at. 0 = native size.
+                        ~1MP historical default. 0 = native size.
                         IT-124's corpus run used 2000000 (D019)
 
 Decoding is pinned greedy (top-k 1, no top-p/min-p) on every request. Left
@@ -32,13 +32,12 @@ decoded greedily (310 against 390). qwen.py gets this for free: transformers
 reads the model's generation_config.json, which is greedy with a 1.05 repeat
 penalty.
 
-Not the calibrated configuration. D016's constants were measured on the
-bitsandbytes 4-bit build at ~1MP; ``model_id`` is still ``qwen2.5-vl`` so the
-pipeline can look its tables up, not because they are known to hold. IT-124's
-30-card check (D019 addendum) was scored before the misspelt labels were read
-(``json_extraction.FIELD_ALIASES``), which moves fields between agreement
-classes, so it does not validate this pairing. Calibrated scores, and any
-review bypass on them, wait for IT-125's comparison.
+IT-125 recalibrates D016 for the supplied Q6_K / 2MP / repeat-penalty 1.05
+configuration with the current explicit label aliases. The offline merge gates
+that exact configuration against results and cache manifests before scoring.
+Other weights, image budgets and prompts remain different experiments; the
+shared ``model_id`` alone does not establish calibration. See D016 Addendum D
+and docs/runs/it125-calibration.json.
 
 A reply cut off at MAX_TOKENS raises rather than returning the partial fields
 its JSON repairs to, so it is never cached; a dropped connection, timeout or
@@ -46,8 +45,8 @@ its JSON repairs to, so it is never cached; a dropped connection, timeout or
 
 The image is resized here, to QWEN_MAX_PIXELS at multiples of 28 like
 qwen_vl_utils does, rather than left to the server, so the resolution a reading
-was made at is the one we chose. Above the default it is a different
-experiment -- better digits, maybe, but a picture D016 never saw, and the
+was made at is the one we chose. A changed pixel budget is a different
+experiment. The calibrated Q6 corpus uses 2MP; the
 vision encoder's full-attention layers grow with the square of the pixel count
 (uncapped, the T4 run OOM'd at ~19GB) -- so those readings file under
 ``<name>-<pixels>px`` and a changed budget never replays another's cache.

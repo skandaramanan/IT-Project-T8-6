@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException
 
 from survey.records import REGION, RecordStore, ReviewError, safe_pdf
 from survey.review.drive import CATALOGUE, BatchDownloads
+from survey.review.fields import MAX_TEXT_CORRECTION_LENGTH
 from survey.review.queue import load_queue
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
@@ -89,7 +90,7 @@ class VersionedBody(Body):
 
 class DecisionBody(VersionedBody):
     action: Literal["accept", "correct", "no_data", "illegible"]
-    value: str | None = None
+    value: str | None = Field(default=None, max_length=MAX_TEXT_CORRECTION_LENGTH)
 
 
 def error_response(code, message, status):
@@ -125,10 +126,6 @@ def create_app(settings: Settings) -> FastAPI:
                 raise ReviewError(
                     "missing_records",
                     "Supply extracted region JSONL in the separate data checkout",
-                )
-            if not refs and not diagnostics:
-                raise ReviewError(
-                    "empty_flags", "Flagged file is empty; supply teammate flags"
                 )
             downloads = BatchDownloads(
                 service,
@@ -308,16 +305,27 @@ def create_app(settings: Settings) -> FastAPI:
         reviewer(request)
         return downloads.cancel(region)
 
+    @app.post("/api/scan-batches/{region}/open-folder")
+    def open_scan_folder(region: str, request: Request):
+        ready()
+        reviewer(request)
+        return downloads.open_folder(region)
+
     @app.post("/api/scan-batches/{region}/import")
     async def import_batch(region: str, request: Request):
         from starlette.concurrency import run_in_threadpool
 
         ready()
         reviewer(request)
+        size_header = request.headers.get("x-scan-size")
+        length = request.headers.get("content-length")
+        size = downloads.import_size(size_header if size_header is not None else length)
+        if length is not None and downloads.import_size(length) != size:
+            raise ReviewError(
+                "scan_size_mismatch", "Upload length differs from the declared PDF size"
+            )
         batch = downloads.batch(region)
-        if await run_in_threadpool(downloads.local_ready, batch):
-            return await run_in_threadpool(downloads.status, region)
-        downloads.claim(region, "importing")
+        await run_in_threadpool(downloads.claim, region, "importing", size)
         try:
             with downloads.staging(batch) as (path, stream):
                 async for chunk in request.stream():

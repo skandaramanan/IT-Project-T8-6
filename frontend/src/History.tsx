@@ -12,6 +12,18 @@ function value(field: Field) {
 export default function History({ item, onClose }: { item: Item; onClose: () => void }) {
   const history = item.field.review?.history ?? [];
   const original = history[0]?.before;
+  const undone = new Set(
+    history
+      .filter((decision) => decision.action === 'undo')
+      .map((decision) => decision.undo_target),
+  );
+  const actionText = {
+    accept: 'Accepted',
+    correct: 'Corrected',
+    no_data: 'Marked blank',
+    illegible: 'Marked illegible',
+    undo: 'Undone',
+  };
   return (
     <section className="hist" aria-label={`History of ${item.label}`}>
       <div className="dialog-head">
@@ -49,13 +61,12 @@ export default function History({ item, onClose }: { item: Item; onClose: () => 
           {history.map((decision) => (
             <li key={decision.id}>
               <p>
-                {decision.action === 'undo'
-                  ? 'Undone'
-                  : decision.action === 'accept'
-                    ? 'Accepted'
-                    : 'Corrected'}
-                : <b>{value(decision.before)}</b> → <b>{value(decision.after)}</b>
+                {actionText[decision.action]}: <b>{value(decision.before)}</b> →{' '}
+                <b>{value(decision.after)}</b>
               </p>
+              {undone.has(decision.id) && (
+                <p className="small">This decision was undone.</p>
+              )}
               <p className="small">
                 {statusText[decision.after.status]} · by {decision.reviewer} ·{' '}
                 <time dateTime={decision.timestamp}>
