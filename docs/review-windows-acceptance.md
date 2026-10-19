@@ -162,3 +162,7 @@ git -C "C:\Survey Review Test\data B" log --oneline -3
 
 Do not resolve this test using force-push/reset. Preserve both disposable copies
 as evidence; manual reconciliation tooling is outside this implementation.
+
+The release helper refuses a dirty working tree by default. Commit the source
+before packaging; for a deliberate development bundle, pass `--allow-dirty`.
+The manifest records the base revision and whether uncommitted changes were included.

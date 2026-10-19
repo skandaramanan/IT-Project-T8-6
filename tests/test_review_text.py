@@ -384,3 +384,54 @@ def test_front_note_diagnostics_block_only_their_dwelling(tmp_path, page):
     assert (queue["dwellings"][0]["status"] == "blocked") == blocked
     assert queue["summary"]["completed_dwellings"] == (0 if blocked else 1)
     assert queue["all_regions"]["completed_dwellings"] == (0 if blocked else 1)
+
+
+@pytest.mark.parametrize("ref", [FRONT, NOTE])
+@pytest.mark.parametrize("value", ["x" * 10_001, "text\x00text"])
+def test_text_limits_reject_without_writing(tmp_path, ref, value):
+    service, _ = text_service(tmp_path)
+    ref = note_ref(service) if ref == NOTE else ref
+    path = service.store.directory / "demo.jsonl"
+    before = path.read_bytes()
+    with pytest.raises(ReviewError):
+        decide(service, ref, value=value)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("ref", [FRONT, NOTE])
+def test_text_limit_unicode_boundary_survives_restart(tmp_path, ref):
+    service, _ = text_service(tmp_path)
+    ref = note_ref(service) if ref == NOTE else ref
+    value = "王\n😀 " * 2500
+    decide(service, ref, value=value)
+    store = RecordStore(service.store.directory)
+    assert store.current(ref)[0].field["value"] == value
+
+
+@pytest.mark.parametrize("value", ["x" * 10_001, "text\x00text"])
+def test_history_rejects_invalid_text_correction(tmp_path, value):
+    from survey.records import validate_history
+    from survey.review.fields import descriptor
+
+    service, _ = text_service(tmp_path)
+    saved = decide(service, FRONT, value=TEXT)
+    field = deepcopy(saved["item"]["field"])
+    event = field["review"]["history"][0]
+    event["request"]["value"] = value
+    event["after"]["value"] = field["value"] = value
+    with pytest.raises(ReviewError, match="established field type"):
+        validate_history(field, descriptor(FRONT.field_path))
+
+
+def test_api_rejects_oversized_correction():
+    from pydantic import ValidationError
+
+    from survey.review.api import DecisionBody
+
+    with pytest.raises(ValidationError):
+        DecisionBody(
+            action="correct",
+            value="x" * 10_001,
+            expected_version="v",
+            request_id="too-long",
+        )

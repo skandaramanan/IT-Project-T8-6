@@ -48,6 +48,12 @@ from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decod
 
 SCHEMA_VERSION = "0.6.0"
 
+
+def review_schema_version(version: str) -> str:
+    """Preserve the legacy corpus envelope; upgrade other reviewed records."""
+    return "0.5.0" if version == "0.5.0" else SCHEMA_VERSION
+
+
 # --- 1. where each field lives ----------------------------------------------
 # card label -> (key in the record, which group)
 #

@@ -432,7 +432,7 @@ export default function App() {
     !scanFailed &&
     !item.diagnostics.length;
   const textField = item?.field_kind === 'text';
-  const validCorrection = textField ? !!draft.trim() : /^[0-9]{1,64}$/.test(draft);
+  const validCorrection = textField ? !!draft.trim() && draft.length <= 10_000 && !draft.includes('\0') : /^[0-9]{1,64}$/.test(draft);
   const syncText = syncUnknown
     ? 'Sharing status unavailable'
     : !sync
@@ -1156,6 +1156,7 @@ export default function App() {
                                   onChange={(e) => setDraft(e.target.value)}
                                   disabled={busy || !!pending}
                                   rows={6}
+                                  maxLength={10_000}
                                   autoFocus
                                   aria-describedby="correction-help"
                                 />
@@ -1178,7 +1179,7 @@ export default function App() {
                               </p>
                               {draft && !validCorrection && (
                                 <p className="errbox">
-                                  {textField ? 'Enter text, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
+                                  {textField ? 'Enter up to 10,000 characters without NUL, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
                                 </p>
                               )}
                               {item.code_list.length > 0 && (

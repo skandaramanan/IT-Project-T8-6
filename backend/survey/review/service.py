@@ -12,8 +12,7 @@ from survey.extraction.card_fields import (
     SURVEY_FRONT_DWELLING_FIELDS,
 )
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
-from survey.extraction.survey_front import record_key
+from survey.extraction.record import review_schema_version
 from survey.records import (
     RecordStore,
     Reference,
@@ -23,6 +22,7 @@ from survey.records import (
     physical_card_id,
     resolve_field,
 )
+from survey.review.fields import field_pointers
 from survey.review.scans import ScanSource
 
 FIELD_POSITIONS = {field.name: index for index, field in enumerate(FIELD_SCHEMA)}
@@ -372,38 +372,14 @@ class ReviewService:
             return details
         fields = []
         index = resolved.record["dwelling"]["households"].index(resolved.household)
-        pointers = []
-        for field_spec in FIELD_SCHEMA:
-            label = field_spec.name
-            key, group = FIELD_MAP[label]
-            if label == "Municipality" and "municipality" in resolved.household:
-                group = "household"
-            if group in {"dwelling", "house"} and index != 0:
-                continue
-            pointers.append(
-                (
-                    label,
-                    (
-                        f"/dwelling/{key}"
-                        if group == "dwelling"
-                        else f"/dwelling/house/{key}"
-                        if group == "house"
-                        else f"/dwelling/households/{index}/{key}"
-                        if group == "household"
-                        else f"/dwelling/households/{index}/{group}/{key}"
-                    ),
-                )
+        pointers = [
+            (label, path)
+            for label, path, _ in field_pointers(
+                index,
+                household_municipality="municipality" in resolved.household,
+                include_shared=index == 0,
             )
-        for label in SURVEY_FRONT_DWELLING_FIELDS:
-            key = record_key(label)
-            pointers.append(
-                (
-                    label,
-                    f"/dwelling/{key}"
-                    if key in {"address", "families_in_dwelling"}
-                    else f"/dwelling/handwritten/{key}",
-                )
-            )
+        ]
         pointers.extend(
             ("Interview Notes", f"/dwelling/notes/{n}/text")
             for n in range(len(resolved.record["dwelling"].get("notes", [])))
@@ -923,8 +899,8 @@ class ReviewService:
             history.append(event)
             field.clear()
             field.update(after, review={"state": after_state, "history": history})
-            resolved.record["schema_version"] = (
-                "0.5.0" if record["schema_version"] == "0.5.0" else SCHEMA_VERSION
+            resolved.record["schema_version"] = review_schema_version(
+                record["schema_version"]
             )
             self.store.save_record(
                 ref.region, expected_version, current.record_index, record

@@ -1094,3 +1094,19 @@ it('retains text drafts after a confirmed stale version and disables decisions u
   loaded();
   expect(screen.getByRole('button', {name: 'Save correction'})).toBeEnabled();
 });
+
+it('bounds text corrections and rejects NUL before sending a decision', async () => {
+  const server = backend([field('note', {field_kind: 'text', code_list: [], field: {value: 'Machine note', status: 'ok', confidence: null}})]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  const input = screen.getByLabelText('Your correction');
+  expect(input).toHaveAttribute('maxlength', '10000');
+  for (const value of ['x'.repeat(10001), 'text\0text']) {
+    fireEvent.change(input, {target: {value}});
+    expect(screen.getByRole('button', {name: 'Save correction'})).toBeDisabled();
+  }
+  fireEvent.change(input, {target: {value: '王'.repeat(10000)}});
+  expect(screen.getByRole('button', {name: 'Save correction'})).toBeEnabled();
+  expect(server.mutations).toHaveLength(0);
+});
