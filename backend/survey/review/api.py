@@ -315,10 +315,15 @@ def create_app(settings: Settings) -> FastAPI:
 
         ready()
         reviewer(request)
+        size_header = request.headers.get("x-scan-size")
+        length = request.headers.get("content-length")
+        size = downloads.import_size(size_header if size_header is not None else length)
+        if length is not None and downloads.import_size(length) != size:
+            raise ReviewError(
+                "scan_size_mismatch", "Upload length differs from the declared PDF size"
+            )
         batch = downloads.batch(region)
-        if await run_in_threadpool(downloads.local_ready, batch):
-            return await run_in_threadpool(downloads.status, region)
-        downloads.claim(region, "importing")
+        await run_in_threadpool(downloads.claim, region, "importing", size)
         try:
             with downloads.staging(batch) as (path, stream):
                 async for chunk in request.stream():

@@ -40,21 +40,38 @@ it('imports a selected PDF as bytes and refreshes review evidence', async () => 
   const file = new File(['test'], 'original.pdf', { type: 'application/pdf' });
   fireEvent.change(screen.getByLabelText('Choose downloaded PDF'), { target: { files: [file] } });
   await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
-  expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/import', expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }));
+  expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/import', expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/pdf', 'X-Scan-Size': '4' }, body: file }));
 });
 
-it('rejects a wrong-size import before uploading and protects existing files', async () => {
-  const fetch = vi.fn(async () => response(batch));
+it('accepts imports of a different size and allows refreshing existing scans', async () => {
+  let state: ScanBatchStatus = batch;
+  const fetch = vi.fn(async (_path: string, options?: RequestInit) => {
+    if (options?.method === 'POST') state = { ...batch, state: 'ready', size: 5 };
+    return response(state);
+  });
   vi.stubGlobal('fetch', fetch);
   const { rerender } = render(<ScanBatch region="216418" onReady={vi.fn()} />);
   await screen.findByRole('button', { name: 'Import downloaded PDF' });
   fireEvent.change(screen.getByLabelText('Choose downloaded PDF'), { target: { files: [new File(['wrong'], 'other.pdf')] } });
-  expect(await screen.findByRole('alert')).toHaveTextContent('different size');
-  expect(fetch).toHaveBeenCalledTimes(1);
-  fetch.mockImplementation(async () => response({ ...batch, region: '216419', local_file_exists: true }));
+  expect(await screen.findByText('Scans ready')).toBeVisible();
+  expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/import', expect.objectContaining({ headers: { 'Content-Type': 'application/pdf', 'X-Scan-Size': '5' } }));
+  fetch.mockImplementation(async () => response({ ...batch, region: '216419', state: 'ready', local_file_exists: true }));
   rerender(<ScanBatch region="216419" onReady={vi.fn()} />);
-  expect(await screen.findByText(/A different PDF exists/)).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Download scans' })).toBeDisabled();
+  expect(await screen.findByText(/keeps a backup/)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Download latest scans' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Import downloaded PDF' })).toBeEnabled();
+});
+
+it('rejects imports above 1 GiB before uploading', async () => {
+  const fetch = vi.fn(async () => response(batch));
+  vi.stubGlobal('fetch', fetch);
+  render(<ScanBatch region="216418" onReady={vi.fn()} />);
+  await screen.findByRole('button', { name: 'Import downloaded PDF' });
+  const file = new File(['test'], 'large.pdf');
+  Object.defineProperty(file, 'size', { value: 1024 ** 3 + 1 });
+  fireEvent.change(screen.getByLabelText('Choose downloaded PDF'), { target: { files: [file] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('between 1 byte and 1 GiB');
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
 
 it('renders progress and cancels a transfer', async () => {
