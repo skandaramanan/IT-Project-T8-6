@@ -151,6 +151,10 @@ class ReviewService:
                 )
                 if done:
                     self.scans.probe(ref)
+                    if resolved.front_page is not None:
+                        self.scans.probe(
+                            Reference(ref.region, ref.pdf, resolved.front_page, "/")
+                        )
             except ReviewError as error:
                 done = False
                 self.progress_diagnostics[ref.item_id] = {

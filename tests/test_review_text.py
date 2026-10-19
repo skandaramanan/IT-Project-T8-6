@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
+from pypdf import PdfReader, PdfWriter
 from review_support import decide, refs, setup_review, write_record
 
 from survey.pipeline import MergeRefused, _keep_corrections
@@ -321,6 +322,47 @@ def test_note_with_out_of_bounds_front_cannot_be_decided(tmp_path):
     with pytest.raises(ReviewError):
         decide(service, ref, value=TEXT)
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_reviewed_note_progress_requires_readable_front(tmp_path, restart):
+    service, settings = text_service(tmp_path)
+    ref = note_ref(service)
+    service.replace_queue([ref], [])
+    decide(service, ref, value=TEXT)
+    assert service.batch_complete(ref.region, ref.pdf)
+    saved = (service.store.directory / "demo.jsonl").read_bytes()
+
+    pdf = settings.scan_root / ref.region / ref.pdf
+    original = pdf.read_bytes()
+    reader, writer = PdfReader(pdf), PdfWriter()
+    for page_number, page in enumerate(reader.pages, 1):
+        if page_number == ref.front_page:
+            writer.add_blank_page(
+                width=float(page.mediabox.width), height=float(page.mediabox.height)
+            )
+        else:
+            writer.add_page(page)
+    replacement = tmp_path / "unreadable-front.pdf"
+    writer.write(replacement)
+    replacement.replace(pdf)
+
+    if restart:
+        service = ReviewService(
+            RecordStore(service.store.directory), [ref], [], service.scans
+        )
+    assert not service.batch_complete(ref.region, ref.pdf)
+    queue = service.dwellings(ref.region)
+    assert queue["dwellings"][0]["status"] == "blocked"
+    assert queue["resolved"] == 0
+    assert queue["diagnostics"][0]["code"] == "unreadable_scan"
+    assert not service.item(ref.item_id)["resolved"]
+    assert (service.store.directory / "demo.jsonl").read_bytes() == saved
+
+    pdf.write_bytes(original)
+    assert service.batch_complete(ref.region, ref.pdf)
+    assert service.dwellings(ref.region)["dwellings"][0]["status"] == "complete"
+    assert service.item(ref.item_id)["field"]["value"] == TEXT
 
 
 @pytest.mark.parametrize("page", [3, 4, 99])
