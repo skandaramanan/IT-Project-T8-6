@@ -25,7 +25,7 @@ const test = base.extend<{ control: Control }>({
     const workspace = process.env.REVIEW_TEST_WORKSPACE;
     if (!workspace) throw new Error('Set REVIEW_TEST_WORKSPACE; see docs/review-github-acceptance.md');
     const child: ChildProcessWithoutNullStreams = spawn(
-      process.env.REVIEW_TEST_PYTHON ?? path.join(root, '.venv/bin/python'),
+      process.env.REVIEW_TEST_PYTHON ?? path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
       [path.join(root, 'scripts/review_github_test.py'), 'browser-session', workspace],
       { stdio: ['pipe', 'pipe', 'pipe'] },
     );

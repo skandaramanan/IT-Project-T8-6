@@ -18,11 +18,13 @@ spec.loader.exec_module(tool)
 
 def workspace(tmp_path):
     _, settings = setup_review(tmp_path, with_git=True)
+    git(settings.data_checkout, "branch", "-m", tool.BRANCH)
+    git(settings.data_checkout, "push", "origin", tool.BRANCH)
     tool.write_json(
         tmp_path / "manifest.json",
         {
             "repository": tool.REPOSITORY,
-            "branch": "review-data",
+            "branch": tool.BRANCH,
             "local": True,
             "remote": str(tmp_path / "remote.git"),
             "sources": [],
@@ -46,7 +48,13 @@ def test_clone_refuses_replaced_branch_without_seed_ancestor(tmp_path):
     run, settings = workspace(tmp_path)
     git(settings.data_checkout, "checkout", "--orphan", "replacement")
     git(settings.data_checkout, "commit", "-m", "Unrelated history")
-    git(settings.data_checkout, "push", "--force", "origin", "replacement:review-data")
+    git(
+        settings.data_checkout,
+        "push",
+        "--force",
+        "origin",
+        f"replacement:{tool.BRANCH}",
+    )
     with pytest.raises(RuntimeError):
         run.clone("refused")
 
@@ -138,7 +146,7 @@ def test_verify_refuses_unrelated_application_commit(tmp_path):
     (settings.data_checkout / "unrelated.txt").write_text("unexpected")
     git(settings.data_checkout, "add", ".")
     git(settings.data_checkout, "commit", "-m", "Unexpected application commit")
-    git(settings.data_checkout, "push", "origin", "review-data")
+    git(settings.data_checkout, "push", "origin", tool.BRANCH)
     with pytest.raises(RuntimeError, match="unexpected paths"):
         run.verify()
 
@@ -161,10 +169,103 @@ def test_repin_validates_existing_data_and_preserves_remote_history(
             else original_git(where, *args)
         ),
     )
-    before = git(tmp_path / "remote.git", "rev-parse", "review-data")
+    before = git(tmp_path / "remote.git", "rev-parse", tool.BRANCH)
     tool.repin(tmp_path)
     updated = json.loads(path.read_text())
     assert updated["code_sha"] == git(tool.CODE, "rev-parse", "HEAD")
     assert updated["revision_history"][0]["previous_code_sha"] == manifest["code_sha"]
     assert updated["seed_sha"] == manifest["seed_sha"]
-    assert git(tmp_path / "remote.git", "rev-parse", "review-data") == before
+    assert git(tmp_path / "remote.git", "rev-parse", tool.BRANCH) == before
+
+
+@pytest.mark.parametrize(
+    "push_urls", [[], ["/old/push"], ["/old/first", "/old/second"]]
+)
+def test_failed_push_preserves_all_explicit_push_urls(tmp_path, push_urls):
+    run, settings = workspace(tmp_path)
+    server = SimpleNamespace(checkout=settings.data_checkout)
+    for url in push_urls:
+        git(server.checkout, "config", "--add", "remote.origin.pushurl", url)
+    with pytest.raises(ValueError), run.failed_push(server):
+        assert git(
+            server.checkout, "remote", "get-url", "--push", "--all", "origin"
+        ) == str(run.directory / "missing-remote.git")
+        raise ValueError("interrupted")
+    effective = git(server.checkout, "remote", "get-url", "--push", "--all", "origin")
+    assert effective.splitlines() == (push_urls or [str(tmp_path / "remote.git")])
+
+
+def test_production_workspace_is_refused_before_git_or_mutation(tmp_path, monkeypatch):
+    tool.write_json(
+        tmp_path / "manifest.json",
+        {"repository": tool.REPOSITORY, "branch": "review-data"},
+    )
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("A production workspace must be refused before any operation")
+
+    monkeypatch.setattr(tool, "git", unexpected)
+    with pytest.raises(RuntimeError, match="Production review-data"):
+        tool.Run(tmp_path, verify_revision=False)  # repin cannot bypass isolation
+    assert list(tmp_path.iterdir()) == [tmp_path / "manifest.json"]
+
+
+def test_prepare_requires_scan_root_before_provisioning(tmp_path, monkeypatch):
+    root = tmp_path / "new-workspace"
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Missing scan root must be rejected before Git operations")
+
+    monkeypatch.setattr(tool, "git", unexpected)
+    with pytest.raises(RuntimeError, match="--scan-root is required"):
+        tool.prepare(
+            argparse.Namespace(
+                workspace=root, local=True, synthetic_only=False, scan_root=None
+            )
+        )
+    assert not root.exists()
+
+
+def test_synthetic_preparation_only_pushes_acceptance_branch(tmp_path):
+    root = tmp_path / "new-workspace"
+    tool.prepare(
+        argparse.Namespace(
+            workspace=root, local=True, synthetic_only=True, scan_root=None
+        )
+    )
+    manifest = json.loads((root / "manifest.json").read_text())
+    assert manifest["branch"] == "review-data-acceptance"
+    assert (
+        git(root / "remote.git", "for-each-ref", "--format=%(refname)", "refs/heads")
+        == "refs/heads/review-data-acceptance"
+    )
+    assert git(root / "remote.git", "rev-parse", tool.BRANCH) == manifest["seed_sha"]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_browser_failure_restores_both_environment_variables(
+    tmp_path, monkeypatch, existing
+):
+    keys = ("REVIEW_TEST_WORKSPACE", "REVIEW_TEST_PYTHON")
+    for key in keys:
+        if existing:
+            monkeypatch.setenv(key, f"original-{key}")
+        else:
+            monkeypatch.delenv(key, raising=False)
+    with pytest.raises(ValueError), tool.browser_environment(tmp_path):
+        assert tool.os.environ["REVIEW_TEST_WORKSPACE"] == str(tmp_path)
+        assert tool.os.environ["REVIEW_TEST_PYTHON"] == tool.sys.executable
+        raise ValueError("browser failure")
+    for key in keys:
+        assert tool.os.environ.get(key) == (f"original-{key}" if existing else None)
+
+
+def test_manual_commands_select_acceptance_branch(tmp_path, monkeypatch, capsys):
+    workspace(tmp_path)
+    monkeypatch.setattr(
+        tool.sys, "argv", ["review_github_test.py", "manual", str(tmp_path)]
+    )
+    assert tool.main() == 0
+    commands = capsys.readouterr().out.splitlines()
+    assert len(commands) == 2
+    assert all("--data-branch review-data-acceptance" in line for line in commands)

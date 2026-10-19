@@ -1,4 +1,4 @@
-"""Opt-in review acceptance against a disposable local remote or GitHub review-data.
+"""Opt-in review acceptance against a disposable local remote or GitHub review-data-acceptance.
 
 Run --help; ordinary pytest and CI never invoke this live-writing tool.
 """
@@ -32,7 +32,7 @@ from survey.records import Reference, read_dataset, read_records, resolve_field
 
 CODE = Path(__file__).resolve().parents[1]
 REPOSITORY = "skandaramanan/IT-Project-T8-6"
-BRANCH = "review-data"
+BRANCH = "review-data-acceptance"
 
 
 def require(condition, message):
@@ -96,6 +96,10 @@ def prepare(args):
         not root.is_relative_to(CODE), "Workspace must be outside the code checkout"
     )
     require(
+        args.synthetic_only or args.scan_root is not None,
+        "--scan-root is required unless --synthetic-only is passed",
+    )
+    require(
         args.local or not git(CODE, "status", "--porcelain"),
         "Commit the tooling first: preparation pins a clean code revision",
     )
@@ -106,7 +110,7 @@ def prepare(args):
     if not args.local:
         require(
             not git(CODE, "ls-remote", "--heads", remote, BRANCH),
-            "review-data already exists; inspect it rather than overwrite it",
+            f"{BRANCH} already exists; inspect it rather than overwrite it",
         )
     root.mkdir(parents=True)
     scan_root = root / "scans"
@@ -172,13 +176,13 @@ def prepare(args):
     # Recheck immediately before push; no force and no replacement of existing data.
     require(
         not git(seed, "ls-remote", "--heads", "origin", BRANCH),
-        "review-data appeared during preparation",
+        f"{BRANCH} appeared during preparation",
     )
     git(
         seed,
         "push",
         "origin",
-        "HEAD:refs/heads/review-data",
+        f"HEAD:refs/heads/{BRANCH}",
     )
     manifest = {
         "version": 1,
@@ -336,7 +340,8 @@ class Run:
         require(
             self.manifest["repository"] == REPOSITORY
             and self.manifest["branch"] == BRANCH,
-            "Unexpected workspace repository/branch",
+            "Unexpected workspace repository/branch; prepare a new acceptance workspace. "
+            "Production review-data workspaces cannot be run or repinned",
         )
         require(
             not verify_revision
@@ -385,18 +390,50 @@ class Run:
     @contextmanager
     def failed_push(self, server):
         # Only this clone's push transport is changed. Fetch still goes to GitHub.
-        previous = git(server.checkout, "config", "--get-regexp", "^remote.origin.url$")
-        require(previous, "Missing remote")
+        previous = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(server.checkout),
+                "config",
+                "--local",
+                "--null",
+                "--get-all",
+                "remote.origin.pushurl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(previous.returncode in {0, 1}, "Cannot read previous push URLs")
+        push_urls = previous.stdout.split("\0")[:-1]
         git(
             server.checkout,
             "config",
+            "--local",
+            "--replace-all",
             "remote.origin.pushurl",
             str(self.directory / "missing-remote.git"),
         )
         try:
             yield
         finally:
-            git(server.checkout, "config", "--unset-all", "remote.origin.pushurl")
+            git(
+                server.checkout,
+                "config",
+                "--local",
+                "--unset-all",
+                "remote.origin.pushurl",
+            )
+            for url in push_urls:
+                git(
+                    server.checkout,
+                    "config",
+                    "--local",
+                    "--add",
+                    "remote.origin.pushurl",
+                    url,
+                )
 
     def verify(self, expectations=()):
         checkout = self.clone("verify")
@@ -853,6 +890,21 @@ def repin(root):
     print(f"Repinned {previous[:7]} -> {current[:7]}; existing branch/data retained")
 
 
+@contextmanager
+def browser_environment(root):
+    values = {"REVIEW_TEST_WORKSPACE": str(root), "REVIEW_TEST_PYTHON": sys.executable}
+    previous = {key: os.environ.get(key) for key in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def main():
     def interrupted(_number, _frame):
         raise KeyboardInterrupt
@@ -875,7 +927,7 @@ def main():
     p.add_argument(
         "--scan-root",
         type=Path,
-        default=Path("/Users/ericzhang/Downloads/Wilfred_Prest_Survey_Data"),
+        help="Original scan directory; required unless --synthetic-only is passed",
     )
     for name in ("run", "manual", "repin", "browser-session"):
         p = sub.add_parser(name)
@@ -912,6 +964,8 @@ def main():
                         str(run.root / "scans"),
                         "--data-checkout",
                         str(checkout),
+                        "--data-branch",
+                        BRANCH,
                         "--flags",
                         str(run.root / "flags.jsonl"),
                         "--cache",
@@ -959,16 +1013,8 @@ def main():
                         )
             return {"artifacts": str(CODE / "frontend/test-results")}
 
-        env_workspace = os.environ.get("REVIEW_TEST_WORKSPACE")
-        os.environ["REVIEW_TEST_WORKSPACE"] = str(run.root)
-        os.environ["REVIEW_TEST_PYTHON"] = sys.executable
-        try:
+        with browser_environment(run.root):
             run.scenario("browser-smoke", browsers)
-        finally:
-            if env_workspace is None:
-                os.environ.pop("REVIEW_TEST_WORKSPACE", None)
-            else:
-                os.environ["REVIEW_TEST_WORKSPACE"] = env_workspace
     else:
         run.results.append(
             {

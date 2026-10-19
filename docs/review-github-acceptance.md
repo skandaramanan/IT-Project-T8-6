@@ -1,10 +1,16 @@
 # Provisional GitHub review acceptance
 
 This is an explicitly invoked integration test that writes review decisions to
-`skandaramanan/IT-Project-T8-6:review-data`. It is not part of ordinary pytest or
+`skandaramanan/IT-Project-T8-6:review-data-acceptance`. It is not part of ordinary pytest or
 CI. Keep this branch provisional and retain its history and failed checkouts.
 Never use this tool against a production data branch: reruns undo active decisions
 in its test fixtures through the application before exercising them again.
+
+The runner accepts only `review-data-acceptance`; production `review-data` is
+reserved for the complete merged dataset and real reviewer decisions. Old
+workspaces whose manifest targets `review-data` are refused by run, manual,
+browser-session and repin. Preserve their reports and prepare a new workspace;
+do not edit their manifests to reuse the production branch.
 
 ## Install and prepare
 
@@ -40,25 +46,24 @@ the data checkout, command arguments, reports or chat. Use a short expiry.
 First test locally (loopback sockets and local subprocesses must be permitted):
 
 ```sh
-uv run python scripts/review_github_test.py prepare /tmp/review-github-local --local
+uv run python scripts/review_github_test.py prepare /tmp/review-github-local --local --synthetic-only
 uv run python scripts/review_github_test.py run /tmp/review-github-local
 ```
 
-The default real-scan root is
-`/Users/ericzhang/Downloads/Wilfred_Prest_Survey_Data`; override with
-`--scan-root /path/to/original/scans` during preparation. `--synthetic-only`
-omits the real-data phase and cannot establish real-data acceptance.
+Preparation requires `--scan-root /path/to/original/scans` unless
+`--synthetic-only` is passed. The synthetic-only local example above omits the
+real-data phase and cannot establish real-data acceptance.
 Local preparation permits a dirty development tree; that is development evidence,
 not evidence for a clean release revision.
 
 For the live run, choose a new external workspace:
 
 ```sh
-uv run python scripts/review_github_test.py prepare /tmp/review-github-live
+uv run python scripts/review_github_test.py prepare /tmp/review-github-live --scan-root /path/to/original/scans
 uv run python scripts/review_github_test.py run /tmp/review-github-live
 ```
 
-Preparation refuses an existing workspace or existing remote `review-data` branch.
+Preparation refuses an existing workspace or existing remote `review-data-acceptance` branch.
 It creates a separate provisioning clone based on the pinned code revision,
 replaces its inherited `results/` tree with two synthetic regions and two complete
 216418 dwellings, validates, commits and pushes once. It copies the original PDF
@@ -166,14 +171,18 @@ actual absolute path. Record any pre-existing push URL before changing it:
 
 ```sh
 git -C "/path/to/manual-A-checkout" config remote.origin.pushurl /tmp/review-test-remote-that-does-not-exist.git
-# After stopping A again, restore ordinary origin-based push behavior:
+# After stopping A again, remove the injected URL:
 git -C "/path/to/manual-A-checkout" config --unset-all remote.origin.pushurl
 ```
+
+If explicit push URLs existed before injection, restore each recorded value with
+`git config --add remote.origin.pushurl VALUE` in that checkout. Leaving the key
+unset is correct only when it was originally absent.
 
 Verify GitHub independently, keeping this inspection clone separate from A/B:
 
 ```sh
-git clone --branch review-data git@github.com:skandaramanan/IT-Project-T8-6.git /tmp/review-inspection
+git clone --branch review-data-acceptance git@github.com:skandaramanan/IT-Project-T8-6.git /tmp/review-inspection
 git -C /tmp/review-inspection log --oneline -5
 uv run survey validate-results /tmp/review-inspection/results
 ```
@@ -194,3 +203,23 @@ cross-browser compatibility, two-human usability, Drive download behavior,
 full-corpus performance or production queue correctness. Retain the provisional
 branch; production promotion and main integration are separate work. Rerun after
 the underlying application branches integrate, recording the new application SHA.
+
+
+## Existing test data
+
+The former `review-data` test history is preserved separately, and the production
+branch is seeded with the complete merged corpus. See
+[the archive and seed record](runs/review-data-production-seed-20261019.md).
+Retire all former test workspaces; never run their old pinned tooling against the
+production branch. Create fresh production checkouts and a fresh acceptance
+workspace with this version of the runner.
+
+## Why these controls remain
+
+This runner is reusable after application fixes and integrations, rather than a
+single-use script. Explicit repinning and revision history bind retained evidence
+to the code actually exercised. Actions polling distinguishes an uploaded commit
+from validated data. The private stdio controller lets browser tests exercise
+restart and failed-push recovery without adding application test endpoints. These
+controls remain because removing them would weaken the documented acceptance
+checks; production branch isolation is enforced independently of them.
