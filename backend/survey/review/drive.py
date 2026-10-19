@@ -5,6 +5,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from threading import Event, RLock, Thread
@@ -318,6 +320,25 @@ class BatchDownloads:
                 "md5": None,
                 "destination": destination,
             }
+
+    def open_folder(self, region):
+        # Only open a catalogue-derived folder inside the configured scan root.
+        folder = self.target(self.batch(region)).parent
+        if not folder.is_dir():
+            raise ReviewError("missing_scan_folder", "Scan folder does not exist", 404)
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(folder))
+            else:
+                command = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.run([command, str(folder)], check=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            raise ReviewError(
+                "scan_folder_open_failed",
+                f"Could not open the scan folder. Open it manually: {folder}",
+                500,
+            ) from None
+        return {"opened": True}
 
     def start(self, region):
         self.batch(region)

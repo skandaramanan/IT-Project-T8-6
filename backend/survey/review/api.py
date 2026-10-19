@@ -309,6 +309,12 @@ def create_app(settings: Settings) -> FastAPI:
         reviewer(request)
         return downloads.cancel(region)
 
+    @app.post("/api/scan-batches/{region}/open-folder")
+    def open_scan_folder(region: str, request: Request):
+        ready()
+        reviewer(request)
+        return downloads.open_folder(region)
+
     @app.post("/api/scan-batches/{region}/import")
     async def import_batch(region: str, request: Request):
         from starlette.concurrency import run_in_threadpool

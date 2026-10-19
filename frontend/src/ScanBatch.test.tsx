@@ -97,3 +97,15 @@ it('ignores a late availability response from a previous region', async () => {
   resolve(response(batch));
   await waitFor(() => expect(screen.queryByText(/original.pdf/)).not.toBeInTheDocument());
 });
+
+it('opens the local scan folder and displays a launcher failure', async () => {
+  const fetch = vi.fn(async (_path: string, options?: RequestInit) => options?.method === 'POST'
+    ? response({ error: { code: 'scan_folder_open_failed', message: 'Could not open the scan folder. Open it manually: /scans/216418' } }, 500)
+    : response({ ...batch, local_file_exists: true }));
+  vi.stubGlobal('fetch', fetch);
+  render(<ScanBatch region="216418" onReady={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Open scan folder' }));
+  expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/open-folder', expect.objectContaining({ method: 'POST', body: '{}' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Open it manually: /scans/216418');
+  expect(screen.getByRole('button', { name: 'Download latest scans' })).toBeEnabled();
+});

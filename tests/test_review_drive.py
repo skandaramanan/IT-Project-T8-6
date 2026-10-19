@@ -600,3 +600,104 @@ def test_catalogue_builder_paginates_and_ignores_outdated_local_source(tmp_path)
     assert catalogue["batches"][0]["resource_key"] == "pdf-key"
     assert "pageToken=opaque-token" in requests[1].full_url
     assert requests[2].headers["X-goog-drive-resource-keys"] == "folder-id/folder-key"
+
+
+def test_open_scan_folder_requires_session_and_uses_configured_folder(
+    tmp_path, monkeypatch
+):
+    from survey.review import drive
+
+    _, _, settings = fixture(tmp_path, with_git=True)
+    calls = []
+    run = drive.subprocess.run
+
+    def launch(*args, **kwargs):
+        if args[0][0] == "git":
+            return run(*args, **kwargs)
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(drive.subprocess, "run", launch)
+    monkeypatch.setattr(
+        drive.os, "startfile", lambda path: calls.append(path), raising=False
+    )
+    with TestClient(create_app(settings), base_url=BASE) as client:
+        path = "/api/scan-batches/demo/open-folder"
+        assert client.post(path, json={}).status_code == 401
+        client.post("/api/session", json={"name": "Reviewer"})
+        assert (
+            client.post(
+                path, json={}, headers={"origin": "https://evil.example"}
+            ).status_code
+            == 403
+        )
+        assert calls == []
+        assert client.post(path, json={}).json() == {"opened": True}
+        folder = str((settings.scan_root / "demo").resolve())
+        if drive.sys.platform == "win32":
+            assert calls == [folder]
+        else:
+            command = "open" if drive.sys.platform == "darwin" else "xdg-open"
+            assert calls == [(([command, folder],), {"check": True, "timeout": 10})]
+        assert (
+            client.post("/api/scan-batches/unknown/open-folder", json={}).status_code
+            == 404
+        )
+
+
+def test_open_scan_folder_rejects_symlinks_and_reports_launcher_failure(
+    tmp_path, monkeypatch
+):
+    from survey.review import drive
+
+    downloads, _, _ = fixture(tmp_path)
+    folder = downloads.root / "demo"
+    external = tmp_path / "external"
+    external.mkdir()
+    folder.rmdir()
+    folder.symlink_to(external, target_is_directory=True)
+    with pytest.raises(ReviewError, match="real region folder"):
+        downloads.open_folder("demo")
+    folder.unlink()
+    folder.mkdir()
+
+    def denied(*args, **kwargs):
+        raise OSError("synthetic failure")
+
+    monkeypatch.setattr(drive.subprocess, "run", denied)
+    monkeypatch.setattr(drive.os, "startfile", denied, raising=False)
+    with pytest.raises(ReviewError) as error:
+        downloads.open_folder("demo")
+    assert error.value.code == "scan_folder_open_failed"
+    assert str(folder) in str(error.value)
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+def test_open_scan_folder_launches_native_file_manager(tmp_path, monkeypatch, platform):
+    from types import SimpleNamespace
+
+    from survey.review import drive
+
+    downloads, _, _ = fixture(tmp_path)
+    # Treat the entire configured path as one argument, including shell characters.
+    root = tmp_path / "scans with spaces & punctuation"
+    (root / "demo").mkdir(parents=True)
+    downloads.root = root
+    calls = []
+    monkeypatch.setattr(drive, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(drive.subprocess, "run", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setattr(
+        drive.os, "startfile", lambda path: calls.append(path), raising=False
+    )
+    assert downloads.open_folder("demo") == {"opened": True}
+    folder = str(root / "demo")
+    if platform == "win32":
+        assert calls == [folder]
+    else:
+        command = "open" if platform == "darwin" else "xdg-open"
+        assert calls == [(([command, folder],), {"check": True, "timeout": 10})]
+    (root / "demo").rmdir()
+    calls.clear()
+    with pytest.raises(ReviewError) as error:
+        downloads.open_folder("demo")
+    assert error.value.code == "missing_scan_folder"
+    assert calls == []

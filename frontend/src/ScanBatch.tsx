@@ -112,6 +112,16 @@ export default function ScanBatch({ region, onReady }: { region: string; onReady
     }
   }
 
+  async function openFolder() {
+    setError('');
+    setBusy(true);
+    try {
+      await api(`/api/scan-batches/${encodeURIComponent(region)}/open-folder`, {});
+    } catch (e) {
+      if (scope.current === region) setError(e instanceof Error ? e.message : 'Could not open the scan folder.');
+    } finally { if (scope.current === region) setBusy(false); }
+  }
+
   if (!batch && !error) return null;
   const active = transferring(batch?.state) || uploading;
   const otherActive = batch?.active_region && batch.active_region !== region;
@@ -139,7 +149,9 @@ export default function ScanBatch({ region, onReady }: { region: string; onReady
         </>
       </div>
       {!batch.automatic_download && batch.state !== 'ready' && <p>Open the PDF in Drive, download it, then import it here. Automatic downloads need a configured Drive API key.</p>}
-      {batch.local_file_exists && !active && <p>Downloading or importing replaces the local PDF after validation and keeps a backup.</p>}
+      {batch.local_file_exists && !active && <p>Downloading or importing replaces the local PDF after validation and keeps a backup.{' '}
+        <button disabled={busy} onClick={() => void openFolder()}>Open scan folder</button>
+      </p>}
       <p>Manual imports are checked for a readable PDF and valid page references; their bytes are not verified against Drive.</p>
     </>}
     {error && <p role="alert">{error}</p>}

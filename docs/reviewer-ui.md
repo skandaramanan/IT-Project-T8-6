@@ -509,6 +509,9 @@ download the PDF, then **Import downloaded PDF**. Manual imports are checked for
 completeness, PDF readability and page bounds,
 without requiring a Drive checksum. Explicit downloads/imports can refresh an
 existing PDF after validation; the previous file is kept in `.scan-backups`.
+When a local PDF exists, **Open scan folder** opens its region folder in Finder,
+File Explorer or the system file manager. If opening fails, the error includes
+the folder path so you can open it manually.
 
 No Google login is required while the scans remain shared with anyone with the
 link. Automatic downloading requires the backend's optional Drive API key;
