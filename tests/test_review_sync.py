@@ -7,6 +7,8 @@ from review_support import decide, git, refs, setup_review
 from survey.records import RecordStore, ReviewError
 from survey.review.sync import GitSync, WriterLock
 
+pytestmark = pytest.mark.integration
+
 
 def make_sync(tmp_path):
     service, settings = setup_review(tmp_path, with_git=True)

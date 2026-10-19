@@ -37,6 +37,9 @@ testpaths = ["tests"]
 # survey is installed; only the calibration harness, which is never packaged,
 # needs to be on the path for its tests.
 pythonpath = ["benchmark"]
+markers = [
+    "integration: runs real components together (pipeline, server, git, Gemini, local data)",
+]
 
 [tool.pyright]
 # Same path, so editors resolve the imports pytest already resolves.

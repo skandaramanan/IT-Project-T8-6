@@ -15,10 +15,13 @@ from ground_truth import (
     load_ground_truth,
 )
 
-pytestmark = pytest.mark.skipif(
-    not DEFAULT_GROUND_TRUTH_XLSX.exists(),
-    reason=f"{DEFAULT_GROUND_TRUTH_XLSX} not synced -- see README, 'Data and secrets'",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not DEFAULT_GROUND_TRUTH_XLSX.exists(),
+        reason=f"{DEFAULT_GROUND_TRUTH_XLSX} not synced -- see README, 'Data and secrets'",
+    ),
+]
 
 
 def test_cards_find_their_image():
