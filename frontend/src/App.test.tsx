@@ -1058,3 +1058,55 @@ it('marks a newly discovered missing scan blocked so Continue can move on', asyn
     await screen.findByRole('button', { name: 'Continue 03-0006-01 →' }),
   ).toBeVisible();
 });
+
+
+it('preserves multiline Unicode text through scan gating, uncertain retry and stale recovery', async () => {
+  const text = field('note', {field_kind: 'text', label: 'Weekly Rent', code_list: [], field_path: '/dwelling/notes/0/text', field: {value: 'Machine note', status: 'ok', confidence: null}});
+  const server = backend([text]);
+  const user = await start();
+  expect(screen.getByRole('button', {name: 'Correct'})).toBeDisabled();
+  loaded();
+  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  const input = screen.getByLabelText('Your correction');
+  expect(input.tagName).toBe('TEXTAREA');
+  fireEvent.change(input, {target: {value: '  Café — 王\nSecond line: 009\n'}});
+  server.failNext('network');
+  await user.click(screen.getByRole('button', {name: 'Save correction'}));
+  expect(input).toHaveValue('  Café — 王\nSecond line: 009\n');
+  await user.click(screen.getByRole('button', {name: 'Try again'}));
+  expect(server.mutations).toHaveLength(2);
+  expect(server.mutations[1].body).toEqual(server.mutations[0].body);
+  expect(server.mutations[1].body.value).toBe('  Café — 王\nSecond line: 009\n');
+});
+
+it('retains text drafts after a confirmed stale version and disables decisions until the reloaded scan loads', async () => {
+  const server = backend([field('note', {field_kind: 'text', code_list: [], field: {value: 'Machine note', status: 'ok', confidence: null}})]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  fireEvent.change(screen.getByLabelText('Your correction'), {target: {value: 'Unicode 王\nNext line'}});
+  server.failNext('stale_version');
+  await user.click(screen.getByRole('button', {name: 'Save correction'}));
+  expect(screen.getByLabelText('Your correction')).toHaveValue('Unicode 王\nNext line');
+  await user.click(screen.getByRole('button', {name: 'Reload current field'}));
+  expect(screen.getByLabelText('Your correction')).toHaveValue('Unicode 王\nNext line');
+  expect(screen.getByRole('button', {name: 'Save correction'})).toBeDisabled();
+  loaded();
+  expect(screen.getByRole('button', {name: 'Save correction'})).toBeEnabled();
+});
+
+it('bounds text corrections and rejects NUL before sending a decision', async () => {
+  const server = backend([field('note', {field_kind: 'text', code_list: [], field: {value: 'Machine note', status: 'ok', confidence: null}})]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  const input = screen.getByLabelText('Your correction');
+  expect(input).toHaveAttribute('maxlength', '10000');
+  for (const value of ['x'.repeat(10001), 'text\0text']) {
+    fireEvent.change(input, {target: {value}});
+    expect(screen.getByRole('button', {name: 'Save correction'})).toBeDisabled();
+  }
+  fireEvent.change(input, {target: {value: '王'.repeat(10000)}});
+  expect(screen.getByRole('button', {name: 'Save correction'})).toBeEnabled();
+  expect(server.mutations).toHaveLength(0);
+});

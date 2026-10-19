@@ -331,3 +331,23 @@ schema to follow its structure, and this record was written without it.
 Also revisit when IT-46 picks an extraction engine: if the chosen engine cannot
 produce a per-field score, FR-10 is unsatisfiable as written and either the
 requirement or the nullable `confidence` here has to give.
+
+
+## Review continuation compatibility (14 October 2026)
+
+The IT-113 validator reconciles review metadata with the inspected IT-123 0.5.0
+corpus envelope: nullable/lettered household IDs, corresponding note household IDs
+and optional dwelling flags. These shapes apply to 0.5.0 and 0.6.0; older schemas
+retain their ID rules. Saves preserve 0.5.0 without down-conversion. Other versions,
+including 0.4.0, are upgraded to 0.6.0 on save, retaining each household's municipality.
+Current extraction builders use 0.6.0.
+Established survey-front definitions and IT-89 note ownership supply bounded text
+review. Text corrections are limited to 10,000 characters and reject NUL;
+the same rules validate saved correction history. No person column/page structure or coding-back fields are invented.
+
+Review compatibility check (19 October 2026): the fetched `review-data` head
+`752b8093f3c7afc250be93bef39ad62940b75d2c` contains four records across
+`results/216418.jsonl`, `results/demo-a.jsonl` and `results/demo-b.jsonl`.
+All four are 0.6.0 and pass the envelope validator; no 0.1–0.4 records
+carrying dwelling flags were present. This checks the current shared branch,
+not any operator's unpushed checkout. The legacy ID constraints remain in place.

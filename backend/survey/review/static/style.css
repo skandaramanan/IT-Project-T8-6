@@ -3,3 +3,5 @@
 #session-reminder{background:white;border:1px solid #c8dffc;border-radius:5px;padding:12px;margin:16px 0}#session-reminder p{margin:0 0 10px}
 
 #scan[hidden]{display:none}#scan-status:empty{display:none}
+
+textarea{font:inherit;width:100%;border:1px solid #5b6478;padding:9px} .value,#history p{white-space:pre-wrap;overflow-wrap:anywhere}

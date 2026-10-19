@@ -272,3 +272,12 @@ def test_cli_skips_duplicate_cards_and_keeps_valid_flags(tmp_path, capsys, folde
     out, err = capsys.readouterr()
     assert [json.loads(line) for line in out.splitlines()] == flags(valid)
     assert "216412: unit.pdf p1 is on two households, skipped" in err
+
+
+def test_dwelling_front_and_back_cards_do_not_enter_coding_generator():
+    one = record(house__garden=0.5)
+    one["dwelling"]["cards"] = [
+        {"role": "survey-front", "image": "unit.pdf", "page": 1},
+        {"role": "survey-back", "image": "unit.pdf", "page": 2},
+    ]
+    assert [f["field_path"] for f in flags(one)] == ["/dwelling/house/garden"]

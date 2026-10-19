@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException
 
 from survey.records import REGION, RecordStore, ReviewError, safe_pdf
+from survey.review.fields import MAX_TEXT_CORRECTION_LENGTH
 from survey.review.queue import load_queue
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
@@ -86,7 +87,7 @@ class VersionedBody(Body):
 
 class DecisionBody(VersionedBody):
     action: Literal["accept", "correct", "no_data", "illegible"]
-    value: str | None = None
+    value: str | None = Field(default=None, max_length=MAX_TEXT_CORRECTION_LENGTH)
 
 
 def error_response(code, message, status):
@@ -223,7 +224,7 @@ def create_app(settings: Settings) -> FastAPI:
         return {
             "ready": startup_error is None and service is not None,
             "diagnostics": [startup_error] if startup_error else [],
-            "scope": "C1/C2 numeric flagged fields; one backend writer per checkout",
+            "scope": "Supplied coding fields, uniquely owned front dwelling fields and verified IT-89 notes; one backend writer per checkout",
             "data_branch": settings.data_branch,
         }
 

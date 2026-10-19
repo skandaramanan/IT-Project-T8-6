@@ -27,5 +27,8 @@ def test_fixture_adaptation_preserves_values_and_original_example():
     household = record["dwelling"]["households"][0]
     assert household["record_id"] == "27-0006-01"
     assert len(record["dwelling"]["households"]) == 1
-    assert [card["page"] for card in household["cards"]] == [1, 2, 3, 4]
+    assert [card["page"] for card in household["cards"]] == [3, 4]
     assert all(card["image"] == FIXTURE["PDF"] for card in household["cards"])
+
+    assert [card["page"] for card in record["dwelling"]["cards"]] == [1, 2]
+    assert all(card["image"] == FIXTURE["PDF"] for card in record["dwelling"]["cards"])

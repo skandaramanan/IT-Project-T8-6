@@ -122,7 +122,7 @@ export default function ScanViewer({
   return (
     <section
       className="stage scan-viewer"
-      aria-label="Scanned coding card"
+      aria-label="Scanned card"
       onKeyDown={keyboard}
     >
       <div className="ctrls" role="group" aria-label="Scan controls">

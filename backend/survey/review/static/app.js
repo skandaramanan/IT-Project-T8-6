@@ -12,7 +12,7 @@ function message(text, error=false) { $('message').textContent=text; $('message'
 function hasUnsavedCorrection() { return !!current && $('correction').value!==(current.field.value ?? ''); }
 function setBusy(value) {
   busy=value;
-  for (const control of document.querySelectorAll('button,select,input')) control.disabled=value;
+  for (const control of document.querySelectorAll('button,select,input,textarea')) control.disabled=value;
   if (!value) {
     for (const control of document.querySelectorAll('[data-action]')) control.disabled=!signedIn || !scanReady || !current?.allowed_actions.includes(control.dataset.action);
     $('undo').disabled=!signedIn || !scanReady || !current?.undo_decision_id;
@@ -56,16 +56,24 @@ async function openItem(id,retainInput=false) {
   $('field').hidden=false;
   $('label').textContent=current.label;
   $('identity').textContent=current.record_id+' · '+current.review_state;
-  $('value').textContent=current.field.value ?? 'No readable numeric value';
+  $('value').textContent=current.field.value ?? 'No readable value';
   $('details').textContent=`${current.field.status} · ${current.field.label || 'No decoded label'} · confidence ${current.field.confidence ?? 'unknown'}`;
   $('reason').textContent=current.reason;
   $('source').textContent=`${current.source.pdf} · original page ${current.source.page}`;
   $('warnings').replaceChildren();
   for (const text of [...current.warnings,...current.diagnostics.map(d=>d.message)]) {const li=document.createElement('li');li.textContent=text;$('warnings').append(li);}
-  if (!retainInput) $('correction').value=current.field.value || '';
+  const oldControl=$('correction');
+  const control=document.createElement(current.field_kind==='text'?'textarea':'input');
+  control.id='correction';control.setAttribute('aria-describedby','correction-help');
+  control.maxLength=current.field_kind==='text'?10000:64;
+  if(current.field_kind==='text') control.rows=5;
+  else {control.pattern='[0-9]{1,64}';control.inputMode='numeric';control.autocomplete='off';}
+  control.value=retainInput?oldControl.value:(current.field.value ?? '');
+  control.oninput=()=>setBusy(busy);
+  oldControl.replaceWith(control);
   scanReady=false;
   const serial=++scanSerial;
-  const scan=document.createElement('img');scan.id='scan';scan.alt='Original coding card scan';scan.style.width=`${zoom*100}%`;
+  const scan=document.createElement('img');scan.id='scan';scan.alt='Original card scan';scan.style.width=`${zoom*100}%`;
   scan.hidden=!!current.diagnostics.length;
   $('scan-status').textContent=scan.hidden?'Original scan unavailable.':'Loading original card…';
   scan.onload=()=>{if(serial!==scanSerial)return;scanReady=true;$('scan-status').textContent='';setBusy(busy);};
@@ -84,7 +92,7 @@ async function openItem(id,retainInput=false) {
 async function run(work) {
   if (busy) return;
   setBusy(true);
-  try {await work();} catch(e) {message(e.code==='no_op'?'Already saved. To amend the value, enter digits and choose Save correction.':e.message,e.code!=='no_op');} finally {setBusy(false);}
+  try {await work();} catch(e) {message(e.code==='no_op'?'Already saved. To amend the value, enter the exact value and choose Save correction.':e.message,e.code!=='no_op');} finally {setBusy(false);}
 }
 function requestBody(action,value,target=null,version=current.version) {
   const key=JSON.stringify([current.id,action,value,target,version]);

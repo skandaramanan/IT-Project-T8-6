@@ -992,3 +992,9 @@ summary:focus-visible {
 .more-help section { border-top: 1px solid var(--line); padding-top: 18px; }
 @media (max-width: 700px) { .more-help { grid-template-columns: 1fr; } }
 .open:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+/* Verbatim front and interview text, including retained line breaks. */
+.value, .diff b, .hist b { white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea.input { resize: vertical; min-height: 8rem; }
+
+.value.text-value { font-size: 22px; line-height: 1.4; }
