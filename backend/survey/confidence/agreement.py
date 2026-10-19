@@ -43,7 +43,10 @@ def compare_fields(
     field_names: list[str] | None = None,
     first_bands: dict[str, str] | None = None,
     second_bands: dict[str, str] | None = None,
-) -> dict[str, dict[str, str | None]]:
+    *,
+    first_state: str = "absent",
+    second_state: str = "absent",
+) -> dict[str, dict]:
     """One card's fields, paired.
 
     ``None`` for an arm means it produced nothing usable for this card, so
@@ -54,20 +57,33 @@ def compare_fields(
     not "low" (IT-99 needs to tell "never asked" from "asked and unsure" apart).
     """
     names = SCHEMA_FIELD_NAMES if field_names is None else field_names
-    missing_arm = first is None or second is None
-    paired: dict[str, dict[str, str | None]] = {}
+    paired: dict[str, dict] = {}
     for name in names:
         first_raw = None if first is None else first.get(name)
         second_raw = None if second is None else second.get(name)
-        field: dict[str, str | None] = {
+
+        def state(fields, raw, unavailable, field_name):
+            if fields is None:
+                return unavailable
+            if field_name not in fields:
+                return "omitted"
+            return "value" if normalise(raw) else "blank"
+
+        a_state = state(first, first_raw, first_state, name)
+        b_state = state(second, second_raw, second_state, name)
+        field = {
             "a": normalise(first_raw),
             "b": normalise(second_raw),
             # What each model literally said, so a reviewer chasing one field
             # doesn't have to re-parse the raw response blob (AC4).
             "a_raw": first_raw,
             "b_raw": second_raw,
+            "a_available": first is not None,
+            "b_available": second is not None,
+            "a_state": a_state,
+            "b_state": b_state,
             "agreement": NO_SECOND_OPINION
-            if missing_arm
+            if a_state not in {"value", "blank"} or b_state not in {"value", "blank"}
             else classify(first_raw, second_raw),
         }
         for key, bands in (("a_band", first_bands), ("b_band", second_bands)):

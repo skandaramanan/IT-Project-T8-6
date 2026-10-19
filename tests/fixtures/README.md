@@ -63,6 +63,10 @@ checked by a person against the scan.
 `review_flags/` holds no scans: three hand-written D007 records in two region
 files, covering every routing case, and `expected.json`, which labels each
 field by hand as flagged for review or not.
+The synthetic class scores follow IT-125's current D016 calibration: clean agreement
+is 0.98 and the just-below-cutoff example is 0.979. Expected labels remain
+independent of the routing implementation; the corrected example retains its
+historical confidence.
 
 ## Provenance
 

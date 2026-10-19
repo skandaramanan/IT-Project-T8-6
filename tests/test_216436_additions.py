@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -200,17 +201,11 @@ def test_coding_corrections_keep_identity_aliases_and_missing_machine_values():
 @pytest.mark.skipif(
     not additions.PDF.exists(), reason="needs the local replacement scan and raw caches"
 )
-def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps():
-    raw_paths = sorted((ROOT / "data/runs/216436").rglob("*.json"))
-    raw_before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in raw_paths}
-    output = ROOT / "results/216436.jsonl"
-    before = output.read_bytes()
-    additions.build()
-    assert output.read_bytes() == before
-    assert all(
-        hashlib.sha256(p.read_bytes()).hexdigest() == digest
-        for p, digest in raw_before.items()
-    )
+def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
+    tmp_path, monkeypatch
+):
+    # The production helper intentionally refuses main/IT-125 checkouts. Replay
+    # real local inputs only in scratch space, never rewrite active results.
     baseline = subprocess.check_output(
         [
             "git",
@@ -220,10 +215,69 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps():
         cwd=ROOT,
         text=True,
     ).splitlines()
+    # This helper builds the standalone Gemini additions stage. Its expected
+    # output must not follow the active dataset as IT-125 pairs/rescores it.
+    expected = subprocess.check_output(
+        [
+            "git",
+            "show",
+            "5b45a21aba1283eb41ceaeff130837234c2c35b0:results/216436.jsonl",
+        ],
+        cwd=ROOT,
+    )
+    published = ROOT / "results/216436.jsonl"
+    published_before = published.read_bytes()
+    original_check_output = subprocess.check_output
+
+    def pinned_baseline(command, **kwargs):
+        if command == [
+            "git",
+            "show",
+            "556913316ae04aeaca0b5332198975bc176d7bc1:results/216436.jsonl",
+        ]:
+            return "\n".join(baseline) + "\n"
+        return original_check_output(command, **kwargs)
+
+    sandbox = tmp_path / "offline-replay"
+    for relative in ("docs/runs", "results", "data/216436-additions"):
+        (sandbox / relative).mkdir(parents=True, exist_ok=True)
+    for name in ("216436-source-corrections.json", "216436-gemini-additions.json"):
+        shutil.copy2(ROOT / "docs/runs" / name, sandbox / "docs/runs" / name)
+    (sandbox / "results/216436.jsonl").write_text("\n".join(baseline) + "\n")
+    pdf = sandbox / "data/Wilfred_Prest_Survey_Data/216436" / additions.PDF_NAME
+    pdf.parent.mkdir(parents=True)
+    shutil.copy2(additions.PDF, pdf)
+    for kind, page in [*additions.jobs(), ("identity", 551)]:
+        source = additions.cache(kind, page)
+        destination = sandbox / source.relative_to(ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    monkeypatch.setattr(additions, "ROOT", sandbox)
+    monkeypatch.setattr(additions, "RUN", sandbox / "data/216436-additions")
+    monkeypatch.setattr(additions, "PDF", pdf)
+    monkeypatch.setattr(additions, "isolated", lambda: None)
+    monkeypatch.setattr(additions.subprocess, "check_output", pinned_baseline)
+    raw_paths = sorted((sandbox / "data/runs/216436").rglob("*.json"))
+    raw_before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in raw_paths}
+    output = sandbox / "results/216436.jsonl"
+    additions.build()
+    assert output.read_bytes() == expected
+    report_path = sandbox / "docs/runs/216436-gemini-additions.json"
+    first_report = report_path.read_bytes()
+    additions.build()
+    assert output.read_bytes() == expected
+    assert report_path.read_bytes() == first_report
+    assert published.read_bytes() == published_before
+    assert all(
+        hashlib.sha256(p.read_bytes()).hexdigest() == digest
+        for p, digest in raw_before.items()
+    )
     assert set(baseline) <= set(output.read_text().splitlines())
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert len(records) == 146
-    report = json.loads((ROOT / "docs/runs/216436-gemini-additions.json").read_text())
+    report = json.loads(
+        (sandbox / "docs/runs/216436-gemini-additions.json").read_text()
+    )
     assert report["unattached_front_pages"] == report["new_unplaced_coding_pages"] == []
     assert report["null_record_id_pages"] == report["omitted_coding_fields"] == []
     assert report["source_corrections"] == 19
@@ -258,3 +312,15 @@ def test_existing_review_and_manual_correction_payloads_cannot_be_overwritten():
         additions.protect_published_corrections([old], [changed])
     with pytest.raises(ValueError, match="overwrite a published correction or review"):
         additions.protect_published_corrections([old], [])
+
+
+def test_rebuild_refuses_main_before_changing_active_results(monkeypatch):
+    output = ROOT / "results/216436.jsonl"
+    before = output.read_bytes()
+    monkeypatch.setattr(
+        additions.subprocess, "check_output", lambda *args, **kwargs: "main\n"
+    )
+    monkeypatch.chdir(ROOT)
+    with pytest.raises(RuntimeError, match="not the isolated additions branch"):
+        additions.build()
+    assert output.read_bytes() == before
