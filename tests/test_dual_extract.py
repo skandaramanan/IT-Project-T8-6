@@ -46,7 +46,7 @@ FIELDS = ["Municipality", "Weekly Rent", "Garden"]
         ("3", "", ONE_BLANK),
         ("", "3", ONE_BLANK),
         ("", "", BOTH_BLANK),
-        (None, None, BOTH_BLANK),  # both omitted the key: both read no code
+        (None, None, BOTH_BLANK),  # explicit nulls: both read no code
         ("-", "B", BOTH_BLANK),  # transcriber's dash vs the coder's void mark
     ],
 )
@@ -84,7 +84,7 @@ def test_missing_arm_beats_both_blank():
     """Two models agreeing a card is empty and one model never answering are
     different claims. A run that half-failed must not read as a clean one."""
     absent = compare_fields({}, None, FIELDS)
-    blank = compare_fields({}, {}, FIELDS)
+    blank = compare_fields({"Garden": ""}, {"Garden": None}, FIELDS)
     assert absent["Garden"]["agreement"] == NO_SECOND_OPINION
     assert blank["Garden"]["agreement"] == BOTH_BLANK
 
@@ -104,7 +104,7 @@ def test_every_schema_field_is_emitted():
     paired = compare_fields({"Municipality": "56"}, {"Municipality": "56"})
     assert len(paired) == 62
     assert set(paired) == set(SCHEMA_FIELD_NAMES)
-    assert paired["Weekly Rent"]["agreement"] == BOTH_BLANK
+    assert paired["Weekly Rent"]["agreement"] == NO_SECOND_OPINION
 
 
 def test_raw_readings_are_preserved_unmodified():
@@ -170,7 +170,7 @@ def test_counts_add_up_to_the_field_count(tmp_path):
     _write(tmp_path, "b", "p1", {"Municipality": "56", "Weekly Rent": "4"})
     record = pair_cards("a", "b", tmp_path, FIELDS)[0]
     assert sum(record["counts"].values()) == len(FIELDS)
-    assert record["counts"] == {AGREE: 1, DISAGREE: 1, BOTH_BLANK: 1}
+    assert record["counts"] == {AGREE: 1, DISAGREE: 1, NO_SECOND_OPINION: 1}
 
 
 # --- filling in what's missing (step 4, AC5) --------------------------------
@@ -377,9 +377,9 @@ def test_the_card_score_comes_from_its_own_fields(tmp_path):
     the agree constant, a stranded one below it."""
     from survey.confidence.field import CONFIDENCE_BY_CLASS
 
-    _write(tmp_path, "a", "p1", {"Municipality": "56"})
-    _write(tmp_path, "b", "p1", {"Municipality": "56"})
-    _write(tmp_path, "a", "p2", {"Municipality": "56"})
+    _write(tmp_path, "a", "p1", {name: "56" for name in FIELDS})
+    _write(tmp_path, "b", "p1", {name: "56" for name in FIELDS})
+    _write(tmp_path, "a", "p2", {name: "56" for name in FIELDS})
 
     records = {r["page_id"]: r for r in pair_cards("a", "b", tmp_path, FIELDS)}
 
@@ -396,3 +396,18 @@ def test_a_bad_card_score_fails_the_run(tmp_path, monkeypatch):
 
     with pytest.raises(AssertionError):
         pair_cards("a", "b", tmp_path, FIELDS)
+
+
+def test_omissions_are_not_explicit_blanks():
+    paired = compare_fields({"Garden": None}, {}, FIELDS)
+    assert paired["Garden"]["a_state"] == "blank"
+    assert paired["Garden"]["b_state"] == "omitted"
+    assert paired["Garden"]["agreement"] == NO_SECOND_OPINION
+    assert paired["Weekly Rent"]["agreement"] == NO_SECOND_OPINION
+
+
+def test_failed_and_absent_arms_remain_distinct():
+    paired = compare_fields(None, None, FIELDS, first_state="failed")
+    assert paired["Garden"]["a_state"] == "failed"
+    assert paired["Garden"]["b_state"] == "absent"
+    assert paired["Garden"]["a_available"] is False

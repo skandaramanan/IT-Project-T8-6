@@ -106,3 +106,23 @@ here: this rule never sees the band.
 - Banding is adopted. See "Assumes banding is off".
 - NFR-03's threshold is set. Reconcile the two numbers.
 - Unexplained codes need routing (D011).
+
+## IT-125 recalibration (17 October 2026)
+
+D016 Addendum D replaces the flat `agree` constant with **0.98** (1,486/1,523
+correct, 97.57%, rounded) for unbanded Flash-Lite × normalized Q6_K / 2MP.
+The existing check imports that constant, so its cutoff follows the measured
+configuration. All current disagreement and standalone constants are strictly
+below it; regression tests assert this and the exact boundary. Both-blank is a
+reasoned fallback with no Q6 benchmark observations and stays in review through
+`status: no_data`. No score on an omitted field is treated as agreement.
+
+This is the existing interim clean-agreement policy, evaluated on the available
+30-card development benchmark. It is **not** a proven 99% corpus accuracy promise:
+37/1,523 agreeing benchmark fields were wrong, the sheet is single-keyed, and
+there is no held-out evaluation. Field skip-share reports distinguish this
+policy eligibility from the review queue's additional identity flags and human
+decisions. Unsupported C3 fields and Gemini-only identity recovery receive zero
+in the merge, so neither can clear from apparent double agreement. Front fields
+remain uncalibrated and null. Banded low-sample fallbacks are retained for scoring
+but are not validated for a new banded review-bypass policy.

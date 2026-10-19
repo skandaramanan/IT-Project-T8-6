@@ -1,0 +1,193 @@
+{
+  "banded": {
+    "cards": 30,
+    "class_bands": {
+      "agree/high": {
+        "accuracy": 0.9845018450184502,
+        "correct": 1334,
+        "measured_override": true,
+        "total": 1355
+      },
+      "agree/low": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "measured_override": false,
+        "total": 4
+      },
+      "agree/medium": {
+        "accuracy": 0.8854961832061069,
+        "correct": 116,
+        "measured_override": true,
+        "total": 131
+      },
+      "disagree/high": {
+        "accuracy": 0.6175298804780877,
+        "correct": 155,
+        "measured_override": true,
+        "total": 251
+      },
+      "disagree/low": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "measured_override": false,
+        "total": 7
+      },
+      "disagree/medium": {
+        "accuracy": 0.3548387096774194,
+        "correct": 22,
+        "measured_override": true,
+        "total": 62
+      },
+      "one_blank/high": {
+        "accuracy": 0.3333333333333333,
+        "correct": 9,
+        "measured_override": true,
+        "total": 27
+      },
+      "one_blank/low": {
+        "accuracy": 0.13636363636363635,
+        "correct": 3,
+        "measured_override": true,
+        "total": 22
+      }
+    },
+    "classes": {
+      "agree": {
+        "accuracy": 0.9731543624161074,
+        "correct": 1450,
+        "total": 1490
+      },
+      "disagree": {
+        "accuracy": 0.553125,
+        "correct": 177,
+        "total": 320
+      },
+      "no_second_opinion": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "total": 1
+      },
+      "one_blank": {
+        "accuracy": 0.24489795918367346,
+        "correct": 12,
+        "total": 49
+      }
+    },
+    "field_states": {
+      "a": {
+        "blank": 48,
+        "omitted": 1,
+        "value": 1811
+      },
+      "b": {
+        "blank": 1,
+        "value": 1859
+      }
+    },
+    "fields": 1860,
+    "raw_input_manifests": {
+      "a": {
+        "readings": 30,
+        "sha256": "213dcef999888669c7f31f048717a51978a53008f264e8fc7903b9a59cf7cc77"
+      },
+      "b": {
+        "readings": 30,
+        "sha256": "69906e3ee3ccbacb3511665ce9d43823dcf487602673bd7652421f066fb1efa0"
+      }
+    },
+    "standalone": {
+      "a": {
+        "accuracy": 0.8811827956989248,
+        "correct": 1639,
+        "total": 1860
+      },
+      "b": {
+        "accuracy": 0.8462365591397849,
+        "correct": 1574,
+        "total": 1860
+      }
+    },
+    "standalone_bands": {
+      "high": {
+        "accuracy": 0.9173300673606859,
+        "correct": 1498,
+        "total": 1633
+      },
+      "low": {
+        "accuracy": 0.09090909090909091,
+        "correct": 3,
+        "total": 33
+      },
+      "medium": {
+        "accuracy": 0.7150259067357513,
+        "correct": 138,
+        "total": 193
+      }
+    }
+  },
+  "configuration": "Gemini Flash-Lite default unbanded x Qwen2.5-VL-7B Q6_K 2MP rp1.05",
+  "ground_truth_sha256": "483f8df3969c319b3d58678fb3b49a8ef7e222d7f9bbad2bb6ccbe56163720ca",
+  "minimum_band_sample": 10,
+  "normalization": "current parse_json_fields aliases and record.normalise; omitted != blank",
+  "unbanded": {
+    "cards": 30,
+    "class_bands": {},
+    "classes": {
+      "agree": {
+        "accuracy": 0.9757058437294813,
+        "correct": 1486,
+        "total": 1523
+      },
+      "disagree": {
+        "accuracy": 0.6387959866220736,
+        "correct": 191,
+        "total": 299
+      },
+      "no_second_opinion": {
+        "accuracy": 0.0,
+        "correct": 0,
+        "total": 3
+      },
+      "one_blank": {
+        "accuracy": 0.5142857142857142,
+        "correct": 18,
+        "total": 35
+      }
+    },
+    "field_states": {
+      "a": {
+        "blank": 34,
+        "omitted": 3,
+        "value": 1823
+      },
+      "b": {
+        "blank": 1,
+        "value": 1859
+      }
+    },
+    "fields": 1860,
+    "raw_input_manifests": {
+      "a": {
+        "readings": 30,
+        "sha256": "032b7528c96dae476d09fb89c15c8bd532d70995a3ef7adc2682b7f3f7a35d30"
+      },
+      "b": {
+        "readings": 30,
+        "sha256": "69906e3ee3ccbacb3511665ce9d43823dcf487602673bd7652421f066fb1efa0"
+      }
+    },
+    "standalone": {
+      "a": {
+        "accuracy": 0.9112903225806451,
+        "correct": 1695,
+        "total": 1860
+      },
+      "b": {
+        "accuracy": 0.8462365591397849,
+        "correct": 1574,
+        "total": 1860
+      }
+    },
+    "standalone_bands": {}
+  }
+}

@@ -11,10 +11,11 @@ from survey.extraction.card_fields import FIELD_SCHEMA, FIELD_SCHEMA_BY_NAME
 from survey.extraction.record import FIELD_MAP, build_record
 from survey.records import current_fields
 from survey.review.flags import build_flags
+from survey.review.routing import AGREE_CONFIDENCE
 
 
 def record(record_id="27-0006-01", region="216412", card_confidence=None, **scores):
-    """A real record, every field cleared (ok at 0.97) except ``scores``:
+    """A real record, every field cleared (ok at the calibrated agree cutoff) except ``scores``:
     ``coding__weekly_rent=0.5`` scores ``households[0].coding.weekly_rent``.
     Its coding card is page ``int(dwelling number)`` of ``unit.pdf``."""
     municipality, dwelling, household = record_id.split("-")
@@ -25,7 +26,7 @@ def record(record_id="27-0006-01", region="216412", card_confidence=None, **scor
     }
     built = build_record(fields, region=region, image="unit.pdf", page=int(dwelling))
     for _, field in current_fields(built):
-        field |= {"status": "ok", "confidence": 0.97}
+        field |= {"status": "ok", "confidence": AGREE_CONFIDENCE}
     built["dwelling"]["households"][0]["cards"][0]["confidence"] = card_confidence
     for name, score in scores.items():
         group, key = name.split("__")
