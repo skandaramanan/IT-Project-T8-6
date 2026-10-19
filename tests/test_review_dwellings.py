@@ -161,6 +161,7 @@ def test_selected_dwelling_printed_order_and_readonly_card_context(tmp_path):
         service.dwelling_items(identity, "other")
 
 
+@pytest.mark.integration
 def test_metadata_bom_titles_and_http_routes(tmp_path):
     service, settings = setup_review(tmp_path, with_git=True)
     (settings.scan_root / "metadata.csv").write_text(
