@@ -99,6 +99,10 @@ gets separate backend/data clones. Browser mutations use the UI; read-only API
 and fresh-clone checks verify persistence. Private stdio control restarts processes
 and injects failure; the application has no new test endpoints.
 
+These opt-in tests use `playwright.acceptance.config.ts` through `npm run test:e2e`
+and require the prepared `REVIEW_TEST_WORKSPACE`. The regular CI browser suite
+continues to use `playwright.config.ts` through `npm run e2e` without that workspace.
+
 Default periodic sync is 3,600 seconds for controlled scenarios. Completion can
 still trigger a push. The periodic scenario uses five seconds. Startup and
 periodic checks allow 60 seconds; HTTP calls allow 120 seconds. Actions checks
