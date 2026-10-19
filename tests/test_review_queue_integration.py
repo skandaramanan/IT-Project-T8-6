@@ -156,6 +156,7 @@ def test_generated_assignment_navigation_decisions_restart_undo_and_share(
             ]
             == "/dwelling/households/1/municipality"
         )
+        original_confidence = items["items"][0]["field"]["confidence"]
         saved = []
         for position, action in enumerate(
             ("correct", "accept", "no_data", "illegible")
@@ -177,7 +178,7 @@ def test_generated_assignment_navigation_decisions_restart_undo_and_share(
         assert len(replay["item"]["field"]["review"]["history"]) == 1
         assert corrected["item"]["field"]["value"] == "009"
         assert corrected["item"]["field"]["original_value"] == "04"
-        assert corrected["item"]["field"]["confidence"] == 0.75
+        assert corrected["item"]["field"]["confidence"] == original_confidence
         assert corrected["decision"]["reviewer"] == "Queue Reviewer"
         assert client.post("/api/sync", json={}).json()["state"] == "uploaded"
     assert settings.flags.read_bytes() == original_flags
