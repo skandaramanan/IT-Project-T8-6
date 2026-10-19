@@ -3,7 +3,9 @@
 import hashlib
 import io
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -72,8 +74,44 @@ def test_download_publishes_original_and_refreshes_review(tmp_path):
     assert service.item(ref.item_id)["allowed_actions"]
     assert service.scans.get_scan(ref).is_file()
     assert not list(downloads.root.rglob("*.part"))
-    downloads.start("demo")
+    with pytest.raises(ReviewError, match="already exists"):
+        downloads.start("demo")
+
+
+def test_start_status_waits_for_scan_directory_creation(tmp_path, monkeypatch):
+    downloads, data, _ = fixture(tmp_path)
+    batch = remote(downloads, data)
+    folder = downloads.target(batch).parent
+    folder.rmdir()
+    creating, release, checking, returned = (Event() for _ in range(4))
+    mkdir, status = Path.mkdir, downloads.status
+
+    def paused_mkdir(path, *args, **kwargs):
+        if path == folder:
+            creating.set()
+            assert release.wait(timeout=5)
+        return mkdir(path, *args, **kwargs)
+
+    def concurrent_status(region):
+        assert creating.wait(timeout=5)
+        checking.set()
+        result = status(region)
+        returned.set()
+        return result
+
+    monkeypatch.setattr(Path, "mkdir", paused_mkdir)
+    monkeypatch.setattr(downloads, "status", concurrent_status)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        started = pool.submit(downloads.start, "demo")
+        try:
+            assert checking.wait(timeout=5)
+            # Resolving while mkdir is paused can spuriously fail on Windows.
+            assert not returned.wait(timeout=0.1)
+        finally:
+            release.set()
+        started.result(timeout=5)
     assert finish(downloads)["state"] == "ready"
+    assert downloads.target(batch).read_bytes() == data
 
 
 @pytest.mark.parametrize(
@@ -136,16 +174,21 @@ def test_cancel_duplicate_click_and_single_transfer(tmp_path):
     assert finish(downloads)["state"] == "ready"
 
 
-def test_existing_file_is_backed_up_and_symlinks_are_not_overwritten(tmp_path):
+@pytest.mark.parametrize("usable", [True, False])
+def test_existing_file_blocks_download_and_symlinks_are_not_overwritten(
+    tmp_path, usable
+):
     downloads, data, _ = fixture(tmp_path)
     batch = remote(downloads, data)
     target = downloads.target(batch)
-    target.write_bytes(b"do not overwrite")
-    downloads.start("demo")
-    assert finish(downloads)["state"] == "ready"
-    assert target.read_bytes() == data
-    backups = list((target.parent / ".scan-backups").glob("*.pdf"))
-    assert len(backups) == 1 and backups[0].read_bytes() == b"do not overwrite"
+    existing = data if usable else b"do not overwrite"
+    target.write_bytes(existing)
+    with pytest.raises(ReviewError, match="Move it out") as error:
+        downloads.start("demo")
+    assert error.value.code == "scan_exists" and error.value.status == 409
+    assert downloads.worker is None and downloads.active is None
+    assert target.read_bytes() == existing
+    assert not (target.parent / ".scan-backups").exists()
     target.unlink()
     external = tmp_path / "external.pdf"
     external.write_bytes(data)
@@ -153,6 +196,40 @@ def test_existing_file_is_backed_up_and_symlinks_are_not_overwritten(tmp_path):
     with pytest.raises(ReviewError, match="real region folder"):
         downloads.start("demo")
     assert external.read_bytes() == data
+
+
+@pytest.mark.parametrize("kind", ["download", "import"])
+@pytest.mark.parametrize("usable", [True, False])
+def test_transfer_endpoints_reject_existing_pdf(tmp_path, kind, usable):
+    _, data, settings = fixture(tmp_path, with_git=True)
+    target = settings.scan_root / "demo/synthetic.pdf"
+    existing = data if usable else b"unreadable PDF"
+    target.write_bytes(existing)
+    backup = target.parent / ".scan-backups" / "previous.pdf"
+    backup.parent.mkdir()
+    backup.write_bytes(b"previous backup")
+    with TestClient(create_app(settings), base_url=BASE) as client:
+        client.post("/api/session", json={"name": "Reviewer"})
+        if kind == "download":
+            response = client.post("/api/scan-batches/demo/download", json={})
+        else:
+            response = client.post(
+                "/api/scan-batches/demo/import",
+                content=data,
+                headers={
+                    "Content-Type": "application/pdf",
+                    "X-Scan-Size": str(len(data)),
+                },
+            )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "scan_exists"
+        assert "Open scan folder" in response.json()["error"]["message"]
+        status = client.get("/api/scan-batches?region=demo").json()
+        assert status["local_file_exists"] and status["local_ready"] == usable
+        assert status["active_region"] is None
+    assert target.read_bytes() == existing
+    assert backup.read_bytes() == b"previous backup"
+    assert not list(target.parent.rglob("*.part"))
 
 
 def test_racing_file_and_page_mismatch_do_not_publish(tmp_path):
@@ -339,11 +416,10 @@ def test_drive_changes_retry_once_with_fresh_metadata(tmp_path):
     assert not list(downloads.root.rglob("*.part"))
 
 
-def test_drive_keeps_changing_reports_retryable_failure_and_preserves_local(tmp_path):
+def test_drive_keeps_changing_reports_retryable_failure(tmp_path):
     downloads, old, _ = fixture(tmp_path)
     batch = remote(downloads, old)
     target = downloads.target(batch)
-    target.write_bytes(old)
     count = []
 
     def metadata(b, c):
@@ -359,54 +435,27 @@ def test_drive_keeps_changing_reports_retryable_failure_and_preserves_local(tmp_
     status = finish(downloads)
     assert status["state"] == "failed" and status["error"]["code"] == "source_changed"
     assert len(count) == 4
-    assert target.read_bytes() == old and status["local_ready"]
+    assert not target.exists() and not status["local_ready"]
     assert not list(downloads.root.rglob("*.part"))
 
 
-@pytest.mark.parametrize(
-    "failure", ["checksum", "cancel", "cancel_backup", "disk", "race", "backup_symlink"]
-)
-def test_failed_replacement_preserves_existing_pdf(tmp_path, monkeypatch, failure):
+def test_file_appearing_during_download_is_preserved(tmp_path):
     downloads, data, _ = fixture(tmp_path)
-    new = changed_pdf(data)
-    batch = remote(downloads, new)
+    batch = remote(downloads, data)
     target = downloads.target(batch)
-    target.write_bytes(data)
-    raced = b"externally replaced file"
+    raced = b"externally created file"
 
     def chunks(b, cancel):
-        if failure == "cancel":
-            cancel.set()
-        if failure == "race":
-            target.write_bytes(raced)
-        yield b"x" + new[1:] if failure == "checksum" else new
+        target.write_bytes(raced)
+        yield data
 
     downloads.client.chunks = chunks
-    if failure == "cancel_backup":
-        from survey.review import drive
-
-        copy = drive.shutil.copyfileobj
-
-        def cancelled_copy(*args):
-            copy(*args)
-            downloads.cancel_event.set()
-
-        monkeypatch.setattr(drive.shutil, "copyfileobj", cancelled_copy)
-    if failure == "disk":
-        monkeypatch.setattr(
-            "survey.review.drive.os.replace",
-            lambda *args: (_ for _ in ()).throw(OSError("disk error")),
-        )
-    if failure == "backup_symlink":
-        external = tmp_path / "external-backups"
-        external.mkdir()
-        (target.parent / ".scan-backups").symlink_to(external, target_is_directory=True)
     downloads.start("demo")
     status = finish(downloads)
-    assert status["state"] in {"failed", "cancelled"}
-    assert target.read_bytes() == (raced if failure == "race" else data)
+    assert status["state"] == "failed" and status["error"]["code"] == "scan_exists"
+    assert target.read_bytes() == raced
     assert not list(downloads.root.rglob("*.part"))
-    assert not list((target.parent / ".scan-backups").glob("*.pdf"))
+    assert not (target.parent / ".scan-backups").exists()
 
 
 def test_local_availability_is_offline_cached_and_not_historical(tmp_path, monkeypatch):
@@ -449,11 +498,10 @@ def test_local_availability_is_offline_cached_and_not_historical(tmp_path, monke
         "size_missing",
     ],
 )
-def test_manual_import_validation_preserves_existing_pdf(tmp_path, problem):
+def test_manual_import_validation_does_not_publish_invalid_pdf(tmp_path, problem):
     _, original, settings = fixture(tmp_path, with_git=True)
     settings = replace(settings, drive_api_key=None)
     target = settings.scan_root / "demo/synthetic.pdf"
-    target.write_bytes(original)
     data = changed_pdf(original)
     headers = {"Content-Type": "application/pdf", "X-Scan-Size": str(len(data))}
     if problem == "encrypted":
@@ -485,12 +533,12 @@ def test_manual_import_validation_preserves_existing_pdf(tmp_path, problem):
                 "/api/scan-batches/demo/import", content=data, headers=headers
             )
         assert response.status_code == 422, response.text
-    assert target.read_bytes() == original
+    assert not target.exists()
     assert not list(target.parent.rglob("*.part"))
     assert not list((target.parent / ".scan-backups").glob("*.pdf"))
 
 
-def test_manual_import_different_size_without_drive_and_refreshes_cache(tmp_path):
+def test_manual_import_requires_moving_existing_file_before_retry(tmp_path):
     _, original, settings = fixture(tmp_path, with_git=True)
     settings = replace(settings, drive_api_key=None)
     target = settings.scan_root / "demo/synthetic.pdf"
@@ -503,6 +551,17 @@ def test_manual_import_different_size_without_drive_and_refreshes_cache(tmp_path
         assert client.get(item["scan_url"]).status_code == 200
         response = client.post(
             "/api/scan-batches/demo/import",
+            content=new,
+            headers={"Content-Type": "application/pdf", "X-Scan-Size": str(len(new))},
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "scan_exists"
+        assert "Move it out" in response.json()["error"]["message"]
+        assert target.read_bytes() == original
+        moved = tmp_path / "saved-original.pdf"
+        target.rename(moved)
+        response = client.post(
+            "/api/scan-batches/demo/import",
             content=iter([new[:100], new[100:]]),
             headers={"Content-Type": "application/pdf", "X-Scan-Size": str(len(new))},
         )
@@ -510,9 +569,8 @@ def test_manual_import_different_size_without_drive_and_refreshes_cache(tmp_path
         assert response.json()["size"] == len(new)
         assert client.get(item["scan_url"]).status_code == 200
     assert target.read_bytes() == new
-    assert [
-        p.read_bytes() for p in (target.parent / ".scan-backups").glob("*.pdf")
-    ] == [original]
+    assert moved.read_bytes() == original
+    assert not (target.parent / ".scan-backups").exists()
 
 
 def test_connection_retries_and_permission_errors_do_not_leak_key(monkeypatch):

@@ -127,32 +127,32 @@ export default function ScanBatch({ region, onReady }: { region: string; onReady
   const otherActive = batch?.active_region && batch.active_region !== region;
   return <section className="scan-batch" aria-label="Scans for this region">
     {batch && <>
-      <strong>{active ? 'Preparing scans…' : batch.state === 'ready' ? 'Scans ready' : batch.local_ready ? 'Scans available; refresh not completed' : 'Scans not ready'}</strong>
+      <strong>{active ? 'Preparing scans…' : batch.local_ready || batch.state === 'ready' ? 'Scans ready' : 'Scans not ready'}</strong>
       <span className="scan-batch-file">{batch.pdf} · {megabytes(batch.size)}</span>
       {active && <div role="status">
         <progress aria-label="Scan transfer progress" value={batch.downloaded} max={batch.size} />
         <span>{batch.state === 'validating' ? 'Checking PDF…' : `${megabytes(batch.downloaded)} of ${megabytes(batch.size)}`}</span>
       </div>}
-      {batch.error && !active && batch.state !== 'ready' && <p role="alert">{batch.error.message}</p>}
+      {batch.error && !active && !batch.local_ready && batch.state !== 'ready' && <p role="alert">{batch.error.message}</p>}
       {otherActive && <p role="status">A scan transfer is running for region {batch.active_region}.</p>}
       <div className="scan-batch-actions">
-        {!active && <button disabled={busy || !batch.automatic_download || !!otherActive} onClick={() => void action('download')}>
-          {batch.state === 'failed' || batch.state === 'cancelled' ? 'Retry download' : batch.local_file_exists ? 'Download latest scans' : 'Download scans'}
+        {!active && !batch.local_file_exists && <button disabled={busy || !batch.automatic_download || !!otherActive} onClick={() => void action('download')}>
+          {batch.state === 'failed' || batch.state === 'cancelled' ? 'Retry download' : 'Download scans'}
         </button>}
         {active && <button disabled={busy && !uploading} onClick={() => void action('cancel')}>Cancel transfer</button>}
         <a href={batch.drive_url} target="_blank" rel="noopener noreferrer">Open in Drive</a>
-        <>
+        {!batch.local_file_exists && <>
           <button disabled={busy || active || !!otherActive} onClick={() => input.current?.click()}>Import downloaded PDF</button>
           <input ref={input} hidden type="file" accept="application/pdf,.pdf" aria-label="Choose downloaded PDF" onChange={(event) => {
             const file = event.target.files?.[0]; event.target.value = ''; if (file) void importPdf(file);
           }} />
-        </>
+        </>}
       </div>
-      {!batch.automatic_download && batch.state !== 'ready' && <p>Open the PDF in Drive, download it, then import it here. Automatic downloads need a configured Drive API key.</p>}
-      {batch.local_file_exists && !active && <p>Downloading or importing replaces the local PDF after validation and keeps a backup.{' '}
+      {!batch.automatic_download && !batch.local_file_exists && <p>Open the PDF in Drive, download it, then import it here. Automatic downloads need a configured Drive API key.</p>}
+      {batch.local_file_exists && !active && <p>{!batch.local_ready && batch.state !== 'ready' && <>The existing PDF cannot be used. Move it out of the scan folder before downloading or importing another copy.{' '}</>}
         <button disabled={busy} onClick={() => void openFolder()}>Open scan folder</button>
       </p>}
-      <p>Manual imports are checked for a readable PDF and valid page references; their bytes are not verified against Drive.</p>
+      {!batch.local_file_exists && <p>Manual imports are checked for a readable PDF and valid page references; their bytes are not verified against Drive.</p>}
     </>}
     {error && <p role="alert">{error}</p>}
   </section>;

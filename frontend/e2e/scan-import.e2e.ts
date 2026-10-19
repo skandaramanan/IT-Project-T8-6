@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 
-test('offline import ignores historical size and safely refreshes an existing PDF', async ({ page }) => {
+test('offline import reuses usable scans and requires moving them before another import', async ({ page }) => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'survey-import-e2e-'));
   const demo = path.join(root, 'demo');
   const python = (code: string, ...args: string[]) => execFileSync('uv', ['run', 'python', '-c', code, ...args], { cwd: repo, stdio: 'pipe' });
@@ -65,10 +65,16 @@ uvicorn.run(create_app(settings), host="127.0.0.1", port=port)
       expect((await saved).status()).toBe(200);
       await expect(page.getByText('Scans ready', { exact: true })).toBeVisible();
       expect(readFileSync(target)).toEqual(readFileSync(file));
+      await expect(page.getByRole('button', { name: 'Import downloaded PDF', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /download/i })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Open scan folder', exact: true })).toBeVisible();
+      if (file === original) {
+        renameSync(target, path.join(root, 'moved-original.pdf'));
+        await expect(page.getByRole('button', { name: 'Import downloaded PDF', exact: true })).toBeVisible({ timeout: 15_000 });
+      }
     }
-    const backups = path.join(demo, 'scans/demo/.scan-backups');
-    expect(readdirSync(backups)).toHaveLength(1);
-    expect(readFileSync(path.join(backups, readdirSync(backups)[0]))).toEqual(readFileSync(original));
+    expect(readFileSync(path.join(root, 'moved-original.pdf'))).toEqual(readFileSync(original));
+    expect(existsSync(path.join(demo, 'scans/demo/.scan-backups'))).toBe(false);
     await page.getByRole('button', { name: 'Review', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Accept 04', exact: true })).toBeEnabled();
   } finally {

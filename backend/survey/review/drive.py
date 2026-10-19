@@ -4,10 +4,10 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Event, RLock, Thread
 from urllib.error import HTTPError, URLError
@@ -168,15 +168,16 @@ class BatchDownloads:
     def target(self, batch):
         folder = self.root / batch["region"]
         target = folder / batch["pdf"]
-        if (
-            folder.is_symlink()
-            or target.is_symlink()
-            or not target.resolve().is_relative_to(self.root)
-        ):
-            raise ReviewError(
-                "invalid_scan_path",
-                "Scan destination must stay inside its real region folder",
-            )
+        with self.lock:
+            if (
+                folder.is_symlink()
+                or target.is_symlink()
+                or not target.resolve().is_relative_to(self.root)
+            ):
+                raise ReviewError(
+                    "invalid_scan_path",
+                    "Scan destination must stay inside its real region folder",
+                )
         return target
 
     @staticmethod
@@ -303,12 +304,17 @@ class BatchDownloads:
 
     def claim(self, region, state, size=None):
         batch = self.batch(region)
-        destination = self.signature(self.target(batch))
         with self.lock:
             if self.active:
                 raise ReviewError(
                     "download_busy",
                     f"A scan transfer is already running for {self.active}",
+                    409,
+                )
+            if self.target(batch).exists():
+                raise ReviewError(
+                    "scan_exists",
+                    "A PDF already exists for this region. Move it out of the scan folder before downloading or importing. Use Open scan folder to find it.",
                     409,
                 )
             self.active = region
@@ -318,7 +324,6 @@ class BatchDownloads:
                 "downloaded": 0,
                 "size": size,
                 "md5": None,
-                "destination": destination,
             }
 
     def open_folder(self, region):
@@ -424,11 +429,12 @@ class BatchDownloads:
         finally:
             self.release(region)
 
+    @contextmanager
     def staging(self, batch):
-        from contextlib import contextmanager
-
-        @contextmanager
-        def staged():
+        # Windows resolve() can retain a device prefix if a missing parent
+        # appears midway through resolution. Keep status path checks from
+        # racing directory creation and falsely rejecting an in-root path.
+        with self.lock:
             target = self.target(batch)
             if target.exists() and not target.is_file():
                 raise ReviewError(
@@ -436,18 +442,16 @@ class BatchDownloads:
                 )
             target.parent.mkdir(parents=True, exist_ok=True)
             self.target(batch)
-            path = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    dir=target.parent, prefix=".scan-", suffix=".part", delete=False
-                ) as stream:
-                    path = Path(stream.name)
-                    yield path, stream
-            finally:
-                if path:
-                    path.unlink(missing_ok=True)
-
-        return staged()
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=target.parent, prefix=".scan-", suffix=".part", delete=False
+            ) as stream:
+                path = Path(stream.name)
+                yield path, stream
+        finally:
+            if path:
+                path.unlink(missing_ok=True)
 
     @staticmethod
     def finish_stream(stream):
@@ -490,59 +494,17 @@ class BatchDownloads:
             if self.cancel_event.is_set():
                 raise ReviewError("download_cancelled", "Transfer cancelled")
             target = self.target(batch)
-            if self.signature(target) != job["destination"]:
+            try:
+                os.link(path, target)
+            except FileExistsError:
                 raise ReviewError(
                     "scan_exists",
-                    "Scan destination changed during transfer; it was not overwritten",
+                    "A PDF appeared during transfer; it was not overwritten. Move it out of the scan folder before retrying.",
                     409,
-                )
-            if job["destination"] is None:
-                try:
-                    os.link(path, target)
-                except FileExistsError:
-                    raise ReviewError(
-                        "scan_exists",
-                        "A PDF appeared during transfer; it was not overwritten",
-                        409,
-                    ) from None
-            else:
-                self.replace_with_backup(batch, path, job["destination"])
+                ) from None
             self.jobs[region]["state"] = "ready"
             self.verified.pop(target, None)
             self.service.rebuild_progress({region})
-
-    def replace_with_backup(self, batch, path, signature):
-        target = self.target(batch)
-        folder = target.parent / ".scan-backups"
-        if folder.is_symlink() or not folder.resolve().is_relative_to(self.root):
-            raise ReviewError(
-                "invalid_scan_path", "Scan backup folder must stay inside the scan root"
-            )
-        folder.mkdir(exist_ok=True)
-        backup = None
-        try:
-            with (
-                target.open("rb") as original,
-                tempfile.NamedTemporaryFile(
-                    dir=folder, prefix=target.stem + "-", suffix=".pdf", delete=False
-                ) as stream,
-            ):
-                backup = Path(stream.name)
-                shutil.copyfileobj(original, stream, CHUNK)
-                self.finish_stream(stream)
-            if self.signature(self.target(batch)) != signature:
-                raise ReviewError(
-                    "scan_exists",
-                    "Scan destination changed during transfer; it was not overwritten",
-                    409,
-                )
-            if self.cancel_event.is_set():
-                raise ReviewError("download_cancelled", "Transfer cancelled")
-            os.replace(path, self.target(batch))
-        except BaseException:
-            if backup:
-                backup.unlink(missing_ok=True)
-            raise
 
     def fail(self, region, error):
         with self.lock:

@@ -43,7 +43,7 @@ it('imports a selected PDF as bytes and refreshes review evidence', async () => 
   expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/import', expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/pdf', 'X-Scan-Size': '4' }, body: file }));
 });
 
-it('accepts imports of a different size and allows refreshing existing scans', async () => {
+it('accepts imports of a different size and hides transfers for usable scans', async () => {
   let state: ScanBatchStatus = batch;
   const fetch = vi.fn(async (_path: string, options?: RequestInit) => {
     if (options?.method === 'POST') state = { ...batch, state: 'ready', size: 5 };
@@ -55,11 +55,11 @@ it('accepts imports of a different size and allows refreshing existing scans', a
   fireEvent.change(screen.getByLabelText('Choose downloaded PDF'), { target: { files: [new File(['wrong'], 'other.pdf')] } });
   expect(await screen.findByText('Scans ready')).toBeVisible();
   expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/import', expect.objectContaining({ headers: { 'Content-Type': 'application/pdf', 'X-Scan-Size': '5' } }));
-  fetch.mockImplementation(async () => response({ ...batch, region: '216419', state: 'ready', local_file_exists: true }));
+  fetch.mockImplementation(async () => response({ ...batch, region: '216419', state: 'ready', local_file_exists: true, local_ready: true }));
   rerender(<ScanBatch region="216419" onReady={vi.fn()} />);
-  expect(await screen.findByText(/keeps a backup/)).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Download latest scans' })).toBeEnabled();
-  expect(screen.getByRole('button', { name: 'Import downloaded PDF' })).toBeEnabled();
+  expect(await screen.findByRole('button', { name: 'Open scan folder' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Choose downloaded PDF')).not.toBeInTheDocument();
 });
 
 it('rejects imports above 1 GiB before uploading', async () => {
@@ -107,5 +107,7 @@ it('opens the local scan folder and displays a launcher failure', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Open scan folder' }));
   expect(fetch).toHaveBeenCalledWith('/api/scan-batches/216418/open-folder', expect.objectContaining({ method: 'POST', body: '{}' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Open it manually: /scans/216418');
-  expect(screen.getByRole('button', { name: 'Download latest scans' })).toBeEnabled();
+  expect(screen.getByText(/Move it out of the scan folder/)).toBeVisible();
+  expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Choose downloaded PDF')).not.toBeInTheDocument();
 });

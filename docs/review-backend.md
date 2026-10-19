@@ -589,12 +589,14 @@ Imports are limited to **1 GiB**. Both paths reject unreadable/encrypted PDFs
 and references outside the PDF's page count. Manual imports do not establish
 that uploaded bytes match Drive.
 
-**Download latest scans** and **Import downloaded PDF** remain available when a
-local PDF exists. Validated replacements are installed atomically; the previous
-file is kept under `<scan-root>/<region>/.scan-backups/`. A destination that
-changes during transfer is not overwritten. Failures and cancellation preserve
-the previous file. Backups are not automatically deleted. Scan/progress caches
-refresh after installation; PNG rendering remains on demand.
+A usable local PDF is used directly; download and import controls are hidden.
+If the expected filename already exists but its PDF is unusable, move it out of
+its region folder using **Open scan folder** before downloading or importing.
+Both transfer endpoints reject an existing destination with `scan_exists` (409).
+Publication is atomic and refuses a file that appears during transfer. No files
+are overwritten and no automatic backups are created; existing backups are left
+untouched. Scan/progress caches refresh after installation; PNG rendering remains
+on demand.
 
 Readable local PDFs with valid page references remain usable offline regardless
 of catalogue hashes. Polling never contacts Drive or hashes PDFs; local metadata
@@ -637,10 +639,11 @@ acceptance remains separate from developer and CI verification.
 
 Transfer/API regressions cover authoritative current Drive metadata, bounded
 source-change retries, corruption/truncation, offline imports, the 1 GiB limit,
-replacement backups, failure preservation, file races, symlinks, cache invalidation,
+existing-file rejection, failure preservation, file races, symlinks, cache invalidation,
 and catalogue pagination without local-source checks. Frontend tests cover
-changed-size imports and refreshing existing files. A browser test imports and
-replaces a synthetic PDF through the built UI and verifies the backup and scan.
+changed-size imports and hidden transfer controls for existing files. A browser
+test imports a synthetic PDF, verifies reuse without transfer controls, then moves
+the file aside and imports another copy without creating a backup.
 
 The catalogue was refreshed directly from Drive for all 45 regions. Real API
 smoke downloads for **216413, 216414 and 216415** passed current size/MD5 integrity
