@@ -527,6 +527,12 @@ class Run:
         return {"runs": runs}
 
     def report(self):
+        required = {name for name, _ in api_scenarios(self)} | {
+            "browser-smoke",
+            "original-source-hashes",
+            "github-validation",
+        }
+        passed = {r["name"] for r in self.results if r["status"] == "passed"}
         data = {
             "code_sha": self.manifest["code_sha"],
             "seed_sha": self.manifest["seed_sha"],
@@ -536,7 +542,7 @@ class Run:
             "code_dirty": bool(git(CODE, "status", "--porcelain")),
             "acceptance_complete": not self.manifest["local"]
             and self.manifest["real_sample"]
-            and bool(self.results)
+            and required.issubset(passed)
             and all(r["status"] == "passed" for r in self.results),
         }
         write_json(self.directory / "report.json", data)

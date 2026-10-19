@@ -73,6 +73,66 @@ def test_report_records_failed_assertion_without_remote_or_secret_output(tmp_pat
     assert report["results"][0]["error"] == "Expected local-save success"
 
 
+def test_report_does_not_claim_acceptance_after_first_success(tmp_path):
+    run, _ = workspace(tmp_path)
+    run.manifest.update(local=False, real_sample=True)
+    assert run.scenario("prepare-pending-fixtures", lambda: None)
+    report = json.loads((run.directory / "report.json").read_text())
+    assert not report["acceptance_complete"]
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["real-sample", "browser-smoke", "original-source-hashes", "github-validation"],
+)
+def test_report_requires_every_acceptance_phase(tmp_path, missing):
+    run, _ = workspace(tmp_path)
+    run.manifest.update(local=False, real_sample=True)
+    names = [name for name, _ in tool.api_scenarios(run)] + [
+        "browser-smoke",
+        "original-source-hashes",
+        "github-validation",
+    ]
+    run.results = [
+        {"name": name, "status": "passed"} for name in names if name != missing
+    ]
+    run.report()
+    report = json.loads((run.directory / "report.json").read_text())
+    assert not report["acceptance_complete"]
+
+    run.results.append({"name": missing, "status": "passed"})
+    run.report()
+    report = json.loads((run.directory / "report.json").read_text())
+    assert report["acceptance_complete"]
+
+
+@pytest.mark.parametrize(
+    "local,real_sample,status",
+    [
+        (True, True, "passed"),
+        (False, False, "passed"),
+        (False, True, "failed"),
+        (False, True, "blocked"),
+        (False, True, "not_run"),
+    ],
+)
+def test_report_requires_live_real_sample_and_success(
+    tmp_path, local, real_sample, status
+):
+    run, _ = workspace(tmp_path)
+    run.manifest.update(local=local, real_sample=real_sample)
+    run.results = [
+        {"name": name, "status": "passed"} for name, _ in tool.api_scenarios(run)
+    ] + [
+        {"name": "browser-smoke", "status": "passed"},
+        {"name": "original-source-hashes", "status": "passed"},
+        {"name": "github-validation", "status": status},
+    ]
+    run.report()
+    report = json.loads((run.directory / "report.json").read_text())
+    assert not report["acceptance_complete"]
+
+
 def test_verify_refuses_unrelated_application_commit(tmp_path):
     run, settings = workspace(tmp_path)
     (settings.data_checkout / "unrelated.txt").write_text("unexpected")
