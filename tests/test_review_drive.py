@@ -364,7 +364,7 @@ def test_drive_keeps_changing_reports_retryable_failure_and_preserves_local(tmp_
 
 
 @pytest.mark.parametrize(
-    "failure", ["checksum", "cancel", "disk", "race", "backup_symlink"]
+    "failure", ["checksum", "cancel", "cancel_backup", "disk", "race", "backup_symlink"]
 )
 def test_failed_replacement_preserves_existing_pdf(tmp_path, monkeypatch, failure):
     downloads, data, _ = fixture(tmp_path)
@@ -382,6 +382,16 @@ def test_failed_replacement_preserves_existing_pdf(tmp_path, monkeypatch, failur
         yield b"x" + new[1:] if failure == "checksum" else new
 
     downloads.client.chunks = chunks
+    if failure == "cancel_backup":
+        from survey.review import drive
+
+        copy = drive.shutil.copyfileobj
+
+        def cancelled_copy(*args):
+            copy(*args)
+            downloads.cancel_event.set()
+
+        monkeypatch.setattr(drive.shutil, "copyfileobj", cancelled_copy)
     if failure == "disk":
         monkeypatch.setattr(
             "survey.review.drive.os.replace",

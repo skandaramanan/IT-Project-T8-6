@@ -515,6 +515,8 @@ class BatchDownloads:
                     "Scan destination changed during transfer; it was not overwritten",
                     409,
                 )
+            if self.cancel_event.is_set():
+                raise ReviewError("download_cancelled", "Transfer cancelled")
             os.replace(path, self.target(batch))
         except BaseException:
             if backup:
