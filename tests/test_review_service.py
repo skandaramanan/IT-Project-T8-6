@@ -89,6 +89,39 @@ def test_identity_and_negated_fields_are_accept_only(tmp_path, action):
     assert decide(service, action="accept")["item"]["review_state"] == "accepted"
 
 
+def test_both_municipality_copies_are_actionable_and_accept_only(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["households"][0]["municipality"] = deepcopy(
+        record["dwelling"]["municipality"]
+    )
+    path = service.store.directory / "demo.jsonl"
+    write_record(path, record)
+    service.store.reload()
+    shared = refs()[3]
+    household = replace(shared, field_path="/dwelling/households/0/municipality")
+    service.replace_queue([shared, household], [])
+    before = path.read_bytes()
+
+    for ref in (shared, household):
+        item = service.item(ref.item_id)
+        municipality = [
+            field for field in item["card_fields"] if field["label"] == "Municipality"
+        ]
+        assert len(municipality) == 2
+        assert {field["field_path"]: field["id"] for field in municipality} == {
+            shared.field_path: shared.item_id,
+            household.field_path: household.item_id,
+        }
+        assert shared.item_id != household.item_id
+        assert all(field["column"] == "Left column" for field in municipality)
+        assert item["allowed_actions"] == ["accept"]
+        for action in ("correct", "no_data", "illegible"):
+            with pytest.raises(ReviewError, match="unsupported"):
+                decide(service, ref, action=action, value="28")
+        assert path.read_bytes() == before
+
+
 def test_accepting_illegible_resolves_without_recovering_value(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])

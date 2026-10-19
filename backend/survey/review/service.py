@@ -372,14 +372,37 @@ class ReviewService:
             return details
         fields = []
         index = resolved.record["dwelling"]["households"].index(resolved.household)
+        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
+        household_ref = Reference(
+            ref.region,
+            ref.pdf,
+            ref.page,
+            f"/dwelling/households/{index}/municipality",
+        )
+        # Generated assignments flag the shared alias on the first coding card.
+        # Prefer it when the household copy is not independently queued.
+        prefer_shared = (
+            index == 0
+            and shared.item_id in self.references
+            and household_ref.item_id not in self.references
+        )
         pointers = [
             (label, path)
             for label, path, _ in field_pointers(
                 index,
-                household_municipality="municipality" in resolved.household,
+                household_municipality=(
+                    "municipality" in resolved.household and not prefer_shared
+                ),
                 include_shared=index == 0,
             )
         ]
+        if (
+            index == 0
+            and shared.item_id in self.references
+            and not any(pointer == shared.field_path for _, pointer in pointers)
+        ):
+            # Explicit assignments can include both independently stored copies.
+            pointers.insert(0, ("Municipality", shared.field_path))
         pointers.extend(
             ("Interview Notes", f"/dwelling/notes/{n}/text")
             for n in range(len(resolved.record["dwelling"].get("notes", [])))
@@ -408,24 +431,6 @@ class ReviewService:
                     "field": snapshot(field),
                     "review_state": state(field),
                 }
-            )
-        # Keep supplied flags for the legacy shared alias actionable as well.
-        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
-        if (
-            index == 0
-            and shared.item_id in self.references
-            and not any(field["field_path"] == shared.field_path for field in fields)
-        ):
-            field = self.store.current(shared)[0].field
-            fields.insert(
-                0,
-                {
-                    "id": shared.item_id,
-                    "label": "Municipality",
-                    "field_path": shared.field_path,
-                    "field": snapshot(field),
-                    "review_state": state(field),
-                },
             )
         details["card_fields"] = fields
         cards = []

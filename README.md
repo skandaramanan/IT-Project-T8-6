@@ -267,6 +267,12 @@ repaired in the source records before launching the review tool: its backend
 rejects ambiguous datasets even when the flags file contains only valid cards.
 Regenerate the flags after repairing the records.
 
+For handover, generate from the matching review-data checkout's `results`
+directory and retain the flags file across launches. Decisions and audit history
+are saved in regional records; flags define a stable assignment and are not
+rewritten as work completes. See [the review runbook](docs/review-backend.md#generate-and-retain-a-review-assignment)
+for preparation, regeneration and integration-test instructions.
+
 ## Contributing
 
 One branch per Linear issue, one PR per branch, reviewed by someone else.

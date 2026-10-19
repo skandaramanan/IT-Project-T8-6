@@ -111,8 +111,8 @@ Head and Sex of Head are manually flagged on original page 3. Follow the printed
 launch command (port 8876). Sharing goes to the local test remote. The sample has
 one dwelling/one household and does not verify multiple-household ownership.
 
-Queue generation need not be ready. Once an extracted regional JSONL exists,
-prepare a separate local test using explicitly selected field names:
+For a deliberately small manual test queue, once an extracted regional JSONL
+exists, prepare a separate local test using explicitly selected field names:
 
 ```sh
 uv run python scripts/review_sample.py "/actual/path/216412.jsonl" \
@@ -136,6 +136,69 @@ review backend when opened. If extraction has not produced regional JSONL yet,
 that remains the prerequisite; PDFs alone are insufficient. Windows paths differ.
 
 ## Teammate flag contract
+
+### Generate and retain a review assignment
+
+The merged IT-109 generator emits the format below. After preparing the matching
+extracted dataset in the separate data checkout, run from the code checkout:
+
+```sh
+uv run survey validate-results "../survey-review-data/results"
+uv run survey flags "../survey-review-data/results" > "/path/to/flagged-fields.jsonl"
+```
+
+Check both commands' exit codes before handing over the assignment. `flags`
+can emit a partial queue and exit 1 when it skips cards; repair the source and
+regenerate rather than handing over that partial output. Dataset validation
+remains stricter about duplicate physical card ownership than queue generation.
+Keep the flags outside the results directory, whose JSONL files are records.
+
+Pair the saved flags with the matching dataset and scan-location/launch
+instructions. Generate once after the intended extraction/dual-extractor merge,
+then reuse that file across launches. Decisions atomically update each field's
+`review.state` and history in regional JSONL; they never edit flags. Refresh queue
+retrieves current progress within that assignment. Restart reconstructs progress
+from records, retaining completed items for history and undo. Sharing transfers
+regional records; distribute the assignment file separately to other reviewers.
+
+Regenerate deliberately after new extraction, routing changes, or repairs that
+change pointers/card ownership. New generation excludes accepted/corrected fields
+and can change totals and navigation; it is a new assignment, not a progress
+refresh. A valid empty flags file is allowed and means no supplied work, not
+certification of the corpus. Missing/unreadable flags still prevent startup;
+malformed or unsupported entries remain visible diagnostics.
+
+### Integration verification
+
+`tests/test_review_queue_integration.py` builds synthetic extractor readings,
+runs the existing pairing/scoring functions, adapts scored cards to validated
+D007 records, invokes the real flags CLI, then exercises the HTTP backend with
+synthetic PDFs and local Git remotes. It covers multi-household ownership,
+printed order, accept/correct/blank/illegible, exact digits, retry, restart, undo,
+sharing/imported progress, stale versions, identity warnings, missing scans and
+an empty assignment. It is included in the Windows CI review job.
+
+An optional test uses the first common saved Gemini/Qwen raw benchmark card in
+`data/benchmark/results`. It skips explicitly when paired readings are absent;
+it never calls models. This is a test adapter into D007, not the production
+corpus merger. The source card is mapped to synthetic scan evidence solely for
+backend acceptance, so this test does not verify the actual scan transcription.
+Run with `uv run pytest tests/test_review_queue_integration.py -rs` to distinguish
+executed checks from unavailable real-data acceptance. Full-corpus dual-output
+and physical Windows acceptance remain separate requirements.
+
+The integration with the Drive-download branch required two compatibility fixes:
+ignore dwelling survey-front/back entries in the shared physical-card index when
+generating coding flags, and expose the generated dwelling Municipality pointer
+as an actionable field on the first coding card. Explicit household Municipality
+flags remain supported, including assignments containing both stored copies.
+Both `/dwelling/municipality` and `/dwelling/households/<index>/municipality`
+are accept-only identity fields. Acceptance preserves the stored value;
+correction, no-data and illegible decisions are rejected. If a Municipality is
+wrong, leave it pending for a separate data repair. Reviewing either copy does
+not rewrite the other copy. The shared path aliases the first household only;
+later households retain their own Municipality values.
+An empty generated assignment is now a healthy startup case.
 
 Each nonblank line is an object with exactly these keys, plus optional `reason`:
 
