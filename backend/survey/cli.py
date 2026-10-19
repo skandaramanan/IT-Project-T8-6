@@ -272,6 +272,7 @@ def _review(args, parser) -> int:
     try:
         settings = Settings(
             scan_root=path_setting("scan_root"),
+            drive_api_key=os.environ.get("SURVEY_REVIEW_DRIVE_API_KEY"),
             data_checkout=path_setting("data_checkout"),
             flags=path_setting("flags"),
             cache=args.cache

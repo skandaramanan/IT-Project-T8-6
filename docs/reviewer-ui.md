@@ -497,3 +497,28 @@ source; reviewers do not need Node. See [operator steps](review-windows-acceptan
 Live PR stack freshness and IT-109's merge remain unverified; no teammate branch
 was rewritten. Developer verification is recorded separately from human acceptance
 in [the continuation record](review-continuation-verification.md).
+
+
+## One-region scan preparation
+
+Choose a region and use **Download scans** in the queue. Progress, Cancel and
+Retry concern only the region's original PDF; review completion still comes from
+saved field decisions. Downloaded scans remain available after restart. If the
+transfer fails or automatic downloading is not configured, use **Open in Drive**,
+download the PDF, then **Import downloaded PDF**. Manual imports are checked for
+completeness, PDF readability and page bounds,
+without requiring a Drive checksum. A usable local PDF is used directly, with
+Download and Import hidden. If the existing PDF is unusable, move it out of its
+region folder before downloading or importing another copy. Existing files are
+never overwritten, and no automatic backups are created.
+When a local PDF exists, **Open scan folder** opens its region folder in Finder,
+File Explorer or the system file manager. If opening fails, the error includes
+the folder path so you can open it manually.
+
+No Google login is required while the scans remain shared with anyone with the
+link. Automatic downloading requires the backend's optional Drive API key;
+manual import does not. Extracted records and supplied review flags must already
+be configured. See [backend setup and Drive catalogue refresh](review-backend.md#download-scans-for-one-region).
+Drive is authoritative; historical local hashes do not restrict transfers.
+Build the React frontend to make these controls available; the plain integration fallback remains for
+backend testing.

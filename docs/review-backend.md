@@ -37,13 +37,14 @@ Configuration comes from CLI arguments or the code checkout's `.env`:
 
 | CLI | Environment | Default |
 | --- | --- | --- |
-| `--scan-root` | `SURVEY_REVIEW_SCAN_ROOT` | required; contains region/PDF |
+| `--scan-root` | `SURVEY_REVIEW_SCAN_ROOT` | required existing folder; may start empty |
 | `--data-checkout` | `SURVEY_REVIEW_DATA_CHECKOUT` | required; Git root, `results/` below |
 | `--flags` | `SURVEY_REVIEW_FLAGS` | required; supplied flagged JSONL |
 | `--cache` | `SURVEY_REVIEW_CACHE` | OS temp directory / `survey-review-scans` |
 | `--data-branch` | `SURVEY_REVIEW_DATA_BRANCH` | `review-data`; main/master refused |
 | `--sync-interval` | `SURVEY_REVIEW_SYNC_INTERVAL` | 180 seconds |
 | `--port` | `SURVEY_REVIEW_PORT` | 8765; bound to 127.0.0.1 |
+| — | `SURVEY_REVIEW_DRIVE_API_KEY` | blank; manual download/import remains available |
 
 Cache must be outside both Git checkouts. Scans are retrieved on demand from
 `scan_root/region/pdf`, using the original one-based PDF page and existing image
@@ -549,3 +550,104 @@ See [the verification record](review-continuation-verification.md),
 [prepared Linear wording corrections](review-linear-wording.md). Windows/user
 acceptance, IT-109 merge verification, live IT-115 base/head reconciliation and
 production provisioning remain separate delivery gates.
+
+## Download scans for one region
+
+The built React reviewer offers **Download scans**, **Open in Drive** and
+**Import downloaded PDF** for regions mapped to a Drive PDF in the catalogue.
+Google Drive is authoritative; historical local sizes/checksums do not restrict
+transfers or offline use. No image comparison or pixel hashing is performed.
+Record/region/PDF mappings and page bounds still apply.
+
+Create an existing writable `--scan-root` outside the data checkout. Region
+folders are created on demand. Automatic downloads require a Google Drive API
+key restricted to that API in the code checkout's untracked `.env`:
+
+```dotenv
+SURVEY_REVIEW_DRIVE_API_KEY=your-key
+```
+
+Source PDFs must allow public-link access and downloading. The key is only used
+by Python, never sent to the browser or logged. Restart after configuring it.
+Private access needs a separate authentication design. Without a key, reviewers
+can use **Open in Drive**, download in their browser, and import.
+
+### Transfer integrity and refresh
+
+Each explicit download fetches current Drive size/MD5 metadata, streams to a
+temporary file, checks metadata again, and verifies the completed bytes against
+that version. Catalogue sizes/checksums are informational snapshots. A Drive
+change during transfer restarts the download once with fresh metadata; a second
+change produces a retryable error. Corrupt/truncated transfers fail. Connection
+setup retries temporary failures up to three times; interrupted media streams
+can be retried explicitly. Cancelled/failed temporary files are removed.
+
+Manual imports work offline without matching Drive or historical file sizes.
+The frontend sends `X-Scan-Size`; existing clients may use `Content-Length`.
+When both exist they must agree, and the streamed body must match that length.
+Imports are limited to **1 GiB**. Both paths reject unreadable/encrypted PDFs
+and references outside the PDF's page count. Manual imports do not establish
+that uploaded bytes match Drive.
+
+A usable local PDF is used directly; download and import controls are hidden.
+If the expected filename already exists but its PDF is unusable, move it out of
+its region folder using **Open scan folder** before downloading or importing.
+Both transfer endpoints reject an existing destination with `scan_exists` (409).
+Publication is atomic and refuses a file that appears during transfer. No files
+are overwritten and no automatic backups are created; existing backups are left
+untouched. Scan/progress caches refresh after installation; PNG rendering remains
+on demand.
+
+Readable local PDFs with valid page references remain usable offline regardless
+of catalogue hashes. Polling never contacts Drive or hashes PDFs; local metadata
+is cached until the file changes. One transfer runs per backend. A crash may
+leave `.scan-*.part` files; remove them while the backend is stopped.
+
+Endpoints retain the existing session and same-origin boundary:
+
+- `GET /api/scan-batches?region=…`: source link, state, progress, transfer size
+  (or local/snapshot size when idle), `local_file_exists`, and `local_ready`.
+- `POST /api/scan-batches/{region}/download` and `/cancel`: JSON requests.
+- `POST /api/scan-batches/{region}/import`: raw `application/pdf` with upload size.
+
+Unmapped datasets return `batch_not_available` and continue local review.
+Transfers never modify records, decisions, flags, or Drive files.
+
+### Refresh the Drive catalogue
+
+The catalogue records region-to-file mappings and a Drive metadata snapshot.
+With the API key configured, rebuild directly from Drive:
+
+```sh
+uv run python scripts/build_drive_catalogue.py
+```
+
+The old positional scan-root argument remains accepted, deprecated and ignored.
+The builder paginates public folders, requires one PDF per numeric region, and
+validates Drive metadata. It never reads or hashes local archival PDFs.
+Use `--output /tmp/drive-catalogue.json` to inspect a proposed catalogue first.
+
+Regions **216413, 216414 and 216415** previously had historical local pins that
+rejected Drive copies. Those pins no longer control acceptance. No manual scan
+comparison, historical-source reconciliation, or checksum editing is needed.
+
+Build the React frontend before distributing the release; the plain integration
+fallback page does not provide scan preparation. Physical Windows/operator
+acceptance remains separate from developer and CI verification.
+
+### Implementation verification
+
+Transfer/API regressions cover authoritative current Drive metadata, bounded
+source-change retries, corruption/truncation, offline imports, the 1 GiB limit,
+existing-file rejection, failure preservation, file races, symlinks, cache invalidation,
+and catalogue pagination without local-source checks. Frontend tests cover
+changed-size imports and hidden transfer controls for existing files. A browser
+test imports a synthetic PDF, verifies reuse without transfer controls, then moves
+the file aside and imports another copy without creating a backup.
+
+The catalogue was refreshed directly from Drive for all 45 regions. Real API
+smoke downloads for **216413, 216414 and 216415** passed current size/MD5 integrity
+and referenced-page checks in a temporary scan folder. Download plus validation
+took approximately 16, 13 and 15 seconds respectively on the developer machine.
+No original archival PDFs, extraction results, or Drive files were changed.
+This is developer/network evidence, not physical Windows or operator acceptance.

@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "root_id": "1z8_i1IYzUCZYtE5NxB9xQ8kAQ_rh-DMV",
+  "batches": [
+    {
+      "region": "216412",
+      "folder_id": "1mNtF04XDdKV2FdVsR2t6a8o6rFytdZUk",
+      "file_id": "1PL55mYan0BS8JqNwVeiT6FEo6h35uaqw",
+      "pdf": "423444_1973-0002-00001-00001.pdf",
+      "size": 53885553,
+      "md5": "1ed5a56b369195c1ec8b2ea1e29f8066",
+      "resource_key": null
+    },
+    {
+      "region": "216413",
+      "folder_id": "1antDj7sm0aEk2YnHR8mdgZPkFh51BBwG",
+      "file_id": "1aGV7UqEVn34rSVEhGPCQfleFLGTJ_ONa",
+      "pdf": "423447_1973-0002-00002-00001.pdf",
+      "size": 81412745,
+      "md5": "06df34a62c965ebe4fa72ac95290c800",
+      "resource_key": null
+    },
+    {
+      "region": "216414",
+      "folder_id": "1jl9pMbZAjHXsQPKL4m4KpAjB7NUREizg",
+      "file_id": "1W3zwj3UFEdF4XCasPOTTnRxeO0HAw5Wm",
+      "pdf": "423451_1973-0002-00003-00001.pdf",
+      "size": 88472074,
+      "md5": "b3a6c9550792bcd2687f466e42f3c237",
+      "resource_key": null
+    },
+    {
+      "region": "216415",
+      "folder_id": "15904hBIoJSae_ZY-z-sidz2lYc9NKAWv",
+      "file_id": "1GkxqrZUbNImae7r8vMhb6tbiHDsDnH5I",
+      "pdf": "423459_1973-0002-00004-00001.pdf",
+      "size": 112112055,
+      "md5": "b11bf85ac492011215149bfa25ad9053",
+      "resource_key": null
+    },
+    {
+      "region": "216416",
+      "folder_id": "1pJSjvJ49gKZ5OAHBk94xuKRRvEvdSQ-o",
+      "file_id": "1lnI6TTIH7wMCM6cF4I1JggVtpy626UwN",
+      "pdf": "423466_1973-0002-00005-00001.pdf",
+      "size": 100088306,
+      "md5": "56a1bb830d9958b7fb3e4c6b677846ce",
+      "resource_key": null
+    },
+    {
+      "region": "216417",
+      "folder_id": "1dNhg8MbSA36m3V9FZA7ipT86BWlfba6T",
+      "file_id": "1_PPixab39Ka2PXYNMc6b1JhF9YCa_xse",
+      "pdf": "423473_1973-0002-00006-00001.pdf",
+      "size": 78467333,
+      "md5": "7bb677f315072791b23bb30f8b7f641e",
+      "resource_key": null
+    },
+    {
+      "region": "216418",
+      "folder_id": "1FsnE-mtEnwcB9_KRIvlD38Uh0M42gjB6",
+      "file_id": "1csu3d6abIOyH1sewKDyIMTZ9ioxlh30y",
+      "pdf": "423482_1973-0002-00007-00001.pdf",
+      "size": 170101855,
+      "md5": "1162367c27ac26c74d543adc07bf9510",
+      "resource_key": null
+    },
+    {
+      "region": "216419",
+      "folder_id": "1d2aK5XGjXsVQE6qG1at-9Z0ng8uo5Suv",
+      "file_id": "1llLkeKR6dZN_smZun3MmLpNd9Or964e5",
+      "pdf": "423497_1973-0002-00008-00001.pdf",
+      "size": 189152263,
+      "md5": "f020655ed958d87339627840fc23eb2d",
+      "resource_key": null
+    },
+    {
+      "region": "216420",
+      "folder_id": "17kR6OsxzkfMIhPu5sFGGbisHHyiVxpOC",
+      "file_id": "1z9_iN3lUUdJDn57HU72AjuTcW7zzAxWQ",
+      "pdf": "423525_1973-0002-00009-00001.pdf",
+      "size": 339013207,
+      "md5": "22a1f71bd79d54feb4ee7e5c52cdc1b1",
+      "resource_key": null
+    },
+    {
+      "region": "216421",
+      "folder_id": "1chghnp5QNBB5Yasfy9HspFE5Wu15yt28",
+      "file_id": "1naRxENM3zACDptI0hAH2on3co3_S87l_",
+      "pdf": "423554_1973-0002-00010-00001.pdf",
+      "size": 164294237,
+      "md5": "58b54cd2251d3c549187805c348d1f22",
+      "resource_key": null
+    },
+    {
+      "region": "216422",
+      "folder_id": "1ZI36pgYf9IYIBrRyL9SCuVa5M8-qpQH8",
+      "file_id": "1CaMpFIeGTsiPvzGgVYcwqKX7GbE7Ta10",
+      "pdf": "423575_1973-0002-00011-00001.pdf",
+      "size": 166049299,
+      "md5": "4a887e6f425cb09408b77bcb4cc229ba",
+      "resource_key": null
+    },
+    {
+      "region": "216423",
+      "folder_id": "14uB9w1lnhvS4kDzxbbkrUoySpKL6-TVD",
+      "file_id": "15h9KinP9bWovMz68jsjMrcISl8EsCUAp",
+      "pdf": "423593_1973-0002-00012-00001.pdf",
+      "size": 116856454,
+      "md5": "3ab02aac524710024a2a489b1fa7ed8c",
+      "resource_key": null
+    },
+    {
+      "region": "216424",
+      "folder_id": "1cdaJ22FvZqe6tTujcfje6HNyGqn0mlhX",
+      "file_id": "1Jx3Q6_yz5va5n7LDXKUmxzJxqlbHQVpk",
+      "pdf": "1249663_1973-0002-00013-00001.pdf",
+      "size": 137658700,
+      "md5": "3a8a1425a46421856f6fe6ae3f7ec4e6",
+      "resource_key": null
+    },
+    {
+      "region": "216425",
+      "folder_id": "1k1rlCgKVmE90Zz6Ap0-Ze_p5EaygowrP",
+      "file_id": "16Mo2GtJLJTQzzAxz3cDQCTEY9heGoNsK",
+      "pdf": "1249664_1973-0002-00014-00001.pdf",
+      "size": 81028004,
+      "md5": "269c3486c2df9b3d1a1220a0b9d12647",
+      "resource_key": null
+    },
+    {
+      "region": "216426",
+      "folder_id": "1K59zBN1_hgb0JYRxKrSni30V5It5Oz2C",
+      "file_id": "1jGjTRVjI--w4N3uHwE-QjsKda13_1E8d",
+      "pdf": "1249665_1973-0002-00015-00001.pdf",
+      "size": 65886271,
+      "md5": "754cd9fb034dd26c57be205b5bb45952",
+      "resource_key": null
+    },
+    {
+      "region": "216427",
+      "folder_id": "15gMeRpv5w9MG-S6KOv63kQjvT65zwS2p",
+      "file_id": "1donVv2nUC_SKHDso7nKhjtgpoRhGfQRU",
+      "pdf": "1249666_1973-0002-00016-00001.pdf",
+      "size": 76729748,
+      "md5": "b4a0043a6f4f566612688c1955043a9e",
+      "resource_key": null
+    },
+    {
+      "region": "216428",
+      "folder_id": "1V9jVTsA2dtqQC2OdQUhsW_bb-ysfFJZj",
+      "file_id": "1R1RB6BZqrWHLwv0e8FmQxhLxVZBxwY3o",
+      "pdf": "1252406_1973-0002-00017.pdf",
+      "size": 261056439,
+      "md5": "ad768a5cdd5209d9791edbe80ae1c791",
+      "resource_key": null
+    },
+    {
+      "region": "216429",
+      "folder_id": "1-VOel4EPDVlS63SoMZm6iyKr5muQMVfD",
+      "file_id": "1OzTxkxddOFDxYprSOizdtiwTldHsBiAc",
+      "pdf": "1252581_1973-0002-00018.pdf",
+      "size": 43202243,
+      "md5": "240dbf8efeb8944ae74595e150d6221c",
+      "resource_key": null
+    },
+    {
+      "region": "216431",
+      "folder_id": "1h4bchF218gjseYEqtA6_m2EJiiw1VELh",
+      "file_id": "1drhs7YFp5mmieDuJAaviztKNPd7BFyKC",
+      "pdf": "423631_1973-0002-00020-00001.pdf",
+      "size": 111546127,
+      "md5": "ef01f0d8aaac97cb2e542c3f161fd8e4",
+      "resource_key": null
+    },
+    {
+      "region": "216433",
+      "folder_id": "1ak4gx7cvzbM2RnFPisJVavSXK7UfbkKu",
+      "file_id": "16bfqowBUfJLVYlvoDxpoxVlWYFgMcTx3",
+      "pdf": "1251865_1973-0002-00022.pdf",
+      "size": 202323539,
+      "md5": "3d42d8f4983cec7f94ffefefe3c8de2b",
+      "resource_key": null
+    },
+    {
+      "region": "216434",
+      "folder_id": "1jJlYQwnl2cHiXEZ04qcNaGXuaZF0uo5N",
+      "file_id": "12SSpuM6V2TnWYx1jgZX8OFjURJGQqARN",
+      "pdf": "423657_1973-0002-00023-00001.pdf",
+      "size": 120458067,
+      "md5": "8d578dc59a42f42837c6e11d8153f4b0",
+      "resource_key": null
+    },
+    {
+      "region": "216435",
+      "folder_id": "15cs_tYYyxmGZ0mvYyyuCt4fkcR1Fijqd",
+      "file_id": "1YnNu3bWlRHcENTS6OV-cV3nGqNfAG3uK",
+      "pdf": "1253238_1973-0002-00024.pdf",
+      "size": 146765613,
+      "md5": "99dd50b573842f264c5c2d282224ec7c",
+      "resource_key": null
+    },
+    {
+      "region": "216436",
+      "folder_id": "1SNN83geohm9f6q4sSBXRRp7MDKc_-hBo",
+      "file_id": "1s1eeNHMKKl2kwH-LfHcfCr7VSukUFwIr",
+      "pdf": "1264179_1973-0002-00025.pdf",
+      "size": 302671324,
+      "md5": "ada2e115feb035b26487e9d4494ee1d2",
+      "resource_key": null
+    },
+    {
+      "region": "216437",
+      "folder_id": "1Uu4Havl6FtyjbbAx3i18_0AFI69RWWzg",
+      "file_id": "1dEClbOl1sL-kpTKxNaASswUgk8BDAkZA",
+      "pdf": "1262958_1973-0002-00026-00001.pdf",
+      "size": 200023582,
+      "md5": "89a6cb0d4db33f006670889c80f3dcc8",
+      "resource_key": null
+    },
+    {
+      "region": "216438",
+      "folder_id": "1n0VckcYJiLq4JA5Z0hvIh6-MODTchuOF",
+      "file_id": "18hfl59F30EmN4PRDYwOSZ29pkAsuQEQp",
+      "pdf": "1253629_1973-0002-00027.pdf",
+      "size": 250703932,
+      "md5": "1b8ca694de2bde1e869bafed26b7b6c5",
+      "resource_key": null
+    },
+    {
+      "region": "216439",
+      "folder_id": "1PPTjzAj0KEQ9lgiLG8Tc8yBFEy0vwZdt",
+      "file_id": "1cWF76UXeqTJgOiLnA1P1eH5q277PaNjV",
+      "pdf": "1254309_1973-0002-00028.pdf",
+      "size": 257172268,
+      "md5": "ab1404fc006a491f35fdaf538584f781",
+      "resource_key": null
+    },
+    {
+      "region": "216440",
+      "folder_id": "1NwNavOBrpqJP66ySZupBBGwM7-NKt2bv",
+      "file_id": "179eyisM0rHDYMv8E9-8o1RUKu8nXb27o",
+      "pdf": "1255006_1973-0002-00029.pdf",
+      "size": 210044354,
+      "md5": "afb1628fec8f885528d845ac43e669d4",
+      "resource_key": null
+    },
+    {
+      "region": "216441",
+      "folder_id": "1czVyO0WaQJWdkEseeslw2Awy69RkgFhm",
+      "file_id": "1pFVo_cMZxjsnV8466GDwdBWKtaeL5ZlE",
+      "pdf": "1255583_1973-0002-00030.pdf",
+      "size": 50397389,
+      "md5": "7a31d4c4bf1419f1709f17f15b5d7119",
+      "resource_key": null
+    },
+    {
+      "region": "216442",
+      "folder_id": "1wh6GJYjR29Jl62niAFr0e8IBJy44CWdC",
+      "file_id": "1UrfhDVO1jquL7-yDuJ-s_RDtjD7ZSPHH",
+      "pdf": "1255714_1973-0002-00031.pdf",
+      "size": 140836136,
+      "md5": "476fd11ac6b08c89ce0bfa8355b12ddf",
+      "resource_key": null
+    },
+    {
+      "region": "216443",
+      "folder_id": "1mJvUmhpnaVosVZljlrGE7Z27REtXfxZj",
+      "file_id": "1yJI-esJmEWvftBxiBbAJPBJ3ZQS-9f6A",
+      "pdf": "1256093_1973-0002-00032.pdf",
+      "size": 180009168,
+      "md5": "3887d2701b452d1d41e921aad85b2e49",
+      "resource_key": null
+    },
+    {
+      "region": "216444",
+      "folder_id": "1XyQESW5Rf-QfoTqUUbA-kOLWeb_Ued27",
+      "file_id": "1ZCmCl_rF_5MiSxR2N4uNgCVL7c0NTG9w",
+      "pdf": "1256580_1973-0002-00033.pdf",
+      "size": 118043431,
+      "md5": "95eb4c409b26c8a0da103aef43b265bd",
+      "resource_key": null
+    },
+    {
+      "region": "216445",
+      "folder_id": "1jaPPJNwkHY7hjQwzIlF5hBpNOniROVoU",
+      "file_id": "10nPkt_3-SLqd4hwwSUzd6GvOFsfTjbd_",
+      "pdf": "1256903_1973-0002-00034.pdf",
+      "size": 153912546,
+      "md5": "f28da5c7d288f26afa9dada76da3f70e",
+      "resource_key": null
+    },
+    {
+      "region": "216446",
+      "folder_id": "1xPVGlLikcqo8bD6RtL9posEhqfSw62xj",
+      "file_id": "12ycxcWxAgn9UpmxYfIxwwpwnxcB3URAL",
+      "pdf": "1257320_1973-0002-00035.pdf",
+      "size": 141068147,
+      "md5": "aab1fff9bc6e1ebece565305cf7aa6c0",
+      "resource_key": null
+    },
+    {
+      "region": "216447",
+      "folder_id": "1cUtWxJgQu4qWP_WVo21ZbSpCev-FGGV0",
+      "file_id": "1BNmnbXdV-7PxZkyZgeFUkZvOb_iauxzf",
+      "pdf": "423696_1973-0002-00036-00001.pdf",
+      "size": 231459517,
+      "md5": "00ec31e11559d619fd497195c580ed00",
+      "resource_key": null
+    },
+    {
+      "region": "216448",
+      "folder_id": "1tSGWOJhSsN4Rxo5zqCCVUmUdzYe4tggJ",
+      "file_id": "1frO5wDHECFg4BDNDVGT8mlbOmpai2P_g",
+      "pdf": "1257695_1973-0002-00037.pdf",
+      "size": 211023999,
+      "md5": "ab9643eb4279017eb0eb0a276fe26cd0",
+      "resource_key": null
+    },
+    {
+      "region": "216449",
+      "folder_id": "12XjJUZzklwnb8FEuRIo2lSYq07ZJJqq6",
+      "file_id": "1l6E5ZV5ednS1uP39SiS91EmZJy80PQYc",
+      "pdf": "1257939_1973-0002-00038.pdf",
+      "size": 384436442,
+      "md5": "d8db82524094fb9676a5e09c1e536abc",
+      "resource_key": null
+    },
+    {
+      "region": "216450",
+      "folder_id": "191pjL-3wG-3EFPmuXNOb5wfa7DaViad2",
+      "file_id": "1lfWtqRUwdcd3qGMj1vEG1srZekRgFxYI",
+      "pdf": "1257996_1973-0002-00039.pdf",
+      "size": 156425394,
+      "md5": "c8208f9c7df3aa2b9551d53c19cea101",
+      "resource_key": null
+    },
+    {
+      "region": "216451",
+      "folder_id": "16Ms3O38JhhsCZQr5_cKel8YgMyPuC0bU",
+      "file_id": "13IiwIButIJw8lMp8mRCovQUa13qoKIgm",
+      "pdf": "1258421_1973-0002-00040.pdf",
+      "size": 180342991,
+      "md5": "cd74766ecd435b5dee2b323f17d4723a",
+      "resource_key": null
+    },
+    {
+      "region": "216452",
+      "folder_id": "1JdpBzhG6gsxZBTEFghC19kDDijUH34UD",
+      "file_id": "13QpAajr3m37ce6K4dRarB7Y769U4WSSi",
+      "pdf": "1258110_1973-0002-00041.pdf",
+      "size": 255233464,
+      "md5": "0d7c87b8013d97aa589d6a4dade3d658",
+      "resource_key": null
+    },
+    {
+      "region": "216453",
+      "folder_id": "1c6tMFavb1BWG3_xk7Lf1BtUcRV5L2YnC",
+      "file_id": "16vTUrKPJ537s60lYNvkzdnlccOho_aUa",
+      "pdf": "1259213_1973-0002-00042.pdf",
+      "size": 276627093,
+      "md5": "218b8a29288b184a19487b46c821ed01",
+      "resource_key": null
+    },
+    {
+      "region": "216454",
+      "folder_id": "1qNbgZFTu2aHPMjyvSejLsYnRWzJldofA",
+      "file_id": "1FvYBMNLigTWHPS0ayh5U7hli9L6uHISh",
+      "pdf": "1260326_1973-0002-00043.pdf",
+      "size": 71659427,
+      "md5": "63b0160a8043aea7bb3c8d6d7ac8b61e",
+      "resource_key": null
+    },
+    {
+      "region": "216459",
+      "folder_id": "14hfLVw4cj3_KsYcfbbQZhi-IkeNymU1v",
+      "file_id": "1XvBUAVoobrCJNfQmt5oNJM8j6kiGuSAW",
+      "pdf": "1260652_1973-0002-00048.pdf",
+      "size": 148663008,
+      "md5": "24198aaf4053ad776edee2a4a8b663c8",
+      "resource_key": null
+    },
+    {
+      "region": "216460",
+      "folder_id": "1bcLKMhJ4t6P4H1KrT8ArvMOXuSSye73X",
+      "file_id": "1Q--uUAt0oFiQ6YL-Eq7kf83qNaNe5g7T",
+      "pdf": "1260908_1973-0002-00049.pdf",
+      "size": 162746328,
+      "md5": "40d4825663e6d53ca0d9498294ee1300",
+      "resource_key": null
+    },
+    {
+      "region": "216461",
+      "folder_id": "1wvoGPEEgr4qMHm8lPccXjCEuDpPP00Nc",
+      "file_id": "1Zx-4A_nQd30z5qa96OtJeUjVX-g2PHa9",
+      "pdf": "1262736_1973-0002-00050.pdf",
+      "size": 41007272,
+      "md5": "f2cebd21328a59120dd2c9b8a59619b1",
+      "resource_key": null
+    },
+    {
+      "region": "216463",
+      "folder_id": "1nd02RJzojG5Kzj_FGy6nYzAk_lejSTnw",
+      "file_id": "1ReZhhJsvrr1n0ZEE_1H1MkeHshoXjq6s",
+      "pdf": "1262761_1973-0002-00052.pdf",
+      "size": 182090515,
+      "md5": "ea546bacf0478497a8f00e3febe20273",
+      "resource_key": null
+    }
+  ]
+}

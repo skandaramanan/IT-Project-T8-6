@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException
 
 from survey.records import REGION, RecordStore, ReviewError, safe_pdf
+from survey.review.drive import CATALOGUE, BatchDownloads
 from survey.review.fields import MAX_TEXT_CORRECTION_LENGTH
 from survey.review.queue import load_queue
 from survey.review.scans import LocalScanSource
@@ -35,6 +36,8 @@ class Settings:
     data_branch: str = "review-data"
     sync_interval: float = 180
     port: int = 8765
+    drive_api_key: str | None = None
+    scan_catalogue: Path = CATALOGUE
 
     def validate(self):
         code_root = Path(__file__).parents[3].resolve()
@@ -101,11 +104,11 @@ def create_app(settings: Settings) -> FastAPI:
     stop = Event()
     worker = None
     startup_error = None
-    service = sync = None
+    service = sync = downloads = None
 
     @asynccontextmanager
     async def lifespan(app):
-        nonlocal service, sync, worker, startup_error
+        nonlocal service, sync, downloads, worker, startup_error
         try:
             settings.validate()
             store = RecordStore(settings.data_checkout / "results", load=False)
@@ -128,6 +131,13 @@ def create_app(settings: Settings) -> FastAPI:
                 raise ReviewError(
                     "empty_flags", "Flagged file is empty; supply teammate flags"
                 )
+            downloads = BatchDownloads(
+                service,
+                settings.drive_api_key,
+                settings.scan_catalogue,
+                root=settings.scan_root,
+            )
+            app.state.downloads = downloads
             app.state.service, app.state.sync = service, sync
 
             def periodic():
@@ -147,6 +157,8 @@ def create_app(settings: Settings) -> FastAPI:
             yield
         finally:
             stop.set()
+            if downloads:
+                downloads.close()
             if worker:
                 worker.join()
             if sync:
@@ -190,12 +202,15 @@ def create_app(settings: Settings) -> FastAPI:
                     "Mutations require the local same-origin page",
                     403,
                 )
-            if (
-                request.headers.get("content-type", "").split(";")[0]
-                != "application/json"
-            ):
+            importing = (
+                request.method == "POST"
+                and request.url.path.startswith("/api/scan-batches/")
+                and request.url.path.endswith("/import")
+            )
+            expected_type = "application/pdf" if importing else "application/json"
+            if request.headers.get("content-type", "").split(";")[0] != expected_type:
                 return error_response(
-                    "invalid_content_type", "Send application/json", 422
+                    "invalid_content_type", f"Send {expected_type}", 422
                 )
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
@@ -276,6 +291,65 @@ def create_app(settings: Settings) -> FastAPI:
                 for region in regions
             ]
         }
+
+    @app.get("/api/scan-batches")
+    def scan_batches(region: str):
+        ready()
+        return downloads.status(region)
+
+    @app.post("/api/scan-batches/{region}/download")
+    def download_batch(region: str, request: Request):
+        ready()
+        reviewer(request)
+        return downloads.start(region)
+
+    @app.post("/api/scan-batches/{region}/cancel")
+    def cancel_batch(region: str, request: Request):
+        ready()
+        reviewer(request)
+        return downloads.cancel(region)
+
+    @app.post("/api/scan-batches/{region}/open-folder")
+    def open_scan_folder(region: str, request: Request):
+        ready()
+        reviewer(request)
+        return downloads.open_folder(region)
+
+    @app.post("/api/scan-batches/{region}/import")
+    async def import_batch(region: str, request: Request):
+        from starlette.concurrency import run_in_threadpool
+
+        ready()
+        reviewer(request)
+        size_header = request.headers.get("x-scan-size")
+        length = request.headers.get("content-length")
+        size = downloads.import_size(size_header if size_header is not None else length)
+        if length is not None and downloads.import_size(length) != size:
+            raise ReviewError(
+                "scan_size_mismatch", "Upload length differs from the declared PDF size"
+            )
+        batch = downloads.batch(region)
+        await run_in_threadpool(downloads.claim, region, "importing", size)
+        try:
+            with downloads.staging(batch) as (path, stream):
+                async for chunk in request.stream():
+                    await run_in_threadpool(
+                        downloads.write_chunk, region, stream, chunk
+                    )
+                await run_in_threadpool(downloads.finish_stream, stream)
+                await run_in_threadpool(downloads.publish, region, path)
+        except BaseException as error:
+            downloads.fail(region, error)
+            if isinstance(error, OSError):
+                raise ReviewError(
+                    "scan_transfer_failed",
+                    "Cannot import PDF. Check disk space and scan folder permissions.",
+                    500,
+                ) from None
+            raise
+        finally:
+            downloads.release(region)
+        return await run_in_threadpool(downloads.status, region)
 
     @app.get("/api/dwellings")
     def dwellings(region: str | None = None):

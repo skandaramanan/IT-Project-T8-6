@@ -998,3 +998,10 @@ summary:focus-visible {
 textarea.input { resize: vertical; min-height: 8rem; }
 
 .value.text-value { font-size: 22px; line-height: 1.4; }
+
+/* Explicit region scan preparation, independent of review decisions. */
+.scan-batch { padding: 12px 16px; margin: 12px 0; border: 1px solid var(--line, #ddd); border-radius: 8px; background: var(--paper, #fff); }
+.scan-batch-file { display: block; margin: 4px 0 8px; overflow-wrap: anywhere; }
+.scan-batch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.scan-batch progress { width: min(280px, 100%); margin-right: 12px; }
+.scan-batch p { margin: 8px 0; }
