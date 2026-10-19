@@ -192,25 +192,13 @@ ignore dwelling survey-front/back entries in the shared physical-card index when
 generating coding flags, and expose the generated dwelling Municipality pointer
 as an actionable field on the first coding card. Explicit household Municipality
 flags remain supported, including assignments containing both stored copies.
+Both `/dwelling/municipality` and `/dwelling/households/<index>/municipality`
+are accept-only identity fields. Acceptance preserves the stored value;
+correction, no-data and illegible decisions are rejected. If a Municipality is
+wrong, leave it pending for a separate data repair. Reviewing either copy does
+not rewrite the other copy. The shared path aliases the first household only;
+later households retain their own Municipality values.
 An empty generated assignment is now a healthy startup case.
-
-Browser acceptance used a fresh synthetic demo with CLI-generated flags, the
-built React frontend, and a local bare remote. A `04` → `009` correction survived
-backend restart; its history remained reachable, undo restored `04`, and Refresh
-returned progress to pending with the same 103-field assignment. The copied
-regional JSONL passed validation afterward. This does not constitute real dual
-corpus or physical Windows acceptance. Locally the optional paired benchmark
-check skips because Qwen raw readings are absent; the two existing confidence
-calibration tests also require that missing cache.
-
-Final local checks: Ruff lint/format and whitespace checks passed; frontend
-tests passed (51) and the production build passed. The backend suite passed
-813 tests, skipped 17, and deselected three calibration cases (the two tests
-above, one parametrized). The initial unfiltered run failed those two cache
-checks and a sandbox-denied loopback bind; the final run allowed loopback and
-excluded only the unavailable calibration checks. The new integration module
-passed four tests and skipped its optional real paired-output check. The existing
-Starlette/httpx deprecation warning remains.
 
 Each nonblank line is an object with exactly these keys, plus optional `reason`:
 

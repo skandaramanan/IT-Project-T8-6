@@ -432,24 +432,6 @@ class ReviewService:
                     "review_state": state(field),
                 }
             )
-        # Keep supplied flags for the legacy shared alias actionable as well.
-        shared = Reference(ref.region, ref.pdf, ref.page, "/dwelling/municipality")
-        if (
-            index == 0
-            and shared.item_id in self.references
-            and not any(field["field_path"] == shared.field_path for field in fields)
-        ):
-            field = self.store.current(shared)[0].field
-            fields.insert(
-                0,
-                {
-                    "id": shared.item_id,
-                    "label": "Municipality",
-                    "field_path": shared.field_path,
-                    "field": snapshot(field),
-                    "review_state": state(field),
-                },
-            )
         details["card_fields"] = fields
         cards = []
         dwelling_refs = self.dwelling_references.get(details["dwelling_id"], [])
