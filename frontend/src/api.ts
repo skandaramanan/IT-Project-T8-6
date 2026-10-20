@@ -36,6 +36,8 @@ export interface Item {
   region_title: string | null;
   card_score: number | null;
   field_kind: string;
+  identity_kind?: 'municipality' | 'dwelling' | 'household' | null;
+  review_issues?: Diagnostic[];
   column?: string;
   household_count?: number;
   dwelling_flags?: string[];

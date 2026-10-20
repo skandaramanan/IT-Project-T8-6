@@ -1,7 +1,7 @@
 """Review descriptors drawn from the established extraction definitions."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from survey.extraction.card_fields import (
     FIELD_SCHEMA,
@@ -24,7 +24,24 @@ class Descriptor:
     role: str
     accept_only: bool = False
 
+    @property
+    def identity_kind(self):
+        if self.role != "coding-front":
+            return None
+        return {
+            "Municipality": "municipality",
+            "Number of Dwelling": "dwelling",
+            "Number of Household": "household",
+        }.get(self.spec.name)
+
     def valid_correction(self, value):
+        if self.identity_kind:
+            pattern = (
+                r"[0-9]{1,4}[A-Za-z]?"
+                if self.identity_kind == "dwelling"
+                else r"[0-9]{1,2}"
+            )
+            return isinstance(value, str) and bool(re.fullmatch(pattern, value))
         if self.spec.kind == "text":
             return (
                 isinstance(value, str)
@@ -38,23 +55,23 @@ class Descriptor:
 def descriptor(pointer: str) -> Descriptor | None:
     if re.fullmatch(r"/dwelling/households/[0-9]+/municipality", pointer):
         return Descriptor(
-            FIELD_SCHEMA_BY_NAME["Municipality"], "household", "coding-front", True
+            FIELD_SCHEMA_BY_NAME["Municipality"], "household", "coding-front"
         )
     normalized = re.sub(r"/households/[0-9]+/", "/households/*/", pointer)
     for label, path, group in field_pointers():
         if normalized == path:
             if group == "front":
                 return Descriptor(
-                    SURVEY_FRONT_SCHEMA_BY_NAME[label],
+                    replace(SURVEY_FRONT_SCHEMA_BY_NAME[label], kind="text")
+                    if record_key(label) == "dwelling_no"
+                    else SURVEY_FRONT_SCHEMA_BY_NAME[label],
                     group,
                     "survey-front",
-                    record_key(label) in {"dwelling_no", "municipality", "number"},
                 )
             return Descriptor(
                 FIELD_SCHEMA_BY_NAME[label],
                 group,
                 "coding-front",
-                group in {"dwelling", "household"},
             )
     if re.fullmatch(r"/dwelling/notes/[0-9]+/text", pointer):
         return Descriptor(REVERSE_NOTES_SCHEMA[0], "notes", "survey-back")

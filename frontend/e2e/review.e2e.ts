@@ -2,7 +2,7 @@
 // Vitest covers input rules with a fake API; these cover what only the whole stack can:
 // cookies, idempotent retries, two reviewers, missing scans and Git sharing.
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, renameSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -34,8 +34,9 @@ async function waitForHealth(url: string, server: ChildProcess, log: string[]) {
 }
 
 // A fresh demo and backend per test: one writer per data checkout (D029).
-const test = base.extend<{ demo: string; app: string }>({
-  demo: async ({}, use) => {
+const test = base.extend<{ demo: string; app: string; identityFields: boolean }>({
+  identityFields: [false, { option: true }],
+  demo: async ({ identityFields }, use) => {
     // Outside the repo: the backend refuses a data checkout inside the code checkout.
     const root = mkdtempSync(path.join(os.tmpdir(), 'survey-e2e-'));
     const demo = path.join(root, 'demo');
@@ -43,6 +44,15 @@ const test = base.extend<{ demo: string; app: string }>({
       cwd: repo,
       stdio: 'pipe',
     });
+    if (identityFields) {
+      appendFileSync(path.join(demo, 'flags.jsonl'), [
+        '/dwelling/municipality',
+        '/dwelling/dwelling_no',
+        '/dwelling/households/0/household_no',
+      ].map((field_path) => JSON.stringify({
+        region: 'demo', pdf: 'synthetic.pdf', page: 1, field_path, reason: 'Synthetic identity review',
+      })).join('\n') + '\n');
+    }
     try {
       await use(demo);
     } finally {
@@ -379,4 +389,51 @@ test('the compact queue keeps a long region title within a narrow viewport and r
   await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download scans', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Import downloaded PDF', exact: true })).toBeEnabled();
+});
+
+
+test.describe('identity review', () => {
+  test.use({ identityFields: true });
+  test('identity corrections update displayed record IDs and Undo restores them', async ({ page }) => {
+    await signIn(page);
+    await page.getByRole('button', { name: 'Review', exact: true }).click();
+    const fields = page.getByRole('region', { name: 'Fields to review on this card' });
+    await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+    const cases = [
+      { label: 'Municipality', value: '03', recordId: '03-0006-01', invalid: '003' },
+      { label: 'Number of Dwelling', value: '0006b', recordId: '27-0006B-01', invalid: '1234AB' },
+      { label: 'Number of Household', value: '03', recordId: '27-0006-03', invalid: '123' },
+    ];
+    let decisionRequests = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith('/decisions')) decisionRequests += 1;
+    });
+    for (const { label, value, recordId, invalid } of cases) {
+      if (!(await page.getByRole('heading', { name: label, exact: true }).isVisible())) {
+        await fields.getByRole('button', { name: new RegExp(`^${label} `) }).click();
+      }
+      await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+      // Use browser typing: fill() bypasses maxLength and hid truncation defects.
+      await page.getByRole('button', { name: 'Fix', exact: true }).click();
+      const correction = page.getByLabel('Your correction');
+      await correction.fill('');
+      await correction.pressSequentially(invalid);
+      await expect(correction).toHaveValue(invalid);
+      await expect(page.getByRole('button', { name: 'Save (check the identity)' })).toBeDisabled();
+      const beforeInvalidEnter = decisionRequests;
+      await correction.press('Enter');
+      await expect(correction).toHaveValue(invalid);
+      expect(decisionRequests).toBe(beforeInvalidEnter);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      const saved = page.waitForResponse('**/api/review-items/*/decisions');
+      await correct(page, value);
+      const result = await (await saved).json();
+      expect(result.item.record_id).toBe(recordId);
+      expect(result.item.field.value).toBe(value);
+      await expect(page.getByRole('banner')).toContainText(recordId);
+      await page.getByRole('button', { name: 'Undo', exact: true }).click();
+      await expect(page.getByText(/Undo saved on this computer/)).toBeVisible();
+      await expect(page.getByRole('banner')).toContainText('27-0006-01');
+    }
+  });
 });

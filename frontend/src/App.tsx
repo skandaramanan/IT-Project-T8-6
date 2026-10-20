@@ -53,6 +53,30 @@ function Confidence({ score, reviewed = false }: { score: number | null; reviewe
 function Value({ item }: { item: Item }) {
   return <>{item.field.value ?? statuses[item.field.status]}</>;
 }
+function isValidCorrection(item: Item, value: string): boolean {
+  if (item.identity_kind === 'dwelling') return /^[0-9]{1,4}[A-Za-z]?$/.test(value);
+  if (item.identity_kind) return /^[0-9]{1,2}$/.test(value);
+  return item.field_kind === 'text'
+    ? !!value.trim() && value.length <= 10_000 && !value.includes('\0')
+    : /^[0-9]{1,64}$/.test(value);
+}
+const sourceNoteLabels: Record<string, string> = {
+  identity_reread: 'The identity block was read a second time.',
+  identity_unreadable: 'An identity could not be read during extraction.',
+  missing_record_id: 'An identity could not be built during extraction.',
+  municipality_mismatch: 'Coding cards originally named different municipalities.',
+  duplicate_record_id: 'The original readings contained a duplicate household ID.',
+  paired_by_position: 'The front and coding cards were paired by scan position.',
+  persons_unassigned: 'People were not assigned to a household.',
+  unplaced: 'The coding card could not be paired with a survey front.',
+  missing_dwelling_no: 'A dwelling number was missing in the original reading.',
+  duplicate_dwelling_no: 'The original grouping contained repeated dwelling numbers.',
+  out_of_order: 'The scan order needed checking.',
+  no_coding_card: 'No coding card was found for this dwelling.',
+  unread_coding_card: 'A coding card could not be read during extraction.',
+  unread_front: 'A survey front could not be read during extraction.',
+  fronts_disagree: 'Survey fronts originally disagreed on a shared value.',
+};
 interface Pending {
   path: string;
   body: object;
@@ -405,7 +429,7 @@ export default function App() {
   }
   async function decide(action: Action) {
     if (!item || !canDecide || !item.allowed_actions.includes(action)) return;
-    if (action === 'correct' && !(item.field_kind === 'text' ? !!draft.trim() : /^[0-9]{1,64}$/.test(draft))) return;
+    if (action === 'correct' && !isValidCorrection(item, draft)) return;
     await submit({
       path: `/api/review-items/${item.id}/decisions`,
       body: {
@@ -492,7 +516,14 @@ export default function App() {
     !scanFailed &&
     !item.diagnostics.length;
   const textField = item?.field_kind === 'text';
-  const validCorrection = textField ? !!draft.trim() && draft.length <= 10_000 && !draft.includes('\0') : /^[0-9]{1,64}$/.test(draft);
+  const validCorrection = !!item && isValidCorrection(item, draft);
+  const correctionHelp = item?.identity_kind === 'dwelling'
+    ? 'Enter 1–4 digits, optionally followed by a letter, such as 487A. Leading zeros are kept.'
+    : item?.identity_kind
+      ? 'Enter 1–2 digits exactly as written. Leading zeros are kept.'
+      : textField
+        ? 'Copy the text as written. Line breaks and Unicode are kept. Use Nothing on the card for a blank source.'
+        : 'Digits only. Type exactly what the card shows. Leading zeros are kept.';
   const syncText = syncUnknown
     ? 'Sharing status unavailable'
     : !sync
@@ -964,28 +995,20 @@ export default function App() {
                 building fields are reviewed on the first coding card only. A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
               </p>
             )}
-            {!!item.dwelling_flags?.length && (
-              <div className="warnbox household-context">
-                This dwelling needs the team’s attention:{' '}
-                {item.dwelling_flags
-                  .map(
-                    (flag) =>
-                      ({
-                        persons_unassigned:
-                          'People have not been assigned to a household',
-                        unplaced: 'The household could not be placed with a survey front',
-                        duplicate_record_id:
-                          'More than one card has this household number',
-                        paired_by_position:
-                          'The cards were grouped by their scan positions',
-                        identity_reread: 'The identity block was read again',
-                        identity_unreadable: 'The household number could not be read',
-                      })[flag] ?? 'The card grouping or identity needs checking',
-                  )
-                  .join('. ')}
-                . Identity fields can only be accepted; leave incorrect identities
-                pending.
+            {!!item.review_issues?.length && (
+              <div className="review-issues household-context small" role="status">
+                <strong>Needs attention: </strong>
+                {item.review_issues.map((issue) => issue.message).join(' ')}
               </div>
+            )}
+            {!!item.dwelling_flags?.length && (
+              <details className="source-notes household-context small">
+                <summary>Source notes ({item.dwelling_flags.length})</summary>
+                <p>Original extraction and association notes. Correcting values does not regroup cards or people.</p>
+                <ul>
+                  {item.dwelling_flags.map((flag) => <li key={flag}>{sourceNoteLabels[flag] ?? flag.replaceAll('_', ' ')}</li>)}
+                </ul>
+              </details>
             )}
             {scanFailed && <ScanBatch key={item.region} region={item.region} onReady={async () => {
               const refreshed = await api<Item>(`/api/review-items/${item.id}`);
@@ -1224,7 +1247,7 @@ export default function App() {
                                   value={draft}
                                   onChange={(e) => setDraft(e.target.value)}
                                   disabled={busy || !!pending}
-                                  inputMode="numeric"
+                                  inputMode={item.identity_kind === 'dwelling' ? 'text' : 'numeric'}
                                   maxLength={64}
                                   autoComplete="off"
                                   autoFocus
@@ -1232,11 +1255,11 @@ export default function App() {
                                 />
                               )}
                               <p id="correction-help" className="small">
-                                {textField ? 'Copy the text as written. Line breaks and Unicode are kept. Use Nothing on the card for a blank source.' : 'Digits only. Type exactly what the card shows. Leading zeros are kept.'}
+                                {correctionHelp}
                               </p>
                               {draft && !validCorrection && (
                                 <p className="errbox">
-                                  {textField ? 'Enter up to 10,000 characters without NUL, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
+                                  {item.identity_kind ? correctionHelp : textField ? 'Enter up to 10,000 characters without NUL, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
                                 </p>
                               )}
                               {item.code_list.length > 0 && (
@@ -1291,7 +1314,7 @@ export default function App() {
                                     !item.allowed_actions.includes('correct')
                                   }
                                 >
-                                  {textField ? 'Save correction' : `Save ${validCorrection ? draft : '(fix the digits first)'}`}
+                                  {textField ? 'Save correction' : `Save ${validCorrection ? draft : item.identity_kind ? '(check the identity)' : '(fix the digits first)'}`}
                                 </button>
                                 <button
                                   className="btn lg"

@@ -338,14 +338,24 @@ Only the backend-provided latest applicable decision can be undone. Undo adds an
 audit entry and never deletes previous decisions.
 
 The field locator names its printed column and label, without claiming a pixel
-location or universal line number (C2 prints an extra field). Completed columns
-can fold, expand and reopen their decided fields. The active column stays open.
-Card context adds `column`, `household_count`, `dwelling_flags`, per-field column,
-and each coding card's score. Unqueued coding cards are visible in the tabs as
-“Not queued” without an action ID. The actual shared building fields remain on
-household 0. Front/person/back editing, record-ID changes, Damaged and crossed-out
-mutations remain deferred. Grouping/identity warnings are translated to plain
-language; unknown flags still ask the team to check the grouping/identity.
+location or universal line number (C2 prints an extra field). Columns remain
+expanded, including decided fields. The card selector omits unqueued coding
+cards and places reviewed cards last; Open survey front exposes the front scan
+directly. The actual shared building fields remain on household 0.
+
+Coding municipality and household numbers accept one or two digits. Coding
+dwelling numbers accept one to four digits with an optional final letter.
+Corrections update derived record IDs and existing note links while preserving
+the original card and person associations. Conflicting identities are rejected;
+Undo restores the prior values and links, subject to checks for later edits.
+Survey-front fields and verified note text are independently editable, without
+changing coding identities. Person editing, Damaged and crossed-out mutations
+remain deferred.
+
+Current identity and structural issues appear under Needs attention. Original
+extraction and association flags remain available in collapsed, neutral Source
+notes; correcting an identity does not regroup cards or people. Historical notes
+do not leave a yellow warning after the current issue is resolved.
 
 Save and Exit opens a modal over the current review context. It confirms local
 persistence separately from a confirmed uploaded sharing state and timestamp.

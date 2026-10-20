@@ -30,11 +30,11 @@ const tips = [
   ['Accept', 'If the card shows the same value, choose Accept or press A.'],
   [
     'Fix',
-    'Choose Fix or press E and copy the value on the card. Numeric fields keep leading zeros; text fields keep line breaks and Unicode. Enter saves numeric corrections; use Save correction for text. Esc cancels.',
+    'Choose Fix or press E and copy the value on the card. Numeric fields keep leading zeros; dwelling numbers can include a final letter; text fields keep line breaks and Unicode. Enter saves numeric corrections; use Save correction for text. Esc cancels.',
   ],
   [
     "Blank or can't read it",
-    'Use the link under the buttons. Identity and crossed-out fields can only be accepted; leave them pending and ask the team if they are wrong.',
+    'Use the link under the buttons. Identity fields can be fixed using their printed format. Crossed-out fields can only be accepted; leave them pending and ask the team if they are wrong.',
   ],
   [
     'Saving',

@@ -293,13 +293,13 @@ function backend(items = [field()]) {
     },
   };
 }
-async function start(action = 'Review') {
+async function start(action = 'Review', label = 'Weekly Rent') {
   const user = userEvent.setup();
   render(<App />);
   await user.type(await screen.findByLabelText('Your name'), 'Jane Smith');
   await user.click(screen.getByRole('button', { name: 'Start reviewing' }));
   await user.click(await screen.findByRole('button', { name: action }));
-  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  await screen.findByRole('heading', { name: label });
   return user;
 }
 function loaded() {
@@ -1453,4 +1453,116 @@ it.each(['accept', 'correct'] as const)('keeps %s saving feedback in the action 
   await screen.findByText(/Undo saved on this computer/);
   expect(server.mutations).toHaveLength(2);
   expect(server.mutations[1].path).toContain('/undo');
+});
+
+describe('identity corrections', () => {
+  it('preserves leading zeros and a lettered coding dwelling number', async () => {
+    const server = backend([field('number', {
+      label: 'Dwelling number', field_kind: 'numeric', identity_kind: 'dwelling',
+      field_path: '/dwelling/number', code_list: [], allowed_actions: ['accept', 'correct'],
+    })]);
+    const user = await start('Review', 'Dwelling number');
+    loaded();
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
+    const input = screen.getByLabelText('Your correction');
+    await user.clear(input);
+    await user.type(input, '0006b');
+    expect(input).toHaveValue('0006b');
+    await user.click(screen.getByRole('button', { name: 'Save 0006b' }));
+    await screen.findByText(/Saved: Dwelling number 0006b/);
+    expect(server.mutations[0].body).toMatchObject({ action: 'correct', value: '0006b' });
+    expect(screen.queryByRole('button', { name: "Can't read it or blank?" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['municipality', 'Municipality', '00', ['001', ' 1', '1 ', '1a', '１']],
+    ['household', 'Household number', '01', ['001', ' 1', '1 ', '1b', '١']],
+    ['dwelling', 'Dwelling number', '0001A', ['00001', '00001A', '1AB', ' 1', '1 ', '1é']],
+  ] as const)('validates %s identity without trimming or silently normalizing it', async (kind, label, valid, invalid) => {
+    const server = backend([field('identity', {
+      label, identity_kind: kind, field_kind: 'numeric', field_path: '/dwelling/number',
+      code_list: [], allowed_actions: ['accept', 'correct'],
+    })]);
+    const user = await start('Review', label);
+    loaded();
+    expect(screen.getByRole('button', { name: 'Fix' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
+    const input = screen.getByLabelText('Your correction');
+    for (const value of invalid) {
+      fireEvent.change(input, { target: { value } });
+      expect(input).toHaveValue(value);
+      expect(within(input.closest('form')!).getByRole('button', { name: /^Save / })).toBeDisabled();
+    }
+    expect(server.mutations).toEqual([]);
+    fireEvent.change(input, { target: { value: valid } });
+    expect(screen.getByRole('button', { name: `Save ${valid}` })).toBeEnabled();
+  });
+
+  it('keeps historical extraction flags in collapsed source notes without an active warning', async () => {
+    backend([field('rent', { dwelling_flags: ['identity_reread'], review_issues: [] })]);
+    const user = await start();
+    loaded();
+    const summary = screen.getByText(/^Source notes/);
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(details).toHaveTextContent('The identity block was read a second time.');
+    expect(screen.queryByText(/needs team attention/i)).not.toBeInTheDocument();
+  });
+
+  it('refreshes active identity issues from the saved response while retaining source notes', async () => {
+    const server = backend([field('rent', {
+      identity_kind: 'dwelling', field_kind: 'numeric', dwelling_flags: ['identity_reread'],
+      review_issues: [{ code: 'identity_conflict', message: 'Check the dwelling number against the scan.' }],
+    })]);
+    const realFetch = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation(async (input, options) => {
+      const result = await realFetch(input, options);
+      if (!String(input).endsWith('/decisions')) return result;
+      const saved = await result.json() as Saved;
+      return response({ ...saved, item: { ...saved.item, review_issues: [] } });
+    });
+    const user = await start();
+    loaded();
+    expect(screen.getByText('Check the dwelling number against the scan.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
+    await user.clear(screen.getByLabelText('Your correction'));
+    await user.type(screen.getByLabelText('Your correction'), '0006A');
+    await user.click(screen.getByRole('button', { name: 'Save 0006A' }));
+    await screen.findByText(/Saved: Weekly Rent 0006A/);
+    expect(screen.queryByText('Check the dwelling number against the scan.')).not.toBeInTheDocument();
+    expect(screen.getByText(/^Source notes/)).toBeVisible();
+  });
+});
+
+it('keeps a negated identity accept-only when the backend restricts its actions', async () => {
+  backend([field('identity', {
+    label: 'Municipality', identity_kind: 'municipality', field_kind: 'numeric',
+    allowed_actions: ['accept'], code_list: [],
+    field: { value: '27', status: 'ok', confidence: null, negated: true },
+    warnings: ['A crossed-out identity requires a separate resolution.'],
+  })]);
+  await start('Review', 'Municipality');
+  loaded();
+  expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Accept 27' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: "Can't read it or blank?" })).not.toBeInTheDocument();
+});
+
+it('keeps handwritten survey dwelling text editable independently of coding identity validation', async () => {
+  const server = backend([field('handwritten', {
+    label: 'Number of Dwelling', field_kind: 'text', identity_kind: null,
+    field_path: '/dwelling/handwritten/dwelling_no', code_list: [],
+    source: { pdf: 'original.pdf', page: 21, card_id: 'survey1', role: 'survey-front' },
+  })]);
+  const user = await start('Review', 'Number of Dwelling');
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
+  await user.clear(screen.getByLabelText('Your correction'));
+  await user.type(screen.getByLabelText('Your correction'), '0006b');
+  await user.click(screen.getByRole('button', { name: /^Save correction$/ }));
+  await screen.findByText(/Saved: Number of Dwelling 0006b/);
+  expect(server.mutations[0].body).toMatchObject({ action: 'correct', value: '0006b' });
 });

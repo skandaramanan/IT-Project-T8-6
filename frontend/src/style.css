@@ -1100,3 +1100,13 @@ textarea.input { resize: vertical; min-height: 8rem; }
 .feedback-notice span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .review-feedback button { flex-shrink: 0; }
 .queue-toolbar .regsel, .queue-toolbar .regsel select { min-width: 0; }
+
+.review-issues {
+  background: var(--paper);
+  border-left: 3px solid var(--medium);
+  overflow-wrap: anywhere;
+}
+.source-notes { color: var(--muted); }
+.source-notes summary { cursor: pointer; font-weight: 600; }
+.source-notes p { margin-top: 8px; }
+.source-notes ul { margin: 8px 0 0; padding-left: 20px; }

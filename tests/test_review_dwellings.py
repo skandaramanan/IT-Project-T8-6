@@ -302,7 +302,7 @@ def test_household_municipality_flags_have_actionable_card_context(tmp_path, ind
     field = next(field for field in item["card_fields"] if field["id"] == ref.item_id)
     assert field["field_path"] == ref.field_path
     assert field["label"] == "Municipality"
-    assert item["allowed_actions"] == ["accept"]
+    assert item["allowed_actions"] == ["accept", "correct"]
     saved = decide(service, ref, action="accept")
     assert saved["item"]["resolved"]
     assert any(

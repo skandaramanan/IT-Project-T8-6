@@ -51,8 +51,9 @@ physical-card dictionary; batch completion uses cached counters, invalidated whe
 source scans change. JSONL serialization/replacement still covers the region.
 
 Physical identity is region/PDF/page; shared fields belong to the first coding
-household. Identity and existing negated
-fields are accept-only. The IT-113 follow-up supports uniquely owned front dwelling fields and verified
+household. Identity corrections validate written values and atomically update
+derived household IDs without regrouping cards; existing negated fields remain
+accept-only. The IT-113 follow-up supports uniquely owned front dwelling fields and verified
 IT-89 notes. Person/ambiguous-front/negation editing and shared-field reconciliation
 remain deferred. See [the runbook](../review-backend.md) for API,
 launch, synthetic demo, deployment gates and recovery.
@@ -104,7 +105,8 @@ alone. Changed reviewed ownership/association is unresolved or refuses a rerun.
 There is no new provenance structure or coding-back field contract.
 
 Text keeps Unicode, whitespace and line breaks, with no digit normalization or
-codebook decoding. Identity/negated fields remain accept-only. Damage/obstruction
+codebook decoding. Identity fields allow validated correction; existing negated
+fields remain accept-only. Damage/obstruction
 uses the illegible decision; existing damaged extraction payloads remain valid and
 Accept preserves them. Atomic JSONL saves, versions, audit and sharing remain.
 
@@ -115,3 +117,33 @@ extraction changes or version-only conversions were imported.
 
 Native Windows, production sharing and human usability are still pending. The
 local release package and operator checklist are preparation, not acceptance.
+
+
+### IT-115 identity correction follow-up
+
+Coding Municipality/Household Number accept 1–2 ASCII digits; Dwelling Number
+accepts 1–4 ASCII digits and an optional letter. These fields expose Accept/Fix,
+with no blank/unreadable action. Front identity readings remain source-specific
+and do not change coding IDs or physical association membership.
+
+The first card's stored Municipality copies mirror only when the counterpart has
+no active review decisions. `identity_changes`, `identity_ids` and
+`identity_links` are optional audit-event snapshots for mirrored fields, affected
+household IDs (including unchanged nulls) and linked notes. Undo restores these
+exact prior values and refuses to overwrite later active changes. Existing audit
+history is retained. Newly introduced identity collisions are rejected before
+atomic persistence. Raw extraction flags are retained; current identity issues
+and still-unresolved structural problems determine the visible review warning.
+
+Identity corrections retain a legacy household's Municipality evidence from its
+stored record ID when no per-card Municipality field exists. A shared
+Municipality correction belongs to the first card; later stored IDs retain their
+own municipality. A later legacy card with a null ID and a municipality mismatch
+cannot be repaired by guessing: rebuild its missing evidence first.
+
+Reruns preserve each Municipality alias's separate machine evidence and active
+review payload. Identity events also snapshot physical note ownership and order
+in `identity_note_topology`. Undo refuses changed note topology (including older
+link snapshots without ownership evidence), rather than restoring links by an
+unverified list index. Repairing the sole household's identity links its null
+notes unambiguously; Undo restores their previous null links.
