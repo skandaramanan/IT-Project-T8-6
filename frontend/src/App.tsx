@@ -306,6 +306,21 @@ export default function App() {
       };
     });
   }
+  async function advanceWithinCard(saved: Item, items: Item[]) {
+    const next = items.find((field) =>
+      field.id !== saved.id && !field.resolved && field.source.card_id === saved.source.card_id,
+    );
+    if (next) {
+      try {
+        await openItem(next.id);
+      } catch {
+        setItem(saved);
+        setNotice('Saved on this computer. The next field could not open; return to the queue to continue.');
+      }
+    } else if (saved.resolved) {
+      setCompletedCard(saved.source.card_id);
+    }
+  }
   async function submit(request: Pending) {
     setPending(request);
     let result: Saved;
@@ -314,6 +329,28 @@ export default function App() {
     } catch (e) {
       // A lost response may already have saved. Retry its exact original body.
       if (e instanceof ApiError && e.status >= 400 && e.status < 500) setPending(null);
+      if (e instanceof ApiError && e.code === 'no_op' &&
+        'action' in request.body && request.body.action === 'accept') {
+        // Reaccepting a reviewed value adds no history. Refresh both the value and
+        // its queue before navigating so another reviewer's changes are respected.
+        const current = await api<Item>(request.path.replace(/\/decisions$/, ''));
+        const fresh = await api<Queue>(
+          `/api/dwellings/${current.dwelling_id}/items?${new URLSearchParams({ region: current.region })}`,
+        );
+        setDwellingItems(fresh);
+        const refreshed = fresh.items.find((field) => field.id === current.id);
+        if (!refreshed || refreshed.version !== current.version ||
+          !refreshed.resolved || refreshed.review_state !== 'accepted') {
+          await openItem(current.id);
+          setNotice('This field changed. Check it against the scan before deciding.');
+          return;
+        }
+        setItem(current);
+        setDraft(current.field.value ?? '');
+        setNotice('Already accepted. No additional decision was recorded.');
+        await advanceWithinCard(current, fresh.items);
+        return;
+      }
       throw e;
     }
     if (!result.saved_locally)
@@ -342,22 +379,7 @@ export default function App() {
         'Undo saved on this computer. The original decision stays in the history.',
       );
     } else {
-      const next = dwellingItems?.items.find(
-        (i) =>
-          i.id !== result.item.id && !i.resolved && i.source.card_id === result.item.source.card_id,
-      );
-      if (next) {
-        try {
-          await openItem(next.id);
-        } catch {
-          setItem(result.item);
-          setNotice(
-            'Saved on this computer. The next field could not open; return to the queue to continue.',
-          );
-        }
-      } else if (result.item.resolved) {
-        setCompletedCard(result.item.source.card_id);
-      }
+      await advanceWithinCard(result.item, dwellingItems?.items ?? []);
     }
   }
   async function nextCard() {

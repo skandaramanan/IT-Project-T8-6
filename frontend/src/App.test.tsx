@@ -205,6 +205,8 @@ function backend(items = [field()]) {
     const previous = undo
       ? current.find((i) => i.undo_decision_id === path.split('/')[3])!
       : current.find((i) => path.includes('/' + i.id + '/'))!;
+    if (!undo && body.action === 'accept' && previous.review_state === 'accepted')
+      return response({ error: { code: 'no_op', message: 'Already accepted' } }, 422);
     const value = undo
       ? '05'
       : body.action === 'correct'
@@ -270,6 +272,7 @@ function backend(items = [field()]) {
   return {
     fetch,
     mutations,
+    items: () => current,
     resolveField: (id: string) => {
       current = current.map((i) =>
         i.id === id
@@ -1119,6 +1122,127 @@ it('moves between fields without saving and waits for fresh scan evidence', asyn
   await user.click(screen.getByRole('button', { name: 'Previous field' }));
   await screen.findByRole('heading', { name: 'Weekly Rent' });
   expect(server.mutations).toHaveLength(0);
+});
+
+it('reaccepts a reviewed field by refreshing and advancing without another decision', async () => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  await user.click(screen.getByRole('button', { name: 'Previous field' }));
+  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  loaded();
+  server.fetch.mockClear();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  expect(server.fetch.mock.calls.map(([path]) => path)).toEqual([
+    '/api/review-items/rent/decisions',
+    '/api/review-items/rent',
+    '/api/dwellings/dwelling1/items?region=216418',
+    '/api/review-items/garden',
+  ]);
+  expect(server.items()[0].field.review?.history).toHaveLength(1);
+  expect(server.mutations).toHaveLength(2);
+  expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+});
+
+it('stays on a field changed between the reaccept item and queue refreshes and reloads its scan and draft', async () => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  await user.click(screen.getByRole('button', { name: 'Previous field' }));
+  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  loaded();
+  const accepted = server.items()[0];
+  const latest: Item = {
+    ...accepted,
+    version: 'external-change',
+    review_state: 'pending',
+    resolved: false,
+    field: { ...accepted.field, value: '009', review: { ...accepted.field.review!, state: 'pending' } },
+  };
+  let changed = false;
+  const originalFetch = server.fetch.getMockImplementation()!;
+  server.fetch.mockImplementation(async (input, options) => {
+    const result = await originalFetch(input, options);
+    if (!options?.body && input === '/api/dwellings/dwelling1/items?region=216418') {
+      changed = true;
+      const queue = await result.json();
+      return response({ ...queue, items: [latest, queue.items[1]], resolved: 0 });
+    }
+    if (changed && !options?.body && input === '/api/review-items/rent')
+      return response({ ...await result.json(), ...latest });
+    return result;
+  });
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByText('This field changed. Check it against the scan before deciding.');
+  expect(screen.getByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Garden' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Accept 009' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
+  loaded();
+  expect(screen.getByRole('button', { name: 'Accept 009' })).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
+  expect(screen.getByLabelText('Your correction')).toHaveValue('009');
+  expect(server.items()[0].field.review?.history).toHaveLength(1);
+  expect(server.mutations).toHaveLength(2);
+});
+
+it('offers completion choices when the final accepted field is accepted again', async () => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  await user.click(screen.getByRole('button', { name: 'Stay here' }));
+  await user.click(screen.getByRole('button', { name: 'Previous field' }));
+  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  await user.click(screen.getByRole('button', { name: 'Next field' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  expect(screen.getByRole('button', { name: 'Stay here' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Back to queue' })).toBeEnabled();
+  expect(server.items().map((item) => item.field.review?.history.length)).toEqual([1, 1]);
+  expect(server.mutations).toHaveLength(3);
+});
+
+it.each([
+  ['item', 'network'], ['item', 'stale'],
+  ['queue', 'network'], ['queue', 'stale'],
+])('keeps the reviewed field open if the %s refresh fails with %s after reaccepting', async (target, failure) => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  await user.click(screen.getByRole('button', { name: 'Previous field' }));
+  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  loaded();
+  const originalFetch = server.fetch.getMockImplementation()!;
+  server.fetch.mockImplementation(async (input, options) => {
+    if (!options?.body && input === (target === 'item'
+      ? '/api/review-items/rent' : '/api/dwellings/dwelling1/items?region=216418')) {
+      if (failure === 'network') throw new TypeError('Lost connection');
+      return response({ error: { code: 'stale_version', message: 'Region changed; reload before saving' } }, 409);
+    }
+    return originalFetch(input, options);
+  });
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Garden' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+  expect(server.items()[0].field.review?.history).toHaveLength(1);
+  expect(server.items()[1].resolved).toBe(false);
 });
 
 it('finishes a card explicitly, keeps completion after staying, and reopens it on undo', async () => {

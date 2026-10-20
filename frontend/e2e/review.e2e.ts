@@ -226,6 +226,39 @@ test('a lost session asks for the name again and the typed correction survives',
   await expect(page.getByText('Saved: Weekly Rent 009')).toBeVisible();
 });
 
+test('reaccepting an accepted field advances and completing it again preserves original history', async ({ page }) => {
+  await signIn(page);
+  await openFirstField(page);
+  const firstSave = page.waitForResponse('**/api/review-items/*/decisions');
+  await page.getByRole('button', { name: 'Accept 04', exact: true }).click();
+  const firstId = new URL((await firstSave).url()).pathname.split('/')[3];
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous field', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Weekly Rent', exact: true })).toBeVisible();
+  const repeatedSave = page.waitForResponse('**/api/review-items/*/decisions');
+  await page.getByRole('button', { name: 'Accept 04', exact: true }).click();
+  const repeatedResponse = await repeatedSave;
+  expect(repeatedResponse.status()).toBe(422);
+  expect((await repeatedResponse.json()).error.code).toBe('no_op');
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+  const finalSave = page.waitForResponse('**/api/review-items/*/decisions');
+  await page.getByRole('button', { name: 'Accept 1', exact: true }).click();
+  const finalId = new URL((await finalSave).url()).pathname.split('/')[3];
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stay here', exact: true }).click();
+  await page.getByRole('button', { name: 'Previous field', exact: true }).click();
+  await page.getByRole('button', { name: 'Next field', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept 1', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stay here', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Next card', exact: true })).toBeEnabled();
+  for (const itemId of [firstId, finalId]) {
+    const { history } = await (await page.request.get(`/api/review-items/${itemId}/history`)).json();
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ action: 'accept', reviewer: 'Playwright Reviewer' });
+  }
+});
+
 test('card completion stays explicit, reviewed fields remain visible, and survey text is easy to open', async ({ page }) => {
   await signIn(page);
   await openFirstField(page);
