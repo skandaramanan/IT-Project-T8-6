@@ -91,6 +91,7 @@ export default function App() {
     decisionId: string;
     text: string;
   } | null>(null);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const activeFieldRef = useRef<HTMLElement>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [moreHelp, setMoreHelp] = useState(false);
@@ -99,6 +100,12 @@ export default function App() {
   const [completedCard, setCompletedCard] = useState<string | null>(null);
   const [finishError, setFinishError] = useState('');
   const [exited, setExited] = useState(false);
+
+  useEffect(() => { setFeedbackDismissed(false); }, [lastSaved, notice]);
+  function dismissFeedback() {
+    setFeedbackDismissed(true);
+    activeFieldRef.current?.focus({ preventScroll: true });
+  }
 
   useEffect(() => {
     activeFieldRef.current?.scrollIntoView?.({ block: 'nearest' });
@@ -469,6 +476,7 @@ export default function App() {
   const fieldIndex = cardItems.findIndex((field) => field.id === item?.id);
   const hasNextCard = dwelling.some((field) => field.source.card_id !== item?.source.card_id && !field.resolved && !field.diagnostics.length && field.allowed_actions.length) ||
     groups.some((row) => row.id !== item?.dwelling_id && row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
+  const saving = busy && !!pending;
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
   const canNavigate = !busy && !pending && !correcting && !showHelp && !exited;
   const canDecide =
@@ -597,21 +605,6 @@ export default function App() {
           )}
         </div>
       )}
-      {pending && (
-        <div className={busy ? 'banner' : 'warnbox'} role="status">
-          {busy ? (
-            'Saving on this computer…'
-          ) : (
-            <>
-              Saving has not been confirmed. Try again before moving on; your correction is
-              still here.{' '}
-              <button className="btn" onClick={() => void run(() => submit(pending))}>
-                Try again
-              </button>
-            </>
-          )}
-        </div>
-      )}
       {stopped && (
         <div className="errbox" role="alert">
           Stop reviewing and ask the team to reconcile this region. Local decisions are
@@ -624,11 +617,36 @@ export default function App() {
           {sync.error?.message} We'll try again every few minutes. You can keep reviewing.
         </div>
       )}
-      {notice && (
-        <div className="banner" role="status">
-          {notice}
-        </div>
-      )}
+      <div className="review-feedback">
+        {pending && !busy && (
+          <div className="warnbox" role="status">
+            Saving has not been confirmed. Try again before moving on; your correction is
+            still here.{' '}
+            <button className="btn" onClick={() => void run(() => submit(pending))}>
+              Try again
+            </button>
+          </div>
+        )}
+        {!feedbackDismissed && notice && (
+          <div className="banner feedback-notice" role="status">
+            <span>{notice}</span>
+            <button className="btn ghost sm" aria-label="Dismiss notification" onClick={dismissFeedback}>×</button>
+          </div>
+        )}
+        {!feedbackDismissed && item && lastSaved && (
+          <div className="saved" role="status">
+            <span title={lastSaved.text}>✓ {lastSaved.text} · saved here</span>
+            <button
+              className="btn sm"
+              disabled={busy || !!pending || stopped || correcting}
+              onClick={() => void run(() => undo(lastSaved.item.id, lastSaved.decisionId))}
+            >
+              Undo
+            </button>
+            <button className="btn ghost sm" aria-label="Dismiss saved confirmation" onClick={dismissFeedback}>×</button>
+          </div>
+        )}
+      </div>
       {!ready ? (
         <main className="signin">
           <div className="sicol">
@@ -681,12 +699,7 @@ export default function App() {
       ) : !item ? (
         <main className="qbody">
           <h1>Review queue</h1>
-          <ScanBatch key={region} region={region} onReady={async () => {
-            await loadRegion(region);
-            const data = await api<{ regions: Region[] }>('/api/regions');
-            setRegions(data.regions);
-          }} />
-          <div className="strip">
+          <div className="strip queue-toolbar">
             <label className="regsel">
               Region{' '}
               <select
@@ -708,46 +721,28 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <div className="prog">
-              <b>
-                {queue
-                  ? `${region}: ${queue.summary.completed_dwellings} of ${queue.summary.queued_dwellings} queued dwellings`
-                  : 'Loading dwellings…'}
-              </b>
-              {queue && (
-                <>
-                  <span>
-                    All regions {queue.all_regions.completed_dwellings} of{' '}
-                    {queue.all_regions.queued_dwellings} queued dwellings
-                  </span>
-                  <progress
-                    aria-label="Region progress"
-                    value={queue.summary.completed_dwellings}
-                    max={Math.max(1, queue.summary.queued_dwellings)}
-                  />
-                </>
-              )}
-            </div>
-            {queue && (
-              <div className="averages small">
-                <span>{queue.unresolved.toLocaleString()} fields to review</span>
-                <span>
-                  Machine average <Confidence score={queue.summary.average_card_score} /> · all so
-                  far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
-                </span>
-                <span className="muted">
-                  {queue.summary.scored_cards} scored coding cards ·{' '}
-                  {queue.summary.unscored_cards} not scored
-                </span>
-              </div>
-            )}
-            <span className="sp" />
             <button
               className="btn ghost sm"
               disabled={busy || !!pending}
               onClick={() => void run(refreshQueue)}
             >
               Refresh queue
+            </button>
+            {continueDwelling && (
+              <button
+                className="btn primary"
+                disabled={!canNavigate}
+                onClick={() => void run(() => openDwelling(continueDwelling!))}
+              >
+                Continue {continueDwelling.record_id ?? 'review'} →
+              </button>
+            )}
+            <button
+              className="btn"
+              disabled={busy || !!pending || stopped}
+              onClick={() => void finish()}
+            >
+              Save and Exit
             </button>
             <button
               className="btn"
@@ -768,28 +763,57 @@ export default function App() {
             >
               Review summary (.csv)
             </button>
-            {continueDwelling && (
-              <button
-                className="btn primary"
-                disabled={!canNavigate}
-                onClick={() => void run(() => openDwelling(continueDwelling!))}
-              >
-                Continue {continueDwelling.record_id ?? 'review'} →
-              </button>
-            )}
-            <button
-              className="btn"
-              disabled={busy || !!pending || stopped}
-              onClick={() => void finish()}
-            >
-              Save and Exit
-            </button>
           </div>
-          <p className="queue-scope small muted">
-            Progress covers supplied supported flags only. Reviewed dwellings move to the bottom. Pending rows keep the queue's
-            lowest-confidence order. Averages cover original machine scores, including
-            cards outside this queue.
-          </p>
+          <details className="queue-details">
+            <summary>Review details and scans</summary>
+            <div className="queue-details-content">
+              <div className="queue-stats">
+                <div className="prog">
+                  <b>
+                    {queue
+                      ? `${queue.summary.completed_dwellings} of ${queue.summary.queued_dwellings} dwellings reviewed in this region`
+                      : 'Loading dwellings…'}
+                  </b>
+                  {queue && (
+                    <>
+                      <span>
+                        All regions: {queue.all_regions.completed_dwellings} of{' '}
+                        {queue.all_regions.queued_dwellings} dwellings reviewed
+                      </span>
+                      <progress
+                        aria-label="Region progress"
+                        value={queue.summary.completed_dwellings}
+                        max={Math.max(1, queue.summary.queued_dwellings)}
+                      />
+                    </>
+                  )}
+                </div>
+                {queue && (
+                  <div className="averages small">
+                    <span>{queue.unresolved.toLocaleString()} fields to review</span>
+                    <span>
+                      Machine average <Confidence score={queue.summary.average_card_score} /> · all so
+                      far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
+                    </span>
+                    <span className="muted">
+                      {queue.summary.scored_cards} scored coding cards ·{' '}
+                      {queue.summary.unscored_cards} not scored
+                    </span>
+                  </div>
+                )}
+              </div>
+              <ScanBatch key={region} region={region} onReady={async () => {
+                await loadRegion(region);
+                const data = await api<{ regions: Region[] }>('/api/regions');
+                setRegions(data.regions);
+              }} />
+              <p className="queue-scope small muted">
+                A dwelling is reviewed when all its queued fields are decided. Progress covers supplied supported flags only. Reviewed dwellings move to the bottom. Pending rows keep the queue's
+                lowest-confidence order. Averages cover original machine scores, including
+                cards outside this queue.
+              </p>
+            </div>
+          </details>
           {queue?.diagnostics.length ? (
             <div className="warnbox">
               <strong>Some fields need the team's attention.</strong>
@@ -1078,18 +1102,6 @@ export default function App() {
               }
             }}
           >
-            {lastSaved && (
-              <div className="saved" role="status">
-                <span>✓ {lastSaved.text} · saved here</span>
-                <button
-                  className="btn sm"
-                  disabled={busy || !!pending || stopped || correcting}
-                  onClick={() => void run(() => undo(lastSaved.item.id, lastSaved.decisionId))}
-                >
-                  Undo
-                </button>
-              </div>
-            )}
             {cardReviewed && (
               <div className="card-complete" role="status">
                 <h2>Card reviewed</h2>
@@ -1292,6 +1304,7 @@ export default function App() {
                                 >
                                   Cancel
                                 </button>
+                                {saving && <div className="saving-overlay" role="status">Saving…</div>}
                               </div>
                             </form>
                           ) : (
@@ -1319,6 +1332,7 @@ export default function App() {
                                 >
                                   Fix
                                 </button>
+                                {saving && <div className="saving-overlay" role="status">Saving…</div>}
                               </div>
                               {item.allowed_actions.includes('no_data') && (
                                 <div className="alt">

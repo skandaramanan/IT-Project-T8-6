@@ -87,7 +87,7 @@ export default function Help({
               <h3>The queue</h3>
               <p>
                 Each row is a dwelling. Pending dwellings stay in lowest-confidence order; reviewed dwellings move to the bottom.
-                Choose a region to work through one at a time. Review summary (.csv)
+                Choose a region to work through one at a time. Open Review details and scans for progress, averages and scan controls. Review summary (.csv)
                 downloads one row per queued dwelling, showing progress; the JSONL results
                 contain the corrected dataset.
               </p>

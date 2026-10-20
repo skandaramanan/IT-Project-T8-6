@@ -1378,3 +1378,79 @@ it('places reviewed survey fronts below pending coding cards and keeps direct ac
   expect(await screen.findByRole('heading', { name: 'Survey address' })).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Card reviewed' })).toBeVisible();
 });
+
+it('keeps queue details collapsed while region and review remain easy to reach', async () => {
+  const server = backend();
+  const originalFetch = server.fetch.getMockImplementation()!;
+  server.fetch.mockImplementation(async (input, options) => {
+    if (String(input).startsWith('/api/scan-batches?')) return response({
+      region: '216418', pdf: 'original.pdf', size: 4, downloaded: 4,
+      state: 'ready', local_ready: true, local_file_exists: true,
+      automatic_download: true, active_region: null, drive_url: '', error: null,
+    });
+    return originalFetch(input, options);
+  });
+  const user = await start();
+  await user.click(screen.getByRole('button', { name: '← Queue' }));
+  const summary = screen.getByText('Review details and scans');
+  const details = summary.closest('details')!;
+  expect(details).not.toHaveAttribute('open');
+  expect(screen.getByLabelText('Region')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Review' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Save and Exit' })).toBeVisible();
+  expect(within(details).getByText(/All regions/)).not.toBeVisible();
+  expect(within(details).getByText(/Machine average/)).not.toBeVisible();
+  expect(screen.getByRole('button', { name: 'Review summary (.csv)' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
+  await user.click(summary);
+  expect(details).toHaveAttribute('open');
+  expect(within(details).getByText(/All regions/)).toBeVisible();
+  expect(within(details).getByText(/Machine average/)).toBeVisible();
+  expect(within(details).getByRole('progressbar', { name: 'Region progress' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Review summary (.csv)' })).toBeVisible();
+  expect(within(details).getByRole('region', { name: 'Scans for this region' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Refresh queue' }));
+  expect(details).toHaveAttribute('open');
+  await user.click(summary);
+  expect(details).not.toHaveAttribute('open');
+});
+
+it.each(['accept', 'correct'] as const)('keeps %s saving feedback in the action area and prevents duplicate decisions', async (action) => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const originalFetch = server.fetch.getMockImplementation()!;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  server.fetch.mockImplementation(async (input, options) => {
+    if (String(input).endsWith('/decisions')) await held;
+    return originalFetch(input, options);
+  });
+  const user = await start();
+  loaded();
+  if (action === 'correct') {
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
+    await user.clear(screen.getByLabelText('Your correction'));
+    await user.type(screen.getByLabelText('Your correction'), '009');
+  }
+  const actionButton = screen.getByRole('button', { name: action === 'accept' ? 'Accept 05' : 'Save 009' });
+  const actions = actionButton.closest<HTMLElement>('.acts')!;
+  await user.click(actionButton);
+  const saving = await screen.findByText('Saving…');
+  expect(saving).toHaveAttribute('role', 'status');
+  expect(actions).toContainElement(saving);
+  expect(actionButton).toBeDisabled();
+  expect(within(actions).getByRole('button', { name: action === 'accept' ? 'Fix' : 'Cancel' })).toBeDisabled();
+  expect(screen.queryByText('Saving on this computer…')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+  release();
+  await screen.findByRole('heading', { name: 'Garden' });
+  expect(screen.queryByText('Saving…')).not.toBeInTheDocument();
+  expect(server.mutations).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Undo' }).closest('.review-feedback')).not.toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Dismiss saved confirmation' }));
+  expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+  loaded();
+  fireEvent.keyDown(screen.getByRole('region', { name: 'Fields to review on this card' }), { key: 'u' });
+  await screen.findByText(/Undo saved on this computer/);
+  expect(server.mutations).toHaveLength(2);
+  expect(server.mutations[1].path).toContain('/undo');
+});

@@ -296,3 +296,87 @@ test('card completion stays explicit, reviewed fields remain visible, and survey
   await page.getByRole('button', { name: 'Fix', exact: true }).click();
   await expect(page.getByLabel('Your correction', { exact: true })).toHaveValue('Café 王\nSecond line');
 });
+
+for (const action of ['accept', 'correct'] as const) {
+  test(`${action} shows saving over the decision buttons without moving the scan`, async ({ page }) => {
+    await signIn(page);
+    await openFirstField(page);
+    if (action === 'correct') {
+      await page.getByRole('button', { name: 'Fix', exact: true }).click();
+      await page.getByLabel('Your correction').fill('009');
+    }
+    const button = page.getByRole('button', { name: action === 'accept' ? 'Accept 04' : 'Save 009', exact: true });
+    await button.scrollIntoViewIfNeeded();
+    const actions = page.locator('.acts');
+    const scan = page.getByRole('region', { name: 'Scanned card', exact: true });
+    const before = { scan: await scan.boundingBox(), actions: await actions.boundingBox() };
+    expect(before.scan).not.toBeNull();
+    expect(before.actions).not.toBeNull();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route('**/api/review-items/*/decisions', async (route) => {
+      await held;
+      await route.continue();
+    }, { times: 1 });
+    await button.click();
+    const saving = actions.getByRole('status');
+    await expect(saving).toHaveText('Saving…');
+    await expect(button).toBeDisabled();
+    const during = { scan: await scan.boundingBox(), actions: await actions.boundingBox() };
+    expect(during.scan).toEqual(before.scan);
+    expect(during.actions).toEqual(before.actions);
+    const overlay = await saving.boundingBox();
+    expect(overlay).not.toBeNull();
+    expect(Math.abs(overlay!.y - before.actions!.y)).toBeLessThanOrEqual(1);
+    expect(overlay!.width).toBeGreaterThanOrEqual(before.actions!.width - 2);
+    expect(await saving.evaluate((element) => getComputedStyle(element).position)).toBe('absolute');
+    if (action === 'accept') await page.screenshot({ path: test.info().outputPath('saving-overlay.png'), fullPage: true });
+    release();
+    await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+    await expect(page.getByText(action === 'accept' ? 'Accepted: Weekly Rent 04' : 'Saved: Weekly Rent 009')).toBeVisible();
+    const feedback = page.locator('.review-feedback');
+    await expect(feedback.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+    expect(await feedback.evaluate((element) => getComputedStyle(element).position)).toBe('fixed');
+    expect(await scan.boundingBox()).toEqual(before.scan);
+    await feedback.getByRole('button', { name: 'Dismiss saved confirmation' }).click();
+    await expect(feedback).toBeEmpty();
+    expect(await scan.boundingBox()).toEqual(before.scan);
+  });
+}
+
+test('the compact queue keeps a long region title within a narrow viewport and reveals its tools', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/api/regions', async (route) => {
+    const result = await (await route.fetch()).json();
+    result.regions = result.regions.map((region: { title?: string }) => ({
+      ...region, title: 'A very long descriptive region title with many streets and survey districts '.repeat(5),
+    }));
+    await route.fulfill({ json: result });
+  });
+  await page.route('**/api/scan-batches?*', async (route) => route.fulfill({ json: {
+    region: 'demo', pdf: 'synthetic.pdf', size: 4, downloaded: 0,
+    state: 'missing', automatic_download: false, active_region: null,
+    local_file_exists: false, drive_url: 'https://drive.google.com/file/d/demo/view', error: null,
+  } }));
+  await signIn(page);
+  const region = page.getByLabel('Region', { exact: true });
+  await expect(region).toBeVisible();
+  const bounds = (await region.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(375);
+  const overflowing = await page.evaluate(() => [...document.querySelectorAll('body *')]
+    .filter((element) => element.getBoundingClientRect().right > innerWidth && getComputedStyle(element).display !== 'none')
+    .map((element) => ({ tag: element.tagName, class: element.className, right: element.getBoundingClientRect().right })).slice(0, 15));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth), JSON.stringify(overflowing)).toBeLessThanOrEqual(375);
+  await expect(page.getByText(/Machine average/)).toBeHidden();
+  await expect(page.getByText(/All regions:/)).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Review summary (.csv)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
+  await page.getByText('Review details and scans', { exact: true }).click();
+  await expect(page.getByText(/Machine average/)).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Region progress' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Review summary (.csv)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download scans', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Import downloaded PDF', exact: true })).toBeEnabled();
+});

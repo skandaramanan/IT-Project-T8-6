@@ -544,3 +544,10 @@ prevent a card being labelled reviewed, and Undo restores unfinished priority.
 This follow-up branches from `origin/main` at `06aaaec`, rather than PR 4 (#71):
 PR 4's acceptance work is independent, while main includes the later survey-front,
 notes, download and queue integration needed to preserve existing functionality.
+
+Queue progress, machine averages and scan controls are under
+**Review details and scans**. Refresh queue and CSV export remain visible alongside
+the enlarged Region selector and primary review actions. During a decision, **Saving…** covers the action buttons
+without changing their dimensions. Saved confirmations and informational notices
+float above the page and can be dismissed without removing decision history or
+the Undo shortcut. Unconfirmed saves retain their explicit retry control.
