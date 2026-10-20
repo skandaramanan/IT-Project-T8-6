@@ -449,12 +449,31 @@ class ReviewService:
                 ]
                 if card["role"] != "coding-front" and not refs:
                     continue
+                count = sum(
+                    self.item_resolved.get(candidate.item_id, False)
+                    for candidate in refs
+                )
+                errors = any(
+                    diagnostic.get("region") in {None, ref.region}
+                    and diagnostic.get("batch") in {None, card["image"]}
+                    and diagnostic.get("page") in {None, card.get("page")}
+                    for diagnostic in [
+                        *self.diagnostics,
+                        *self.progress_diagnostics.values(),
+                    ]
+                )
                 cards.append(
                     {
                         "card_id": physical_card_id(
                             ref.region, card["image"], card.get("page")
                         ),
                         "score": card.get("confidence"),
+                        # Review confidence is separate from machine confidence.
+                        # Only supplied fields count; absent flags are not decisions.
+                        "reviewed": bool(refs) and count == len(refs) and not errors,
+                        "total": len(refs),
+                        "resolved": count,
+                        "unresolved": len(refs) - count,
                         "household_index": index,
                         "role": card["role"],
                         "household_no": household.get("household_no", {}).get("value"),
@@ -471,7 +490,8 @@ class ReviewService:
                         ),
                     }
                 )
-        details["cards"] = cards
+        # Stable sorting preserves printed order within each progress group.
+        details["cards"] = sorted(cards, key=lambda card: card["reviewed"])
         return details
 
     def dwelling_groups(self, region=None):
@@ -610,6 +630,9 @@ class ReviewService:
                         "diagnostics": errors,
                     }
                 )
+            # Completed dwellings remain available for inspection and undo.
+            # Unfinished work retains the supplied queue's priority order.
+            rows.sort(key=lambda row: row["status"] == "complete")
             resolved = sum(row["resolved"] for row in rows)
             # Dynamic diagnostics describe an existing supplied reference, never an
             # extra flag. Even references that no longer resolve remain in scope.

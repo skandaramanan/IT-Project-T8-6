@@ -160,6 +160,7 @@ function backend(items = [field()]) {
           last_reviewed_at: null,
         };
       });
+      dwellings.sort((a, b) => Number(a.status === 'complete') - Number(b.status === 'complete'));
       const summary = {
         dwellings: dwellings.length,
         queued_dwellings: dwellings.length,
@@ -309,7 +310,7 @@ describe('review flow', () => {
     expect(screen.getByText('Readable')).toBeVisible();
     expect(screen.getAllByText('Medium 0.91').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Correct' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
     fireEvent.error(screen.getByRole('img'));
     expect(screen.getByText("Image couldn't load")).toBeVisible();
     expect(server.mutations).toEqual([]);
@@ -321,7 +322,7 @@ describe('review flow', () => {
     const server = backend();
     const user = await start();
     loaded();
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     const input = screen.getByLabelText('Your correction');
     await user.clear(input);
     await user.type(input, '009');
@@ -345,7 +346,7 @@ describe('review flow', () => {
     const server = backend();
     const user = await start();
     loaded();
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     await user.clear(screen.getByLabelText('Your correction'));
     await user.type(screen.getByLabelText('Your correction'), 'O4');
     expect(
@@ -358,7 +359,7 @@ describe('review flow', () => {
     const server = backend();
     const user = await start();
     loaded();
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     await user.clear(screen.getByLabelText('Your correction'));
     await user.type(screen.getByLabelText('Your correction'), '009');
     server.failNext('stale_version');
@@ -383,7 +384,7 @@ describe('review flow', () => {
     ]);
     await start();
     loaded();
-    expect(screen.getByRole('button', { name: 'Correct' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
     expect(
       screen.queryByRole('button', { name: "Can't read it or blank?" }),
     ).not.toBeInTheDocument();
@@ -543,7 +544,7 @@ it('retains the editor when an explicit reload cannot reach the backend', async 
   const server = backend();
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', { name: 'Correct' }));
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
   await user.clear(screen.getByLabelText('Your correction'));
   await user.type(screen.getByLabelText('Your correction'), '009');
   server.failNext('stale_version');
@@ -590,7 +591,7 @@ it('shows special-code meanings while allowing an ordinary amount with exact zer
   backend();
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', { name: 'Correct' }));
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
   await user.clear(screen.getByLabelText('Your correction'));
   await user.type(screen.getByLabelText('Your correction'), '00');
   expect(screen.getByText('Special codes for this field')).toBeVisible();
@@ -636,7 +637,7 @@ it('shows each coding card and requires its loaded scan after switching househol
   ]);
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', { name: /Coding card · household 2/ }));
+  await user.selectOptions(screen.getByLabelText('Card to review'), 'card2');
   expect(screen.getByRole('img')).toHaveAttribute('src', '/api/scans/card2');
   expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
   loaded();
@@ -686,7 +687,7 @@ it('refreshes other decisions after a stale editor reload without losing the dra
   const server = backend([field(), field('garden', { label: 'Garden' })]);
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', { name: 'Correct' }));
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
   await user.clear(screen.getByLabelText('Your correction'));
   await user.type(screen.getByLabelText('Your correction'), '009');
   server.resolveField('garden');
@@ -740,7 +741,7 @@ describe('PR 3 help, history and finish', () => {
       'false',
     );
     expect(localStorage.getItem('review-single-letter-shortcuts')).toBe('false');
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     const save = screen.getByRole('button', { name: 'Save 05' });
     save.focus();
     fireEvent.keyDown(save, { key: 'Escape' });
@@ -750,7 +751,7 @@ describe('PR 3 help, history and finish', () => {
     backend();
     const user = await start();
     loaded();
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     await user.clear(screen.getByLabelText('Your correction'));
     await user.type(screen.getByLabelText('Your correction'), '009');
     await user.click(screen.getByRole('button', { name: 'Save 009' }));
@@ -816,7 +817,7 @@ describe('PR 3 help, history and finish', () => {
     const server = backend();
     const user = await start();
     loaded();
-    await user.click(screen.getByRole('button', { name: 'Correct' }));
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
     await user.clear(screen.getByLabelText('Your correction'));
     await user.type(screen.getByLabelText('Your correction'), '009');
     expect(screen.getByRole('button', { name: 'Save and Exit' })).toBeDisabled();
@@ -828,7 +829,7 @@ describe('PR 3 help, history and finish', () => {
   });
 });
 
-it('keeps decided fields selectable after folding their completed printed column', async () => {
+it('keeps decided fields visible and selectable in their completed printed column', async () => {
   backend([
     field('municipality', {
       label: 'Municipality',
@@ -840,12 +841,9 @@ it('keeps decided fields selectable after folding their completed printed column
   ]);
   const user = await start('Continue');
   loaded();
-  const column = screen.getByRole('button', { name: /Left column.*Show/ });
-  expect(column).toHaveAttribute('aria-expanded', 'false');
-  expect(
-    screen.queryByRole('button', { name: /Municipality.*05/ }),
-  ).not.toBeInTheDocument();
-  await user.click(column);
+  expect(screen.getByRole('heading', { name: 'Left column' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Left column.*Show/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Municipality.*05/ })).toBeVisible();
   await user.click(screen.getByRole('button', { name: /Municipality.*05/ }));
   expect(
     await screen.findByRole('region', { name: 'History of Municipality' }),
@@ -865,7 +863,7 @@ it('switches household scan and card score and waits for the new image', async (
   ]);
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', { name: /Coding card · household 2/ }));
+  await user.selectOptions(screen.getByLabelText('Card to review'), 'card2');
   await screen.findByRole('heading', { name: 'Garden' });
   expect(screen.getByRole('img')).toHaveAttribute('src', '/api/scans/card2');
   expect(screen.getByRole('img')).toHaveAccessibleName(/page 33/);
@@ -886,7 +884,7 @@ it('requires fresh scan evidence when another reviewer signs in on the open fiel
   await screen.findByRole('heading', { name: 'Weekly Rent' });
   expect(screen.getByRole('heading', { name: 'Weekly Rent' }).closest('article')).toHaveFocus();
   expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Correct' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
   loaded();
   expect(screen.getByRole('button', { name: 'Accept 05' })).toBeEnabled();
 });
@@ -971,7 +969,7 @@ it('does not label a context-only printed column as decided or fold it', async (
   ).not.toBeInTheDocument();
 });
 
-it('keeps unqueued card tabs disabled without changing the current field', async () => {
+it('omits unqueued cards from the card selector while preserving the current field', async () => {
   const rent = field();
   backend([
     field('rent', {
@@ -1003,14 +1001,10 @@ it('keeps unqueued card tabs disabled without changing the current field', async
       ],
     }),
   ]);
-  const user = await start();
-  const tab = screen.getByRole('button', { name: /Coding card · household 2/ });
-  expect(tab).toBeDisabled();
-  expect(tab).toHaveTextContent('Not queued');
-  expect(
-    screen.getByRole('button', { name: /Coding card · household 3/ }),
-  ).toBeDisabled();
-  await user.click(tab);
+  await start();
+  expect(screen.queryByRole('option', { name: /household 2/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /household 3/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('Not queued')).not.toBeInTheDocument();
   expect(screen.getByRole('img')).toHaveAttribute('src', rent.scan_url);
 });
 
@@ -1065,9 +1059,9 @@ it('preserves multiline Unicode text through scan gating, uncertain retry and st
   const text = field('note', {field_kind: 'text', label: 'Weekly Rent', code_list: [], field_path: '/dwelling/notes/0/text', field: {value: 'Machine note', status: 'ok', confidence: null}});
   const server = backend([text]);
   const user = await start();
-  expect(screen.getByRole('button', {name: 'Correct'})).toBeDisabled();
+  expect(screen.getByRole('button', {name: 'Fix'})).toBeDisabled();
   loaded();
-  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  await user.click(screen.getByRole('button', {name: 'Fix'}));
   const input = screen.getByLabelText('Your correction');
   expect(input.tagName).toBe('TEXTAREA');
   fireEvent.change(input, {target: {value: '  Café — 王\nSecond line: 009\n'}});
@@ -1084,7 +1078,7 @@ it('retains text drafts after a confirmed stale version and disables decisions u
   const server = backend([field('note', {field_kind: 'text', code_list: [], field: {value: 'Machine note', status: 'ok', confidence: null}})]);
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  await user.click(screen.getByRole('button', {name: 'Fix'}));
   fireEvent.change(screen.getByLabelText('Your correction'), {target: {value: 'Unicode 王\nNext line'}});
   server.failNext('stale_version');
   await user.click(screen.getByRole('button', {name: 'Save correction'}));
@@ -1100,7 +1094,7 @@ it('bounds text corrections and rejects NUL before sending a decision', async ()
   const server = backend([field('note', {field_kind: 'text', code_list: [], field: {value: 'Machine note', status: 'ok', confidence: null}})]);
   const user = await start();
   loaded();
-  await user.click(screen.getByRole('button', {name: 'Correct'}));
+  await user.click(screen.getByRole('button', {name: 'Fix'}));
   const input = screen.getByLabelText('Your correction');
   expect(input).toHaveAttribute('maxlength', '10000');
   for (const value of ['x'.repeat(10001), 'text\0text']) {
@@ -1110,4 +1104,153 @@ it('bounds text corrections and rejects NUL before sending a decision', async ()
   fireEvent.change(input, {target: {value: '王'.repeat(10000)}});
   expect(screen.getByRole('button', {name: 'Save correction'})).toBeEnabled();
   expect(server.mutations).toHaveLength(0);
+});
+
+it('moves between fields without saving and waits for fresh scan evidence', async () => {
+  const server = backend([field(), field('garden', { label: 'Garden' })]);
+  const user = await start();
+  expect(screen.getByRole('button', { name: 'Previous field' })).toBeDisabled();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Next field' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  expect(screen.getByRole('button', { name: 'Next field' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Previous field' }));
+  await screen.findByRole('heading', { name: 'Weekly Rent' });
+  expect(server.mutations).toHaveLength(0);
+});
+
+it('finishes a card explicitly, keeps completion after staying, and reopens it on undo', async () => {
+  const server = backend([
+    field(), field('garden', { label: 'Garden' }),
+    field('second', { label: 'Other card', source: { pdf: 'original.pdf', page: 22, card_id: 'card2' }, scan_url: '/api/scans/card2' }),
+  ]);
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Garden' });
+  expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  expect(screen.getByRole('heading', { name: 'Garden' })).toBeVisible();
+  expect(screen.getByRole('banner')).toHaveTextContent('High · reviewed');
+  expect(screen.getByRole('button', { name: /Weekly Rent.*ACCEPTED/ })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Other card' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Stay here' }));
+  expect(screen.getByRole('heading', { name: 'Card reviewed' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: /^Undo$/ }));
+  await screen.findByText(/Undo saved on this computer/);
+  expect(screen.getByRole('banner')).toHaveTextContent('Medium 0.91');
+  expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+  loaded();
+  expect(screen.getByRole('button', { name: 'Accept 05' })).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await user.click(await screen.findByRole('button', { name: 'Next card' }));
+  await screen.findByRole('heading', { name: 'Other card' });
+  expect(server.mutations).toHaveLength(4);
+});
+
+it('offers the next dwelling after finishing its last card without navigating automatically', async () => {
+  backend([field(), field('other', { dwelling_id: 'dwelling2', label: 'Other dwelling', record_id: '03-0006-01', source: { pdf: 'original.pdf', page: 22, card_id: 'card2' }, scan_url: '/api/scans/card2' })]);
+  const user = await startFirst();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  expect(screen.getByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Next card' }));
+  expect(await screen.findByRole('heading', { name: 'Other dwelling' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Accept 05' })).toBeDisabled();
+});
+
+it('offers return to queue after the final card and preserves completion after staying', async () => {
+  backend();
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  expect(screen.queryByRole('button', { name: 'Next card' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Back to queue' })).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: 'Stay here' }));
+  expect(screen.getByRole('heading', { name: 'Card reviewed' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: '← Queue' }));
+  expect(await screen.findByRole('table')).toBeVisible();
+});
+
+it('makes survey fronts directly discoverable and preserves multiline Unicode fixes', async () => {
+  const cards: NonNullable<Item['cards']> = [
+    { card_id: 'card1', household_index: 0, household_no: '1', record_id: '03-0005-01', first_item_id: 'rent', next_item_id: 'rent', role: 'coding-front' },
+    { card_id: 'survey1', household_index: null, household_no: null, record_id: '03-0005-01', first_item_id: 'survey', next_item_id: 'survey', role: 'survey-front' },
+  ];
+  const server = backend([
+    field('rent', { cards }),
+    field('survey', { cards, label: 'Survey address', field_kind: 'text', code_list: [], field: { value: 'Machine address', status: 'ok', confidence: null }, source: { pdf: 'original.pdf', page: 20, card_id: 'survey1', role: 'survey-front' }, scan_url: '/api/scans/survey1' }),
+  ]);
+  const user = await start();
+  const selector = screen.getByLabelText('Card to review');
+  expect(within(selector).getByRole('group', { name: 'Survey and notes' })).toBeInTheDocument();
+  expect(within(selector).getByRole('group', { name: 'Coding cards' })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Open survey front' }));
+  await screen.findByRole('heading', { name: 'Survey address' });
+  expect(selector).toHaveValue('survey1');
+  expect(screen.getByRole('img')).toHaveAttribute('src', '/api/scans/survey1');
+  expect(screen.getByRole('button', { name: 'Fix' })).toBeDisabled();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Fix' }));
+  fireEvent.change(screen.getByLabelText('Your correction'), { target: { value: 'Café 王\nSecond line' } });
+  await user.click(screen.getByRole('button', { name: 'Save correction' }));
+  expect(server.mutations[0].body.value).toBe('Café 王\nSecond line');
+});
+
+it('moves completed dwellings below pending work in the queue', async () => {
+  backend([field(), field('other', { dwelling_id: 'dwelling2', record_id: '03-0006-01', label: 'Other dwelling' })]);
+  const user = await startFirst();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  await screen.findByRole('heading', { name: 'Card reviewed' });
+  await user.click(screen.getByRole('button', { name: '← Queue' }));
+  const table = await screen.findByRole('table');
+  const rows = within(table).getAllByRole('row');
+  expect(rows[1]).toHaveTextContent('03-0006-01');
+  expect(rows[2]).toHaveTextContent('03-0005-01');
+  expect(rows[2]).toHaveTextContent('High · reviewed');
+});
+
+it('does not announce region completion while unsupported queue diagnostics remain', async () => {
+  const server = backend();
+  const originalFetch = server.fetch.getMockImplementation()!;
+  server.fetch.mockImplementation(async (input, options) => {
+    const result = await originalFetch(input, options);
+    if (!String(input).startsWith('/api/dwellings?')) return result;
+    const queue = await result.json();
+    return response({ ...queue, total: queue.total + 1, unresolved: queue.unresolved + 1,
+      diagnostics: [{ code: 'invalid_reference', message: 'Unsupported field on another scan', region: '216418', batch: 'missing.pdf', page: 99 }] });
+  });
+  const user = await start();
+  loaded();
+  await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+  expect(await screen.findByRole('heading', { name: 'Card reviewed' })).toBeVisible();
+  expect(screen.queryByText('All queued cards in this region are reviewed.')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Back to queue' }));
+  expect(await screen.findByText('Remaining fields need the team’s attention.')).toBeVisible();
+  expect(screen.getByText('Unsupported field on another scan')).toBeVisible();
+});
+
+it('places reviewed survey fronts below pending coding cards and keeps direct access', async () => {
+  const cards: NonNullable<Item['cards']> = [
+    { card_id: 'survey1', household_index: null, household_no: null, record_id: null, first_item_id: 'survey', next_item_id: null, role: 'survey-front', reviewed: true },
+    { card_id: 'card1', household_index: 0, household_no: '1', record_id: '03-0005-01', first_item_id: 'rent', next_item_id: 'rent', role: 'coding-front', reviewed: false },
+  ];
+  backend([
+    field('rent', { cards }),
+    field('survey', { cards, label: 'Survey address', resolved: true, review_state: 'accepted', source: { pdf: 'original.pdf', page: 20, card_id: 'survey1', role: 'survey-front' }, scan_url: '/api/scans/survey1' }),
+  ]);
+  const user = await start('Continue');
+  const selector = screen.getByLabelText('Card to review');
+  expect(within(selector).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(['card1', 'survey1']);
+  expect(within(within(selector).getByRole('group', { name: 'Reviewed cards' })).getByRole('option', { name: /Survey front.*Reviewed/ })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Open survey front' }));
+  expect(await screen.findByRole('heading', { name: 'Survey address' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Card reviewed' })).toBeVisible();
 });

@@ -86,8 +86,8 @@ async function openRent(page: Page) {
 
 async function correct(page: Page, value: string): Promise<Item> {
   await openRent(page);
-  await expect(page.getByRole('button', { name: 'Correct', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Correct', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Fix', exact: true }).click();
   await page.getByLabel('Your correction', { exact: true }).fill(value);
   const saved = page.waitForResponse(r => r.url().includes('/decisions') && r.request().method() === 'POST');
   await page.getByRole('button', { name: `Save ${value}`, exact: true }).click();

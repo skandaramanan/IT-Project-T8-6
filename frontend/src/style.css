@@ -1005,3 +1005,36 @@ textarea.input { resize: vertical; min-height: 8rem; }
 .scan-batch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .scan-batch progress { width: min(280px, 100%); margin-right: 12px; }
 .scan-batch p { margin: 8px 0; }
+
+.card-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  flex: none;
+}
+.card-picker label { font-weight: 700; }
+.card-picker select {
+  flex: 1;
+  min-width: 200px;
+  max-width: 100%;
+  padding: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+}
+.field-nav, .completion-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.field-nav { padding: 12px 20px; border-bottom: 1px solid var(--line); flex: none; }
+.card-complete { padding: 16px 20px; background: var(--tint); border-bottom: 1px solid var(--action-line); flex: none; }
+.card-complete h2 { font-size: 20px; }
+.card-complete p { margin: 6px 0 12px; }
+.completion-actions { justify-content: flex-start; flex-wrap: wrap; }

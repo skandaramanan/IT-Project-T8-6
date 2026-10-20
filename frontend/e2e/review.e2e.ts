@@ -93,7 +93,7 @@ async function openFirstField(page: Page) {
 }
 
 async function correct(page: Page, value: string) {
-  await page.getByRole('button', { name: 'Correct', exact: true }).click();
+  await page.getByRole('button', { name: 'Fix', exact: true }).click();
   await page.getByLabel('Your correction').fill(value);
   await page.getByRole('button', { name: `Save ${value}` }).click();
 }
@@ -186,7 +186,7 @@ test('a missing scan keeps every decision switched off', async ({ page, demo }) 
   await page.getByRole('button', { name: 'Review', exact: true }).click();
   await expect(page.getByText("Image couldn't load")).toBeVisible();
   await expect(page.getByRole('button', { name: 'Accept 04' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Correct', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeDisabled();
 });
 
 test('when sharing fails the decision stays saved, and shares once the remote is back', async ({
@@ -224,4 +224,42 @@ test('a lost session asks for the name again and the typed correction survives',
   await expect(page.getByLabel('Your correction')).toHaveValue('009');
   await page.getByRole('button', { name: 'Save 009' }).click();
   await expect(page.getByText('Saved: Weekly Rent 009')).toBeVisible();
+});
+
+test('card completion stays explicit, reviewed fields remain visible, and survey text is easy to open', async ({ page }) => {
+  await signIn(page);
+  await openFirstField(page);
+  await expect(page.getByRole('button', { name: 'Previous field', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Next field', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous field', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Weekly Rent', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Accept 04', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Accept 1', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Weekly Rent 04 .*ACCEPTED$/ })).toBeVisible();
+  await expect(page.getByRole('banner')).toContainText('High · reviewed');
+  await page.getByRole('button', { name: 'Stay here', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Accept 1', exact: true }).click();
+  await page.getByRole('button', { name: 'Next card', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open survey front', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Address', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Fix', exact: true }).click();
+  await page.getByLabel('Your correction', { exact: true }).fill('Café 王\nSecond line');
+  await page.getByRole('button', { name: 'Save correction', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByLabel('Your name').fill('Playwright Reviewer');
+  await page.getByRole('button', { name: 'Start reviewing', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Open survey front', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Address', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Fix', exact: true }).click();
+  await expect(page.getByLabel('Your correction', { exact: true })).toHaveValue('Café 王\nSecond line');
 });

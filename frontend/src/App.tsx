@@ -5,7 +5,7 @@ import ScanBatch from './ScanBatch';
 import Dialog from './Dialog';
 import Help, { readPreference, savePreference, SHORTCUTS_KEY, HELP_KEY } from './Help';
 import History from './History';
-import { api, ApiError, dwellingKey, reviewSummaryCsv } from './api';
+import { api, ApiError, reviewSummaryCsv } from './api';
 import type {
   Action,
   Dwelling,
@@ -36,7 +36,8 @@ const stopCodes = new Set([
 ]);
 const PAGE_SIZE = 12;
 
-function Confidence({ score }: { score: number | null }) {
+function Confidence({ score, reviewed = false }: { score: number | null; reviewed?: boolean }) {
+  if (reviewed) return <span className="badge high">✓ High · reviewed</span>;
   const band = score === null ? 'none' : score >= 0.97 ? 'high' : score < 0.6 ? 'low' : 'med';
   const label = { none: 'Not scored', high: 'High', low: 'Low', med: 'Medium' }[band];
   return (
@@ -95,7 +96,7 @@ export default function App() {
   const [moreHelp, setMoreHelp] = useState(false);
   const [shortcuts, setShortcuts] = useState(() => readPreference(SHORTCUTS_KEY, true));
   const [showHistory, setShowHistory] = useState(false);
-  const [expandedColumns, setExpandedColumns] = useState<string[]>([]);
+  const [completedCard, setCompletedCard] = useState<string | null>(null);
   const [finishError, setFinishError] = useState('');
   const [exited, setExited] = useState(false);
 
@@ -191,7 +192,7 @@ export default function App() {
         ? error
         : new ApiError(error instanceof Error ? error.message : 'Request failed.');
     if (failure.code === 'no_op')
-      setNotice('Already saved. To amend the value, choose Correct.');
+      setNotice('Already saved. To amend the value, choose Fix.');
     else setError(failure.message);
     if (stopCodes.has(failure.code)) setStopped(true);
     if (failure.status === 409) setNeedsReload(true);
@@ -243,7 +244,7 @@ export default function App() {
     setNeedsReload(false);
     setAlternatives(false);
     setShowHistory(false);
-    setExpandedColumns([]);
+    setCompletedCard(null);
     if (!retainDraft) {
       setCorrecting(false);
       setDraft(next.field.value ?? '');
@@ -334,6 +335,7 @@ export default function App() {
     );
     setItem(result.item);
     if (undone) {
+      setCompletedCard(null);
       setScanLoaded('');
       setScanFailed(false);
       setNotice(
@@ -342,7 +344,7 @@ export default function App() {
     } else {
       const next = dwellingItems?.items.find(
         (i) =>
-          i.id !== result.item.id && !i.resolved && dwellingKey(i) === dwellingKey(result.item),
+          i.id !== result.item.id && !i.resolved && i.source.card_id === result.item.source.card_id,
       );
       if (next) {
         try {
@@ -353,8 +355,24 @@ export default function App() {
             'Saved on this computer. The next field could not open; return to the queue to continue.',
           );
         }
+      } else if (result.item.resolved) {
+        setCompletedCard(result.item.source.card_id);
       }
     }
+  }
+  async function nextCard() {
+    const next = dwellingItems?.items.find((field) =>
+      field.source.card_id !== item?.source.card_id && !field.resolved &&
+      !field.diagnostics.length && field.allowed_actions.length);
+    if (next) return openItem(next.id);
+    const fresh = await api<DwellingQueue>(`/api/dwellings?${new URLSearchParams({ region })}`);
+    setQueue(fresh);
+    const nextDwelling = fresh.dwellings.find((row) => row.id !== item?.dwelling_id &&
+      row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
+    if (nextDwelling) return openDwelling(nextDwelling);
+    setItem(null);
+    setScanLoaded('');
+    setNotice(fresh.unresolved ? 'Remaining fields need the team’s attention.' : 'All queued cards in this region are reviewed.');
   }
   async function decide(action: Action) {
     if (!item || !canDecide || !item.allowed_actions.includes(action)) return;
@@ -417,7 +435,18 @@ export default function App() {
     ? dwelling.filter((i) => i.source.card_id === item.source.card_id)
     : [];
   const cardFields = item?.card_fields ?? cardItems;
-  const cards = item?.cards ?? [];
+  const isCardReviewed = (id: string) => {
+    const metadata = item?.cards?.find((card) => card.card_id === id);
+    if (metadata?.reviewed !== undefined) return metadata.reviewed;
+    const fields = dwelling.filter((field) => field.source.card_id === id);
+    return fields.length > 0 && fields.every((field) => field.resolved && !field.diagnostics.length);
+  };
+  const cards = (item?.cards ?? []).filter((card) => card.first_item_id)
+    .sort((a, b) => Number(isCardReviewed(a.card_id)) - Number(isCardReviewed(b.card_id)));
+  const cardReviewed = !!item && isCardReviewed(item.source.card_id);
+  const fieldIndex = cardItems.findIndex((field) => field.id === item?.id);
+  const hasNextCard = dwelling.some((field) => field.source.card_id !== item?.source.card_id && !field.resolved && !field.diagnostics.length && field.allowed_actions.length) ||
+    groups.some((row) => row.id !== item?.dwelling_id && row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
   const canNavigate = !busy && !pending && !correcting && !showHelp && !exited;
   const canDecide =
@@ -471,7 +500,7 @@ export default function App() {
             </button>
             <strong className="rid">{item.source.role === 'survey-back' ? 'Dwelling interview notes' : item.source.role === 'survey-front' ? 'Dwelling survey front' : item.record_id ?? 'Number not identified'}</strong>
             <span className="cardscore">
-              This card <Confidence score={item.card_score} />
+              This card <Confidence score={item.card_score} reviewed={cardReviewed} />
             </span>
             <span className="meta">
               {item.address ?? 'Address not available'} · {item.region}
@@ -681,7 +710,7 @@ export default function App() {
               <div className="averages small">
                 <span>{queue.unresolved.toLocaleString()} fields to review</span>
                 <span>
-                  Average <Confidence score={queue.summary.average_card_score} /> · all so
+                  Machine average <Confidence score={queue.summary.average_card_score} /> · all so
                   far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
                 </span>
                 <span className="muted">
@@ -735,8 +764,8 @@ export default function App() {
             </button>
           </div>
           <p className="queue-scope small muted">
-            Progress covers supplied supported flags only. Rows keep the queue's
-            lowest-confidence order. Averages cover available coding-card scores, including
+            Progress covers supplied supported flags only. Reviewed dwellings move to the bottom. Pending rows keep the queue's
+            lowest-confidence order. Averages cover original machine scores, including
             cards outside this queue.
           </p>
           {queue?.diagnostics.length ? (
@@ -789,7 +818,7 @@ export default function App() {
                         {row.card_count} coding {row.card_count === 1 ? 'card' : 'cards'}
                       </td>
                       <td>
-                        <Confidence score={row.score} />
+                        <Confidence score={row.score} reviewed={row.status === 'complete'} />
                       </td>
                       <td>
                         {row.total} fields · {row.resolved} decided
@@ -858,36 +887,31 @@ export default function App() {
       ) : (
         <main className="rv">
           <div className="stagecol">
-            <nav className="tabs" aria-label="Cards in this dwelling">
-              {cards.map((c) => (
-                <button
-                  key={`${c.household_index}:${c.card_id}`}
-                  className={`tab ${c.card_id === item.source.card_id ? 'on' : ''}`}
-                  aria-current={c.card_id === item.source.card_id ? 'page' : undefined}
-                  disabled={!canNavigate || !c.first_item_id}
-                  onClick={() => void run(() => openItem((c.next_item_id ?? c.first_item_id)!))}
-                >
-                  {c.role === 'survey-front' ? 'Survey front' : c.role === 'survey-back' ? 'Interview notes' : `Coding card · household ${c.household_no ?? 'not identified'}`}
-                  {c.record_id && <span className="pg">{c.record_id}</span>}
-                  {c.score !== undefined && <Confidence score={c.score} />}
-                  {c.page && <span className="pg">p.{c.page}</span>}
-                  <span className="ct">
-                    {!c.first_item_id ? (
-                      'Not queued'
-                    ) : (
-                      <>
-                        {
-                          dwelling.filter(
-                            (i) => i.source.card_id === c.card_id && !i.resolved,
-                          ).length
-                        }{' '}
-                        to review
-                      </>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </nav>
+            <div className="card-picker">
+              <label htmlFor="card-to-review">Card to review</label>
+              <select id="card-to-review" value={item.source.card_id} disabled={!canNavigate}
+                onChange={(event) => {
+                  const card = cards.find((card) => card.card_id === event.target.value);
+                  if (card) void run(() => openItem((card.next_item_id ?? card.first_item_id)!));
+                }}>
+                {(['survey', 'coding', 'reviewed'] as const).map((group) => (
+                  <optgroup key={group} label={group === 'survey' ? 'Survey and notes' : group === 'coding' ? 'Coding cards' : 'Reviewed cards'}>
+                    {cards.filter((card) => group === 'reviewed' ? isCardReviewed(card.card_id) : !isCardReviewed(card.card_id) && (group === 'survey' ? card.role === 'survey-front' || card.role === 'survey-back' : card.role !== 'survey-front' && card.role !== 'survey-back')).map((card) => (
+                      <option key={card.card_id} value={card.card_id}>
+                        {card.role === 'survey-front' ? 'Survey front' : card.role === 'survey-back' ? 'Interview notes' : `Coding card · household ${card.household_no ?? 'not identified'}`}
+                        {card.page ? ` · p.${card.page}` : ''}{isCardReviewed(card.card_id) ? ' · Reviewed' : ` · ${dwelling.filter((field) => field.source.card_id === card.card_id && !field.resolved).length} to review`}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {cards.some((card) => card.role === 'survey-front') && item.source.role !== 'survey-front' && (
+                <button className="btn sm" disabled={!canNavigate} onClick={() => {
+                  const front = cards.find((card) => card.role === 'survey-front')!;
+                  void run(() => openItem((front.next_item_id ?? front.first_item_id)!));
+                }}>Open survey front</button>
+              )}
+            </div>
             {(item.household_count ?? cards.length) > 1 && (
               <p className="household-context small">
                 {item.household_count ?? cards.length} households in this dwelling. Shared
@@ -1044,8 +1068,24 @@ export default function App() {
                 </button>
               </div>
             )}
+            {cardReviewed && (
+              <div className="card-complete" role="status">
+                <h2>Card reviewed</h2>
+                <p>All {cardItems.length} queued fields on this card are reviewed.</p>
+                {!queue?.diagnostics.length && !dwellingItems?.diagnostics.length && !dwelling.some((field) => !field.resolved) && !groups.some((row) => row.status === 'blocked' || (row.id !== item.dwelling_id && row.unresolved > 0)) && <p>All queued cards in this region are reviewed.</p>}
+                {completedCard === item.source.card_id && <div className="completion-actions">
+                  <button className="btn primary" disabled={!canNavigate} onClick={() => void run(nextCard)}>{hasNextCard ? 'Next card' : 'Back to queue'}</button>
+                  <button className="btn" disabled={!canNavigate} onClick={() => setCompletedCard(null)}>Stay here</button>
+                </div>}
+              </div>
+            )}
+            <div className="field-nav" aria-label="Field navigation">
+              <button className="btn sm" disabled={!canNavigate || fieldIndex <= 0} onClick={() => void run(() => openItem(cardItems[fieldIndex - 1].id))}>Previous field</button>
+              <span className="small">{fieldIndex + 1} of {cardItems.length}</span>
+              <button className="btn sm" disabled={!canNavigate || fieldIndex < 0 || fieldIndex >= cardItems.length - 1} onClick={() => void run(() => openItem(cardItems[fieldIndex + 1].id))}>Next field</button>
+            </div>
             <div className="p-head">
-              <h2>Needs your review ({cardItems.length})</h2>
+              <h2>{cardReviewed ? 'Reviewed fields' : 'Needs your review'} ({cardItems.length})</h2>
               <span className="small muted">
                 {cardItems.filter((i) => i.resolved).length} of {cardItems.length} decided · in
                 card order
@@ -1054,40 +1094,11 @@ export default function App() {
             <div className="p-list">
               {cardFields.map((row, index) => {
                 const column = row.column;
-                const rows = cardFields.filter((field) => field.column === column);
-                const completed =
-                  !!column &&
-                  rows.some((field) => field.id) &&
-                  rows.every((field) => !field.id || field.review_state !== 'pending') &&
-                  !rows.some((field) => field.id === item.id);
-                const folded = completed && !expandedColumns.includes(column!);
                 const heading = column && cardFields[index - 1]?.column !== column;
                 return (
                   <div key={row.field_path}>
-                    {heading &&
-                      (completed ? (
-                        <button
-                          className="column-heading"
-                          aria-expanded={!folded}
-                          onClick={() =>
-                            setExpandedColumns((previous) =>
-                              folded
-                                ? [...previous, column]
-                                : previous.filter((value) => value !== column),
-                            )
-                          }
-                        >
-                          <b>{column}</b> · {rows[0].label} to {rows.at(-1)!.label}{' '}
-                          <span>
-                            {rows.filter((field) => field.id).length} decided ·{' '}
-                            {folded ? 'Show' : 'Hide'}
-                          </span>
-                        </button>
-                      ) : (
-                        <h3 className="column-heading">{column}</h3>
-                      ))}
-                    {!folded &&
-                      (row.id === item.id ? (
+                    {heading && <h3 className="column-heading">{column}</h3>}
+                    {row.id === item.id ? (
                         <article
                           className="open"
                           key={row.field_path}
@@ -1120,7 +1131,7 @@ export default function App() {
                               ? 'MACHINE'
                               : item.review_state.toUpperCase()}
                           </span>
-                          <details className="why" open>
+                          <details className="why">
                             <summary>How reliable is this?</summary>
                             <p>
                               {item.field.confidence === 0.91
@@ -1284,7 +1295,7 @@ export default function App() {
                                     setAlternatives(false);
                                   }}
                                 >
-                                  Correct
+                                  Fix
                                 </button>
                               </div>
                               {item.allowed_actions.includes('no_data') && (
@@ -1326,7 +1337,7 @@ export default function App() {
                           )}
                           {scanLoaded !== scanKey && (
                             <p className="small muted">
-                              Accept and Correct switch on once the scan and every detail
+                              Accept and Fix switch on once the scan and every detail
                               have loaded.
                             </p>
                           )}
@@ -1380,7 +1391,7 @@ export default function App() {
                                 : row.review_state.toUpperCase()}
                           </span>
                         </button>
-                      ))}
+                      )}
                   </div>
                 );
               })}

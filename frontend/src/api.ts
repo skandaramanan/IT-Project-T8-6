@@ -65,6 +65,10 @@ export interface CardField {
   review_state: ReviewState;
 }
 export interface Card {
+  reviewed?: boolean;
+  total?: number;
+  resolved?: number;
+  unresolved?: number;
   score?: number | null;
   card_id: string;
   household_index: number | null;

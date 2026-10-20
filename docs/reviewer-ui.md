@@ -523,3 +523,24 @@ be configured. See [backend setup and Drive catalogue refresh](review-backend.md
 Drive is authoritative; historical local hashes do not restrict transfers.
 Build the React frontend to make these controls available; the plain integration fallback remains for
 backend testing.
+
+### IT-115 usability follow-up
+
+The card selector separates survey fronts and interview notes from coding cards.
+**Open survey front** opens the supplied front directly; cards without queued
+fields are omitted from the selector. Printed field columns remain expanded,
+including decided fields and read-only context. **Previous field** and **Next
+field** browse without making a decision; unsaved edits must be saved or cancelled.
+The correction action is labelled **Fix** (keyboard shortcut E).
+
+A confirmed decision advances only within its card. Finishing its queued fields
+shows **Card reviewed**, with **Next card** (or **Back to queue**) and **Stay here**.
+The next card is pending work in this dwelling, then the next pending dwelling.
+Reviewed cards and dwellings move behind unfinished work and remain available for
+inspection and Undo. A **High · reviewed** badge reflects completion of supplied
+fields; original machine scores and field confidence are preserved. Diagnostics
+prevent a card being labelled reviewed, and Undo restores unfinished priority.
+
+This follow-up branches from `origin/main` at `06aaaec`, rather than PR 4 (#71):
+PR 4's acceptance work is independent, while main includes the later survey-front,
+notes, download and queue integration needed to preserve existing functionality.
