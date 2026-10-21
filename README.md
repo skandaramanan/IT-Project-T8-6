@@ -325,6 +325,12 @@ Work is tracked in Linear: https://linear.app/um-it-project
 
 ### Reviewing flagged C1/C2 fields (IT-113)
 
+For a fresh full-corpus presentation sandbox on another MacBook, see the
+[portable demo setup and agent handoff](docs/presentation-demo-handoff.md).
+Run `bash scripts/setup_presentation_demo.sh` once, then
+`bash scripts/launch_presentation_demo.sh --scan-root "/path/to/Wilfred_Prest_Survey_Data"`.
+Each launch creates independent records, scans, cache and a new local Git remote.
+
 The local review backend reads teammate-supplied flagged JSONL, saves decisions
 and undo history in the region records, and shares them through a separate
 `review-data` checkout. It does not require Gemini credentials. The React reviewer
