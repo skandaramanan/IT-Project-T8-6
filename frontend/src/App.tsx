@@ -8,6 +8,7 @@ import History from './History';
 import { api, ApiError, reviewSummaryCsv } from './api';
 import type {
   Action,
+  CardField,
   Dwelling,
   DwellingQueue,
   Item,
@@ -52,6 +53,10 @@ function Confidence({ score, reviewed = false }: { score: number | null; reviewe
 }
 function Value({ item }: { item: Item }) {
   return <>{item.field.value ?? statuses[item.field.status]}</>;
+}
+function isOptionalHighConfidenceField(row: Pick<CardField, 'id' | 'field' | 'review_state'>): boolean {
+  return !row.id && row.review_state === 'pending' && row.field.status === 'ok' &&
+    row.field.confidence !== null && row.field.confidence >= 0.98;
 }
 function isValidCorrection(item: Item, value: string): boolean {
   if (item.identity_kind === 'dwelling') return /^[0-9]{1,4}[A-Za-z]?$/.test(value);
@@ -488,6 +493,8 @@ export default function App() {
     ? dwelling.filter((i) => i.source.card_id === item.source.card_id)
     : [];
   const cardFields = item?.card_fields ?? cardItems;
+  const visibleCardFields = cardFields.filter((row) => !isOptionalHighConfidenceField(row));
+  const optionalCardFields = cardFields.filter(isOptionalHighConfidenceField);
   const isCardReviewed = (id: string) => {
     const metadata = item?.cards?.find((card) => card.card_id === id);
     if (metadata?.reviewed !== undefined) return metadata.reviewed;
@@ -1149,9 +1156,9 @@ export default function App() {
               </span>
             </div>
             <div className="p-list">
-              {cardFields.map((row, index) => {
+              {visibleCardFields.map((row, index) => {
                 const column = row.column;
-                const heading = column && cardFields[index - 1]?.column !== column;
+                const heading = column && visibleCardFields[index - 1]?.column !== column;
                 return (
                   <div key={row.field_path}>
                     {heading && <h3 className="column-heading">{column}</h3>}
@@ -1454,6 +1461,23 @@ export default function App() {
                   </div>
                 );
               })}
+              {optionalCardFields.length > 0 && (
+                <details className="optional-fields" key={item.source.card_id}>
+                  <summary>High-confidence fields not queued for review ({optionalCardFields.length})</summary>
+                  <p className="small muted">Machine confidence is at least 0.98. These fields are read-only context outside this review queue.</p>
+                  {optionalCardFields.map((row, index) => (
+                    <div key={row.field_path}>
+                      {row.column && optionalCardFields[index - 1]?.column !== row.column && <h3 className="column-heading">{row.column}</h3>}
+                      <div className="r context-field">
+                        <span className="nm">{row.label}</span>
+                        <b className="val">{row.field.value ?? statuses[row.field.status]}</b>
+                        <Confidence score={row.field.confidence} />
+                        <span className="tag machine">NOT QUEUED</span>
+                      </div>
+                    </div>
+                  ))}
+                </details>
+              )}
             </div>
             <div className="exitbar">
               <button
@@ -1465,8 +1489,7 @@ export default function App() {
               </button>
             </div>
             <p className="agreed small muted">
-              Fields follow the printed card order. Fields outside the supplied queue are shown
-              for context only.
+              Review fields follow the printed card order. High-confidence fields outside the queue can be expanded for context.
             </p>
           </section>
         </main>

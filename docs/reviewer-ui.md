@@ -343,6 +343,13 @@ expanded, including decided fields. The card selector omits unqueued coding
 cards and places reviewed cards last; Open survey front exposes the front scan
 directly. The actual shared building fields remain on household 0.
 
+Readable, pending fields outside the supplied queue with confidence at least
+0.98 appear under High-confidence fields not queued for review. This disclosure
+starts closed and retains the exact values and printed-column labels as read-only
+context. It stays open while navigating the same card and resets when changing
+physical cards. Queued fields remain visible regardless of score; other context
+stays in the main list. Expansion does not affect review counts or completion.
+
 Coding municipality and household numbers accept one or two digits. Coding
 dwelling numbers accept one to four digits with an optional final letter.
 Corrections update derived record IDs and existing note links while preserving

@@ -2,7 +2,7 @@
 // Vitest covers input rules with a fake API; these cover what only the whole stack can:
 // cookies, idempotent retries, two reviewers, missing scans and Git sharing.
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, mkdtempSync, rmSync, renameSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -34,9 +34,10 @@ async function waitForHealth(url: string, server: ChildProcess, log: string[]) {
 }
 
 // A fresh demo and backend per test: one writer per data checkout (D029).
-const test = base.extend<{ demo: string; app: string; identityFields: boolean }>({
+const test = base.extend<{ demo: string; app: string; identityFields: boolean; highConfidenceContext: boolean }>({
   identityFields: [false, { option: true }],
-  demo: async ({ identityFields }, use) => {
+  highConfidenceContext: [false, { option: true }],
+  demo: async ({ identityFields, highConfidenceContext }, use) => {
     // Outside the repo: the backend refuses a data checkout inside the code checkout.
     const root = mkdtempSync(path.join(os.tmpdir(), 'survey-e2e-'));
     const demo = path.join(root, 'demo');
@@ -52,6 +53,13 @@ const test = base.extend<{ demo: string; app: string; identityFields: boolean }>
       ].map((field_path) => JSON.stringify({
         region: 'demo', pdf: 'synthetic.pdf', page: 1, field_path, reason: 'Synthetic identity review',
       })).join('\n') + '\n');
+    }
+    if (highConfidenceContext) {
+      const file = path.join(demo, 'data checkout/results/demo.jsonl');
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      record.dwelling.house.age_of_house = { value: '007', status: 'ok', confidence: 0.98 };
+      record.dwelling.households[0].coding.weekly_rent.confidence = 0.98;
+      writeFileSync(file, JSON.stringify(record) + '\n');
     }
     try {
       await use(demo);
@@ -111,6 +119,36 @@ async function correct(page: Page, value: string) {
 const corrected = (page: Page) =>
   page.getByRole('button', { name: /^Weekly Rent 009 .*CORRECTED$/ });
 const sharing = (page: Page) => page.getByRole('banner').getByRole('status');
+
+test.describe('optional high-confidence context', () => {
+  test.use({ highConfidenceContext: true });
+  test('keeps queued high-confidence fields visible and expands read-only context without changing progress', async ({ page }) => {
+    await signIn(page);
+    await openFirstField(page);
+    const optional = page.locator('details.optional-fields');
+    const summary = optional.locator('summary');
+    await expect(summary).toHaveText('High-confidence fields not queued for review (1)');
+    await expect(optional).not.toHaveAttribute('open');
+    await expect(page.getByText('Age of House', { exact: true })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'Weekly Rent', exact: true })).toBeVisible();
+    await summary.press('Enter');
+    await expect(optional).toHaveAttribute('open');
+    await expect(optional.getByText('Age of House', { exact: true })).toBeVisible();
+    await expect(optional.getByText('007', { exact: true })).toBeVisible();
+    await expect(optional.getByRole('button')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Accept 04' }).click();
+    await expect(page.getByRole('heading', { name: 'Garden', exact: true })).toBeVisible();
+    await expect(optional).toHaveAttribute('open');
+    await page.getByRole('button', { name: 'Accept 1', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Card reviewed', exact: true })).toBeVisible();
+    await expect(page.getByText('All 2 queued fields on this card are reviewed.')).toBeVisible();
+    await page.getByRole('button', { name: 'Next card', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Accept 12', exact: true })).toBeEnabled();
+    const firstCard = await page.getByRole('option', { name: /Coding card.*household 1/ }).getAttribute('value');
+    await page.getByLabel('Card to review').selectOption(firstCard!);
+    await expect(optional).not.toHaveAttribute('open');
+  });
+});
 
 test('a correction is saved, shared and still marked after a reload (NFR-05)', async ({ page }) => {
   await signIn(page);

@@ -116,3 +116,20 @@ Final verification on the complete patched code:
 Ambiguous legacy identity evidence and changed note ownership remain explicit
 conflicts requiring data repair; the review tool does not guess their association.
 The verification did not alter the original corpus or publish review results.
+
+## High-confidence field context follow-up
+
+Readable, pending context fields scored at least 0.98 and absent from the
+assignment now sit in a disclosure closed by default. All queued fields remain
+visible, including those with high scores. Lower/unscored, non-readable and
+already-reviewed context stays visible. Expanded values remain read-only and
+keep their printed-column labels. The disclosure survives same-card navigation
+and resets on card changes; it contributes no review decisions or progress.
+
+- Frontend: 98 tests passed; build and browser TypeScript passed.
+- Browser: all 14 scenarios passed, including keyboard expansion, exact leading
+  zeros, queued high-confidence acceptance, completion and disclosure reset.
+- Independent audit and diff checks found no blockers.
+- Computer use on the copied full corpus confirmed 35 unqueued high-confidence
+  fields collapsed on one card, then inspected their values and columns expanded.
+  No review decisions were saved during this visual check.

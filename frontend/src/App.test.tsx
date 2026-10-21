@@ -1566,3 +1566,104 @@ it('keeps handwritten survey dwelling text editable independently of coding iden
   await screen.findByText(/Saved: Number of Dwelling 0006b/);
   expect(server.mutations[0].body).toMatchObject({ action: 'correct', value: '0006b' });
 });
+
+describe('high-confidence context disclosure', () => {
+  const title = 'High-confidence fields not queued for review';
+  type Row = NonNullable<Item['card_fields']>[number];
+  const context = (label: string, confidence: number | null, overrides: Partial<Row> = {}): Row => ({
+    id: null, field_path: '/context/' + label, label, column: 'Right column',
+    field: { value: '00', status: 'ok', confidence }, review_state: 'pending', ...overrides,
+  });
+  const queued = (item: Item): Row => ({
+    id: item.id, field_path: item.field_path, label: item.label, column: 'Middle column',
+    field: item.field, review_state: item.review_state,
+  });
+
+  it('collapses only unqueued, readable, pending context at the 0.98 threshold', async () => {
+    const rent = field();
+    backend([field('rent', { card_fields: [
+      queued(rent), context('Below threshold', 0.979), context('Threshold context', 0.98),
+      context('Certain context', 1), context('Unscored context', null),
+      context('Unreadable context', 0.99, { field: { value: null, status: 'illegible', confidence: 0.99 } }),
+      context('Blank context', 0.99, { field: { value: null, status: 'no_data', confidence: 0.99 } }),
+      context('Accepted context', 0.99, { review_state: 'accepted' }),
+      context('Corrected context', 0.99, { review_state: 'corrected' }),
+    ] })]);
+    const user = await start();
+    const summary = screen.getByText(`${title} (2)`);
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    for (const label of ['Below threshold', 'Unscored context', 'Unreadable context', 'Blank context', 'Accepted context', 'Corrected context']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeVisible();
+    }
+    await user.click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(within(details).getByRole('heading', { name: 'Right column' })).toBeVisible();
+    for (const label of ['Threshold context', 'Certain context']) {
+      const row = within(details).getByText(label).closest('.r')!;
+      expect(row).toBeVisible();
+      expect(row).toHaveTextContent('00');
+      expect(row).toHaveTextContent('NOT QUEUED');
+      expect(row.tagName).toBe('DIV');
+      expect(within(row as HTMLElement).queryByRole('button')).not.toBeInTheDocument();
+    }
+    await user.click(summary);
+    expect(details).not.toHaveAttribute('open');
+  });
+
+  it('keeps queued 0.98 fields in navigation and completion while context remains unqueued', async () => {
+    const rent = field('rent', { field: { value: '05', status: 'ok', confidence: 0.98 } });
+    const garden = field('garden', { label: 'Garden', field: { value: '00', status: 'ok', confidence: 1 } });
+    const card_fields = [queued(rent), queued(garden), context('Certain context', 0.99)];
+    const server = backend([{ ...rent, card_fields }, { ...garden, card_fields }]);
+    const user = await start();
+    expect(screen.getByRole('heading', { name: 'Weekly Rent' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Garden/ })).toBeVisible();
+    expect(screen.getByText(`${title} (1)`).closest('details')).not.toHaveAttribute('open');
+    loaded();
+    await user.click(screen.getByRole('button', { name: 'Accept 05' }));
+    await screen.findByRole('heading', { name: 'Garden' });
+    expect(screen.queryByRole('heading', { name: 'Card reviewed' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next field' })).toBeDisabled();
+    loaded();
+    await user.click(screen.getByRole('button', { name: 'Accept 00' }));
+    expect(await screen.findByRole('heading', { name: 'Card reviewed' })).toBeVisible();
+    expect(server.mutations).toHaveLength(2);
+    expect(server.mutations[0].path).toContain('/rent/');
+    expect(server.mutations[1].path).toContain('/garden/');
+  });
+
+  it('omits an empty disclosure when context is low confidence or every high-confidence row is queued', async () => {
+    const rent = field('rent', { field: { value: '05', status: 'ok', confidence: 0.99 } });
+    backend([{ ...rent, card_fields: [queued(rent), context('Visible context', 0.97)] }]);
+    await start();
+    expect(screen.queryByText(new RegExp(title))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Visible context/ })).toBeVisible();
+  });
+
+  it('keeps expansion on same-card navigation and closes it when switching physical cards', async () => {
+    const rent = field();
+    const garden = field('garden', { label: 'Garden' });
+    const other = field('other', {
+      label: 'Other card', source: { pdf: 'original.pdf', page: 22, card_id: 'card2' }, scan_url: '/api/scans/card2',
+    });
+    const card_fields = [queued(rent), queued(garden), context('First card context', 0.98)];
+    const server = backend([
+      { ...rent, card_fields }, { ...garden, card_fields },
+      { ...other, card_fields: [queued(other), context('Second card context', 0.99)] },
+    ]);
+    const user = await start();
+    await user.click(screen.getByText(`${title} (1)`));
+    expect(screen.getByText(`${title} (1)`).closest('details')).toHaveAttribute('open');
+    await user.click(screen.getByRole('button', { name: 'Next field' }));
+    await screen.findByRole('heading', { name: 'Garden' });
+    expect(screen.getByText(`${title} (1)`).closest('details')).toHaveAttribute('open');
+    await user.selectOptions(screen.getByLabelText('Card to review'), 'card2');
+    await screen.findByRole('heading', { name: 'Other card' });
+    expect(screen.getByText(`${title} (1)`).closest('details')).not.toHaveAttribute('open');
+    await user.selectOptions(screen.getByLabelText('Card to review'), 'card1');
+    await screen.findByRole('heading', { name: 'Garden' });
+    expect(screen.getByText(`${title} (1)`).closest('details')).not.toHaveAttribute('open');
+    expect(server.mutations).toHaveLength(0);
+  });
+});
