@@ -166,6 +166,22 @@ h2.two { font-size: 64px; }
 .deck-controls .count { min-width: 64px; text-align: center; }
 .progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--sky); z-index: 1000; transition: width 0.4s var(--ease); }
 
+/* SCALE SLIDE: type boxes expand into the full card-example layout */
+.type-box { cursor: pointer; }
+.type-box:hover { border-color: var(--blue); }
+.type-box:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+.type-box .pop-hint { position: absolute; right: 24px; top: 18px; font-size: 26px; color: var(--blue); opacity: 0.55; }
+.type-box:hover .pop-hint { opacity: 1; }
+.card-pop { position: absolute; z-index: 20; display: none; overflow: hidden; background: var(--card); border: 2px solid var(--line); border-radius: 16px; cursor: zoom-out;
+    transition: left 0.6s var(--ease), top 0.6s var(--ease), width 0.6s var(--ease), height 0.6s var(--ease), border-radius 0.6s var(--ease), background-color 0.6s var(--ease), border-color 0.6s var(--ease); }
+.card-pop.full { background: var(--paper); border-color: transparent; border-radius: 0; }
+.card-pop.instant { transition: none; }
+.card-pop .pop-mini { position: absolute; left: 32px; top: 20px; transition: opacity 0.2s ease; }
+.card-pop.full .pop-mini { opacity: 0; }
+.card-pop .pop-c { opacity: 0; transform: translateY(24px); transition: opacity 0.25s ease, transform 0.25s ease; }
+.card-pop.open .pop-c { opacity: 1; transform: none; transition: opacity 0.6s var(--ease), transform 0.6s var(--ease); transition-delay: calc(var(--i, 0) * 70ms + 300ms); }
+@media (prefers-reduced-motion: reduce) { .card-pop, .card-pop .pop-c { transition-duration: 0.01ms !important; transition-delay: 0s !important; } }
+
 </style>
 <div class="progress" id="progress"></div>
 <div class="deck-viewport">
@@ -180,9 +196,9 @@ h2.two { font-size: 64px; }
 <div class="eyebrow rv">Client and project brief</div><h2 class=" rv" style="--i:1">Who we built this for</h2><div class="card abs rv" style="--i:2;left:120px;top:330px;width:700px;height:600px"><div style="display:grid;place-items:center;width:128px;height:128px;border-radius:50%;background:var(--navy);color:#fff;font-size:48px;font-weight:700;margin-bottom:28px">LG</div><h3 style="font-size:44px">Lachlan Glanville</h3><p>Senior Archivist, Digital and Systems at UoM</p><div class="label" style="margin-top:36px">Client</div><p class="big" style="font-size:30px">University of Melbourne Archives</p><div class="label" style="margin-top:24px">How we communicated</div><div class="chips" style="margin-top:10px"><span class="chip line">Outlook</span><span class="chip line">Zoom</span></div></div><div class="card soft abs rv" style="--i:3;left:870px;top:330px;width:930px;height:600px;display:flex;flex-direction:column;justify-content:center"><div class="label">What they asked for</div><p style="font-size:44px;line-height:1.3;color:var(--ink);margin-top:20px;font-weight:600">Transcription of the 1940s Wilfred Prest survey cards in a digital form.</p><p style="margin-top:24px">These were conducted in a time where the census was paused.</p></div>
 </section>
 <section class="slide ">
-<div class="eyebrow rv">The scale</div><h2 class=" rv" style="--i:1">6,500 historical survey cards</h2><p class="body big rv" style="--i:2;top:330px">Split into 3 different types for each individual dwelling:</p><div class="abs row" style="left:120px;top:470px;width:1680px"><div class="card grow rv" style="--i:3;height:380px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 1</div><div class="k sm" style="font-size:64px;line-height:1.1;margin-top:22px">Handwritten Front</div></div><div class="card grow rv" style="--i:4;height:380px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 2</div><div class="k sm" style="font-size:64px;line-height:1.1;margin-top:22px">Handwritten Reverse</div></div><div class="card grow rv" style="--i:5;height:380px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 3</div><div class="k sm" style="font-size:64px;line-height:1.1;margin-top:22px">Numeric Encoding</div></div></div>
+<div class="eyebrow rv">The scale</div><div class="abs rv" style="--i:1;left:120px;top:190px;font-size:340px;line-height:1;font-weight:800;color:var(--navy);letter-spacing:-6px">6,500</div><div class="abs rv" style="--i:2;left:120px;top:585px;font-size:60px;line-height:1.1;font-weight:700;color:var(--body)">historical survey cards</div><p class="body big rv" style="--i:3;top:680px;margin:0">Split into 3 different types for each individual dwelling:</p><div class="abs row" style="left:120px;top:790px;width:1680px"><div class="card grow rv" style="--i:4;height:150px;padding:20px 32px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 1</div><div class="k sm" style="font-size:44px;line-height:1.1;margin-top:10px">Handwritten Front</div></div><div class="card grow rv" style="--i:5;height:150px;padding:20px 32px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 2</div><div class="k sm" style="font-size:44px;line-height:1.1;margin-top:10px">Handwritten Reverse</div></div><div class="card grow rv" style="--i:6;height:150px;padding:20px 32px;display:flex;flex-direction:column;justify-content:flex-start"><div class="tag" style="color:var(--blue)">TYPE 3</div><div class="k sm" style="font-size:44px;line-height:1.1;margin-top:10px">Numeric Encoding</div></div></div>
 </section>
-<section class="slide card-example">
+<div class="card-source" hidden data-type="1">
 <div class="eyebrow rv">The cards · Type 1</div>
 <h2 class="rv" style="--i:1">Handwritten front</h2>
 <!-- Source scan: tests/fixtures/r01-survey-front.jpg -->
@@ -191,8 +207,8 @@ h2.two { font-size: 64px; }
 <figcaption>Household details, plus one column per person, filled in by the interviewer</figcaption>
 </figure>
 
-</section>
-<section class="slide card-example">
+</div>
+<div class="card-source" hidden data-type="2">
 <div class="eyebrow rv">The cards · Type 2</div>
 <h2 class="rv" style="--i:1">Handwritten reverse</h2>
 <!-- Source scan: tests/fixtures/r01-survey-back.jpg -->
@@ -201,8 +217,8 @@ h2.two { font-size: 64px; }
 <figcaption>The interviewer's free-text notes, with nothing on it saying which dwelling it belongs to</figcaption>
 </figure>
 
-</section>
-<section class="slide card-example">
+</div>
+<div class="card-source" hidden data-type="3">
 <div class="eyebrow rv">The cards · Type 3</div>
 <h2 class="rv" style="--i:1">Numeric coding card</h2>
 <!-- Source scan: tests/fixtures/r01-coding-front.jpg -->
@@ -211,7 +227,7 @@ h2.two { font-size: 64px; }
 <figcaption>The answers turned into codes for analysis, and our main extraction target</figcaption>
 </figure>
 <p class="body rv card-example-footer" style="--i:3">The pipeline has to sort them, read them and link them back together.</p>
-</section>
+</div>
 <section class="slide ">
 <div class="eyebrow rv">The problem</div><h2 class="two rv" style="--i:1">These cards were stored as PDFs rather than an editable format</h2><p class="body big rv" style="--i:2;top:360px">As such there were a couple of main requirements that our solution needed:</p><div class="abs row" style="left:120px;top:500px;width:1680px"><div class="card grow rv" style="--i:3;height:340px"><div class="tag" style="color:var(--blue);margin-bottom:18px">REQUIREMENT 1</div><p style="color:var(--ink);font-size:36px;line-height:1.28;font-weight:600">Survey cards should be transcribed into a digital and editable format</p></div><div class="card grow rv" style="--i:4;height:340px"><div class="tag" style="color:var(--blue);margin-bottom:18px">REQUIREMENT 2</div><p style="color:var(--ink);font-size:36px;line-height:1.28;font-weight:600">Human review must be able to edit the extracted fields</p></div><div class="card grow rv" style="--i:5;height:340px"><div class="tag" style="color:var(--blue);margin-bottom:18px">REQUIREMENT 3</div><p style="color:var(--ink);font-size:36px;line-height:1.28;font-weight:600">Reprocessing must be supported</p></div></div>
 </section>
@@ -310,9 +326,7 @@ h2.two { font-size: 64px; }
 <section class="slide ">
 <div class="eyebrow rv">Conclusion</div><h2 class=" rv" style="--i:1">Where we landed</h2><div class="abs col" style="left:120px;top:310px;width:1680px;gap:18px"><div class="row rv" style="--i:2;gap:20px;align-items:stretch"><div class="card" style="width:700px;padding:26px 36px"><div class="label" style="font-size:20px">Requirement 1</div><p style="font-size:30px;color:var(--ink);font-weight:600;line-height:1.25;margin-top:4px">Transcribe the cards into a digital, editable format</p></div><div style="align-self:center;font-size:48px;color:var(--blue)">→</div><div class="card soft grow" style="padding:26px 36px"><div class="label" style="font-size:20px">Result</div><p style="font-size:28px;line-height:1.3;color:var(--ink);margin-top:4px">Every card is read by two models and stored as a structured, searchable record</p></div></div><div class="row rv" style="--i:3;gap:20px;align-items:stretch"><div class="card" style="width:700px;padding:26px 36px"><div class="label" style="font-size:20px">Requirement 2</div><p style="font-size:30px;color:var(--ink);font-weight:600;line-height:1.25;margin-top:4px">Let people review and edit the extracted fields</p></div><div style="align-self:center;font-size:48px;color:var(--blue)">→</div><div class="card soft grow" style="padding:26px 36px"><div class="label" style="font-size:20px">Result</div><p style="font-size:28px;line-height:1.3;color:var(--ink);margin-top:4px">A review tool that shows the scan, explains uncertainty and records who changed what</p></div></div><div class="row rv" style="--i:4;gap:20px;align-items:stretch"><div class="card" style="width:700px;padding:26px 36px"><div class="label" style="font-size:20px">Requirement 3</div><p style="font-size:30px;color:var(--ink);font-weight:600;line-height:1.25;margin-top:4px">Support reprocessing</p></div><div style="align-self:center;font-size:48px;color:var(--blue)">→</div><div class="card soft grow" style="padding:26px 36px"><div class="label" style="font-size:20px">Result</div><p style="font-size:28px;line-height:1.3;color:var(--ink);margin-top:4px">Reruns pick up where they stopped and never overwrite a reviewer's correction</p></div></div></div><p class="abs rv" style="--i:6;left:120px;top:880px;width:1680px;font-size:32px;color:var(--ink);font-weight:600">A 1940s household survey that existed only on paper can now be searched, checked and corrected.</p>
 </section>
-<section class="slide ">
-<div class="eyebrow rv">Conclusion</div><h2 class=" rv" style="--i:1">What's next for the Archives</h2><div class="abs" style="left:120px;top:310px;width:1680px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px"><div class="card rv" style="--i:2;height:360px;display:flex;flex-direction:column;gap:20px"><div class="k sm blue" style="flex:none;font-size:72px">1</div><div><h3 style="font-size:32px">Run the usability session</h3><p style="font-size:26px;line-height:1.35">Archives staff review fields unaided, using only the written instructions (IT-116)</p></div></div><div class="card rv" style="--i:3;height:360px;display:flex;flex-direction:column;gap:20px"><div class="k sm blue" style="flex:none;font-size:72px">2</div><div><h3 style="font-size:32px">Work through the flagged dwellings</h3><p style="font-size:26px;line-height:1.35">978 records are marked for a person to place, rather than guessed</p></div></div><div class="card rv" style="--i:4;height:360px;display:flex;flex-direction:column;gap:20px"><div class="k sm blue" style="flex:none;font-size:72px">3</div><div><h3 style="font-size:32px">Send unexplained codes to review</h3><p style="font-size:26px;line-height:1.35">995 agreed fields with no code-book meaning currently skip review</p></div></div></div><p class="abs rv" style="--i:7;left:120px;top:740px;width:1680px;font-size:28px">Everything needed to carry this on is in the repo: setup guide, test plan and 29 decision records.</p>
-</section>
+
 <section class="slide navy">
 <div class="eyebrow rv">Thank you</div><h2 class="rv" style="--i:1;top:360px;font-size:160px">Questions?</h2><p class="abs rv" style="--i:3;left:120px;top:700px;font-size:36px;color:#fff">Eric Zhang · Elliot Guo · Jacob Ng · Skanda Ramanan · Qitao Shi</p><p class="abs rv" style="--i:4;left:120px;top:770px;font-size:30px">With thanks to Lachlan Glanville and the University of Melbourne Archives</p>
 </section>
@@ -320,7 +334,7 @@ h2.two { font-size: 64px; }
 </main>
 </div>
 <nav class="deck-controls" aria-label="Slide navigation">
-<button id="prev" aria-label="Previous slide">‹</button><span class="count" id="count">1 / 39</span><button id="next" aria-label="Next slide">›</button>
+<button id="prev" aria-label="Previous slide">‹</button><span class="count" id="count">1 / 35</span><button id="next" aria-label="Next slide">›</button>
 </nav>
 <script>
 (function () {
@@ -380,12 +394,107 @@ h2.two { font-size: 64px; }
         document.getElementById('reviewState').textContent = value ? 'Hi-fi interface' : 'Lo-fi prototype';
         reviewToggle.textContent = value ? '← Show lo-fi' : 'Show hi-fi →';
     }
+    // Scale slide: each type box expands into the same layout as its card-example slide.
+    var scaleSlide = slides.filter(function (s) {
+        var e = s.querySelector('.eyebrow'); return e && e.textContent.trim() === 'The scale';
+    })[0];
+    var scaleIndex = slides.indexOf(scaleSlide);
+    var typeBoxes = scaleSlide ? Array.prototype.slice.call(scaleSlide.querySelectorAll('.card.grow')) : [];
+    var pops = [], popOpen = -1, popTimers = [];
+    function clearPopTimers() { popTimers.forEach(clearTimeout); popTimers = []; }
+    function boxRect(box) {
+        var row = box.parentNode;
+        return { l: row.offsetLeft + box.offsetLeft, t: row.offsetTop + box.offsetTop, w: box.offsetWidth, h: box.offsetHeight };
+    }
+    function setRect(el, r) { el.style.left = r.l + 'px'; el.style.top = r.t + 'px'; el.style.width = r.w + 'px'; el.style.height = r.h + 'px'; }
+    var FULL = { l: 0, t: 0, w: 1920, h: 1080 };
+    typeBoxes.forEach(function (box, n) {
+        var source = document.querySelector('.card-source[data-type="' + (n + 1) + '"]');
+        if (!source) return;
+        box.classList.add('type-box');
+        box.setAttribute('role', 'button');
+        box.setAttribute('tabindex', '0');
+        box.setAttribute('aria-label', 'Open example: ' + box.textContent.trim());
+        var hint = document.createElement('span'); hint.className = 'pop-hint'; hint.setAttribute('aria-hidden', 'true'); hint.textContent = '⤢';
+        box.style.position = 'relative'; box.appendChild(hint);
+        var pop = document.createElement('div');
+        pop.className = 'card-pop card-example';
+        pop.setAttribute('aria-hidden', 'true');
+        var mini = document.createElement('div'); mini.className = 'pop-mini';
+        Array.prototype.forEach.call(box.children, function (c) { if (c !== hint) mini.appendChild(c.cloneNode(true)); });
+        pop.appendChild(mini);
+        Array.prototype.forEach.call(source.children, function (c) {
+            var copy = c.cloneNode(true);
+            copy.classList.remove('rv'); copy.classList.add('pop-c');
+            pop.appendChild(copy);
+        });
+        scaleSlide.appendChild(pop);
+        source.parentNode.removeChild(source);
+        pops[n] = pop;
+        // Decode the large scans up front so the first expansion doesn't stall.
+        Array.prototype.forEach.call(pop.querySelectorAll('img'), function (img) { if (img.decode) img.decode().catch(function () {}); });
+        box.addEventListener('click', function () { box.blur(); scaleStep = 2 * n + 1; openPop(n); });
+        box.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); scaleStep = 2 * n + 1; openPop(n); }
+        });
+        pop.addEventListener('click', manualClosePop);
+    });
+    function openPop(n) {
+        if (!pops[n]) return;
+        clearPopTimers();
+        var pop = pops[n], prev = popOpen;
+        if (prev > -1 && prev !== n) {
+            // Already expanded: swap straight to the next full-size view.
+            pop.classList.add('instant', 'full'); setRect(pop, FULL); pop.style.display = 'block'; pop.style.zIndex = 21;
+            void pop.offsetWidth; pop.classList.remove('instant'); pop.classList.add('open');
+            var old = pops[prev];
+            popTimers.push(setTimeout(function () { hidePop(old); pop.style.zIndex = ''; }, 500));
+        } else if (prev !== n) {
+            pops.forEach(function (p, i) { if (i !== n) hidePop(p); });
+            pop.classList.add('instant'); setRect(pop, boxRect(typeBoxes[n])); pop.style.display = 'block';
+            void pop.offsetWidth; pop.classList.remove('instant');
+            pop.classList.add('full'); setRect(pop, FULL);
+            pop.classList.add('open');
+        }
+        pop.setAttribute('aria-hidden', 'false');
+        popOpen = n;
+    }
+    function manualClosePop() {
+        if (popOpen > -1) scaleStep = 2 * popOpen + 2;
+        closePop();
+    }
+    function hidePop(pop) {
+        pop.classList.add('instant'); pop.classList.remove('open', 'full');
+        pop.style.display = 'none'; pop.setAttribute('aria-hidden', 'true');
+        void pop.offsetWidth; pop.classList.remove('instant');
+    }
+    function closePop(instant) {
+        if (popOpen < 0) return;
+        clearPopTimers();
+        var n = popOpen, pop = pops[n];
+        popOpen = -1;
+        pops.forEach(function (p, i) { if (i !== n) hidePop(p); });
+        if (instant) { hidePop(pop); return; }
+        pop.classList.remove('open');
+        popTimers.push(setTimeout(function () { pop.classList.remove('full'); setRect(pop, boxRect(typeBoxes[n])); }, 180));
+        popTimers.push(setTimeout(function () { hidePop(pop); typeBoxes[n].focus({ preventScroll: true }); }, 820));
+    }
+
+    // Remote-friendly build: on the scale slide each Next opens a box, the following Next closes it.
+    // Steps: 0 all closed, 1 open T1, 2 closed, 3 open T2, 4 closed, 5 open T3, 6 closed -> next slide.
+    var scaleSteps = pops.length * 2, scaleStep = 0;
+    function goScaleStep(k) {
+        scaleStep = k;
+        if (k % 2 === 1) openPop((k - 1) / 2); else closePop();
+    }
     function nextSlide() {
         if (current === reviewIndex && !reviewHifi) setReviewHifi(true);
+        else if (current === scaleIndex && scaleStep < scaleSteps) goScaleStep(scaleStep + 1);
         else show(current + 1);
     }
     function previousSlide() {
         if (current === reviewIndex && reviewHifi) setReviewHifi(false);
+        else if (current === scaleIndex && scaleStep > 0) goScaleStep(scaleStep - 1);
         else show(current - 1);
     }
     reviewToggle.addEventListener('click', function () { setReviewHifi(!reviewHifi); });
@@ -394,6 +503,7 @@ h2.two { font-size: 64px; }
         var previous = current;
         current = Math.max(0, Math.min(i, slides.length - 1));
         if (current === reviewIndex && previous !== current) setReviewHifi(previous > current);
+        if (current !== previous) { closePop(true); scaleStep = previous > current ? scaleSteps : 0; }
         slides.forEach(function (s, n) {
             s.classList.toggle('active', n === current);
             s.classList.toggle('visible', n === current);
@@ -412,6 +522,7 @@ h2.two { font-size: 64px; }
         var prev = ['ArrowLeft', 'ArrowUp', 'PageUp'];
         if (next.indexOf(e.key) > -1) { e.preventDefault(); nextSlide(); }
         else if (prev.indexOf(e.key) > -1) { e.preventDefault(); previousSlide(); }
+        else if (e.key === 'Escape') manualClosePop();
         else if (e.key === 'Home') show(0);
         else if (e.key === 'End') show(slides.length - 1);
     });
