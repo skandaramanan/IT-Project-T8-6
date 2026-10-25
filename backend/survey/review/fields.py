@@ -15,6 +15,9 @@ from survey.extraction.record import FIELD_MAP
 from survey.extraction.survey_front import record_key
 
 MAX_TEXT_CORRECTION_LENGTH = 10_000
+# Reruns regroup cards by the front's dwelling number, so it follows the
+# coding card's rule rather than free text.
+DWELLING_NUMBER = r"[0-9]{1,4}[A-Za-z]?"
 
 
 @dataclass(frozen=True)
@@ -34,12 +37,18 @@ class Descriptor:
             "Number of Household": "household",
         }.get(self.spec.name)
 
+    @property
+    def front_dwelling_number(self):
+        return (
+            self.role == "survey-front" and record_key(self.spec.name) == "dwelling_no"
+        )
+
     def valid_correction(self, value):
-        if self.identity_kind:
+        if self.identity_kind or self.front_dwelling_number:
             pattern = (
-                r"[0-9]{1,4}[A-Za-z]?"
-                if self.identity_kind == "dwelling"
-                else r"[0-9]{1,2}"
+                r"[0-9]{1,2}"
+                if self.identity_kind in {"municipality", "household"}
+                else DWELLING_NUMBER
             )
             return isinstance(value, str) and bool(re.fullmatch(pattern, value))
         if self.spec.kind == "text":

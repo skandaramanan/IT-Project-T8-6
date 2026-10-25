@@ -1551,7 +1551,7 @@ it('keeps a negated identity accept-only when the backend restricts its actions'
   expect(screen.queryByRole('button', { name: "Can't read it or blank?" })).not.toBeInTheDocument();
 });
 
-it('keeps handwritten survey dwelling text editable independently of coding identity validation', async () => {
+it('validates the survey front dwelling number like the coding card', async () => {
   const server = backend([field('handwritten', {
     label: 'Number of Dwelling', field_kind: 'text', identity_kind: null,
     field_path: '/dwelling/handwritten/dwelling_no', code_list: [],
@@ -1560,6 +1560,10 @@ it('keeps handwritten survey dwelling text editable independently of coding iden
   const user = await start('Review', 'Number of Dwelling');
   loaded();
   await user.click(screen.getByRole('button', { name: 'Fix' }));
+  expect(screen.getByText(/Enter 1–4 digits, optionally followed by a letter/)).toBeVisible();
+  await user.clear(screen.getByLabelText('Your correction'));
+  await user.type(screen.getByLabelText('Your correction'), '12 see back');
+  expect(screen.getByRole('button', { name: /^Save correction$/ })).toBeDisabled();
   await user.clear(screen.getByLabelText('Your correction'));
   await user.type(screen.getByLabelText('Your correction'), '0006b');
   await user.click(screen.getByRole('button', { name: /^Save correction$/ }));

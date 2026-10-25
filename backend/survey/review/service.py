@@ -1059,6 +1059,7 @@ class ReviewService:
                             "invalid_value",
                             "Enter 1–4 ASCII digits with an optional letter"
                             if resolved.descriptor.identity_kind == "dwelling"
+                            or resolved.descriptor.front_dwelling_number
                             else "Enter 1–2 ASCII digits; zeros are preserved"
                             if resolved.descriptor.identity_kind
                             else "Enter nonblank text exactly as written"

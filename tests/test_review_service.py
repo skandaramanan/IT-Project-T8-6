@@ -347,7 +347,13 @@ def test_survey_front_identity_edits_do_not_change_coding_identity(tmp_path):
     service.store.reload()
     ref = replace(refs()[3], page=3, field_path="/dwelling/handwritten/dwelling_no")
     service.replace_queue([ref], [])
-    result = decide(service, ref, value="7A as written")
+    before = (service.store.directory / "demo.jsonl").read_bytes()
+    for value in ["7A as written", "12 see back", "12345", " 7"]:
+        with pytest.raises(ReviewError, match="ASCII") as error:
+            decide(service, ref, value=value)
+        assert error.value.code == "invalid_value"
+    assert (service.store.directory / "demo.jsonl").read_bytes() == before
+    result = decide(service, ref, value="7A")
     assert result["item"]["identity_kind"] is None
     after = service.store.regions["demo"][0][0]
     assert after["dwelling"]["dwelling_no"]["value"] == "6"

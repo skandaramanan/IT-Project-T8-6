@@ -58,8 +58,12 @@ function isOptionalHighConfidenceField(row: Pick<CardField, 'id' | 'field' | 're
   return !row.id && row.review_state === 'pending' && row.field.status === 'ok' &&
     row.field.confidence !== null && row.field.confidence >= 0.98;
 }
+// Reruns regroup cards by the survey front's dwelling number, so it follows the coding card's rule.
+function isDwellingNumber(item: Item): boolean {
+  return item.identity_kind === 'dwelling' || item.field_path === '/dwelling/handwritten/dwelling_no';
+}
 function isValidCorrection(item: Item, value: string): boolean {
-  if (item.identity_kind === 'dwelling') return /^[0-9]{1,4}[A-Za-z]?$/.test(value);
+  if (isDwellingNumber(item)) return /^[0-9]{1,4}[A-Za-z]?$/.test(value);
   if (item.identity_kind) return /^[0-9]{1,2}$/.test(value);
   return item.field_kind === 'text'
     ? !!value.trim() && value.length <= 10_000 && !value.includes('\0')
@@ -524,7 +528,7 @@ export default function App() {
     !item.diagnostics.length;
   const textField = item?.field_kind === 'text';
   const validCorrection = !!item && isValidCorrection(item, draft);
-  const correctionHelp = item?.identity_kind === 'dwelling'
+  const correctionHelp = item && isDwellingNumber(item)
     ? 'Enter 1–4 digits, optionally followed by a letter, such as 487A. Leading zeros are kept.'
     : item?.identity_kind
       ? 'Enter 1–2 digits exactly as written. Leading zeros are kept.'
