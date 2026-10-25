@@ -193,11 +193,51 @@ generating coding flags, and expose the generated dwelling Municipality pointer
 as an actionable field on the first coding card. Explicit household Municipality
 flags remain supported, including assignments containing both stored copies.
 Both `/dwelling/municipality` and `/dwelling/households/<index>/municipality`
-are accept-only identity fields. Acceptance preserves the stored value;
-correction, no-data and illegible decisions are rejected. If a Municipality is
-wrong, leave it pending for a separate data repair. Reviewing either copy does
-not rewrite the other copy. The shared path aliases the first household only;
-later households retain their own Municipality values.
+accept explicit corrections as well as acceptance. Coding Municipality and
+Household Number require 1–2 ASCII digits; Dwelling Number requires 1–4 ASCII
+digits and an optional ASCII letter. Leading zeros and the written letter's case
+are retained in the field; derived IDs use the existing canonical padding and
+uppercase suffix. No-data and illegible are unavailable for coding identity.
+
+The shared Municipality and first household's Municipality describe the same
+physical field. A correction mirrors the other copy only when it has no active
+review decision and is not crossed out. An active decision must be undone first;
+crossed-out editing remains deferred. Audit events retain `identity_changes` snapshots for this mirror without
+copying or duplicating review history. Later households retain their own
+Municipality readings. Household IDs and linked note IDs update atomically,
+without changing physical card IDs, membership, queue item IDs or associations.
+New collisions against any coding household in the region are rejected, including
+identities whose stored ID was withheld. Front handwritten identity corrections
+change only that front's reading; they never regroup coding cards.
+
+`identity_ids` and `identity_links` event snapshots make Undo restore exact prior
+IDs, including null IDs, and note links. Undo refuses to overwrite later identity,
+linked-note or active Municipality-copy decisions. After those later decisions
+are undone, the earlier correction can be undone while keeping all audit history.
+Unrelated field corrections remain intact.
+
+`identity_conflicts` records the physical owners of pre-existing duplicate IDs.
+Undo may restore those original duplicates, but refuses conflicts with new or
+replacement owners, even if the number of duplicates is unchanged. Older events
+without this evidence remain conservative about collisions.
+
+Legacy card IDs retain Municipality evidence when the per-card field is absent;
+editing the shared Municipality changes the first card only when later cards
+have their own stored-ID evidence. Missing, conflicting legacy evidence requires
+rebuilding from cache. Municipality aliases keep distinct extraction metadata
+across reruns. Identity Undo verifies `identity_note_topology` before restoring
+links; changed ownership or order is a conflict, not an opportunity to relink by
+list index. Older link snapshots without topology evidence also refuse Undo.
+Null note links are filled only for an unambiguous single-household repair and
+restored by Undo.
+
+Items expose nullable `identity_kind` and live `review_issues`. Missing/invalid
+coding identity, duplicate IDs and Municipality disagreements are checked from
+current fields. The duplicate index is cached per region version. Structural
+association/extraction problems remain actionable because identity edits cannot
+recover omitted person assignments, unread cards or ambiguous front grouping.
+Raw `dwelling_flags` remain unchanged as source notes; historical reread and
+position-pairing flags alone do not present an outstanding identity warning.
 An empty generated assignment is now a healthy startup case.
 
 Each nonblank line is an object with exactly these keys, plus optional `reason`:
@@ -374,7 +414,7 @@ unknown codes are retained. Only closed categories warn about unlisted codes;
 ordinary numeric-sentinel values need no label. Sentinel meanings come from the
 existing field-specific codebook, never a generic `999 => missing` rule.
 
-Identity and existing negated fields are accept-only: if wrong, leave pending.
+Coding identity fields support validated corrections as described above. Existing negated fields remain accept-only: if wrong, leave pending.
 Missing `negated` means unknown; no false value is manufactured. Supported text preserves Unicode, whitespace and multiline content without numeric
 normalization. Empty/whitespace-only corrections use no-data instead. Person and
 ambiguous-front fields remain unresolved. Negation editing and
@@ -599,8 +639,8 @@ reads across multiple dwellings without relying on machine-specific timings.
 
 The follow-up extends the locally available IT-115 stack, reusing its endpoints,
 dwelling summaries, retries, scan gate, history and navigation. Text corrections
-use a multiline control; code lists remain numeric-field-specific. Identity and
-negated fields stay accept-only. `damaged` remains an extraction status; there is
+use a multiline control; code lists remain numeric-field-specific. Coding identity
+uses explicit validated corrections; existing negated fields stay accept-only. `damaged` remains an extraction status; there is
 no damaged action. Acceptance keeps it, and illegible explicitly replaces it.
 
 Reviewed fronts refuse rerun ownership changes. Reviewed notes follow a unique

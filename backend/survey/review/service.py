@@ -2,6 +2,7 @@
 
 import csv
 import json
+from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -12,7 +13,7 @@ from survey.extraction.card_fields import (
     SURVEY_FRONT_DWELLING_FIELDS,
 )
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from survey.extraction.record import review_schema_version
+from survey.extraction.record import build_record_id, review_schema_version
 from survey.records import (
     RecordStore,
     Reference,
@@ -59,6 +60,159 @@ def active_decisions(history: list[dict]) -> list[dict]:
     return active
 
 
+def identity_municipality(dwelling, household, index):
+    """Retain each legacy card's municipality evidence from its stored ID."""
+    if "municipality" in household:
+        return household["municipality"].get("value")
+    if household.get("record_id"):
+        return household["record_id"].split("-")[0]
+    if index and "municipality_mismatch" in dwelling.get("flags", []):
+        return None
+    return dwelling["municipality"].get("value")
+
+
+def identity_note_topology(record):
+    dwelling = record["dwelling"]
+    return [
+        {
+            "image": next(
+                (
+                    card["image"]
+                    for card in dwelling.get("cards", [])
+                    if card["role"] == "survey-front"
+                    and card.get("page") == note.get("front_page")
+                ),
+                None,
+            ),
+            "front_page": note.get("front_page"),
+            "page": note.get("page"),
+        }
+        for note in dwelling.get("notes", [])
+    ]
+
+
+def identity_ids(record, municipality_overrides=None):
+    """Derive coding IDs without changing physical ownership or associations."""
+    dwelling = record["dwelling"]
+    ids = []
+    for index, household in enumerate(dwelling["households"]):
+        try:
+            ids.append(
+                build_record_id(
+                    (municipality_overrides or {}).get(
+                        index, identity_municipality(dwelling, household, index)
+                    )
+                    or "",
+                    dwelling["dwelling_no"].get("value") or "",
+                    household["household_no"].get("value") or "",
+                )
+            )
+        except ValueError:
+            ids.append(None)
+    return ids
+
+
+def identity_issues(record, identity_counts):
+    dwelling = record["dwelling"]
+    ids = identity_ids(record)
+    issues = []
+    if any(identity is None for identity in ids) or any(
+        household.get("record_id") is None for household in dwelling["households"]
+    ):
+        issues.append(
+            {
+                "code": "incomplete_identity",
+                "message": "Some coding identity values are missing or invalid.",
+            }
+        )
+    if any(identity is not None and identity_counts[identity] > 1 for identity in ids):
+        issues.append(
+            {
+                "code": "duplicate_record_id",
+                "message": "Coding households have duplicate identities; correct their identity fields.",
+            }
+        )
+    municipalities = [
+        identity_municipality(dwelling, household, index)
+        for index, household in enumerate(dwelling["households"])
+    ]
+    values = [
+        str(value).lstrip("0")
+        for value in [dwelling["municipality"].get("value"), *municipalities]
+        if value is not None
+    ]
+    if len(set(values)) > 1:
+        issues.append(
+            {
+                "code": "municipality_mismatch",
+                "message": "Coding cards disagree on municipality; check each card's municipality.",
+            }
+        )
+    flags = set(dwelling.get("flags", []))
+    structural = {
+        "persons_unassigned": (
+            len(dwelling["households"]) > 1,
+            "Person rows have not been assigned to households; identity edits do not assign them.",
+        ),
+        "unplaced": (
+            not any(
+                card["role"] == "survey-front" for card in dwelling.get("cards", [])
+            ),
+            "This coding card has no associated survey front.",
+        ),
+        "fronts_disagree": (
+            sum(card["role"] == "survey-front" for card in dwelling.get("cards", []))
+            > 1,
+            "Associated survey fronts disagree; editing the stored reading does not resolve their association.",
+        ),
+        "no_coding_card": (
+            not any(
+                card["role"] == "coding-front"
+                for household in dwelling["households"]
+                for card in household.get("cards", [])
+            ),
+            "This dwelling has no coding card.",
+        ),
+        "unread_coding_card": (
+            True,
+            "A coding card was not read; identity edits do not recover its fields.",
+        ),
+        "missing_dwelling_no": (
+            True,
+            "The survey front's dwelling number was missing; check its grouping separately from coding identity.",
+        ),
+        "duplicate_dwelling_no": (
+            True,
+            "Survey fronts share a dwelling number; coding edits do not resolve their grouping.",
+        ),
+        "unread_front": (
+            True,
+            "A survey front was not read; its grouping still needs checking.",
+        ),
+    }
+    for code, (unresolved, message) in structural.items():
+        if code in flags and unresolved:
+            issues.append({"code": code, "message": message})
+    return issues
+
+
+def identity_alias(record, pointer):
+    """The first card's municipality is also stored on its dwelling."""
+    if pointer == "/dwelling/municipality":
+        alias = "/dwelling/households/0/municipality"
+    elif pointer == "/dwelling/households/0/municipality":
+        alias = "/dwelling/municipality"
+    else:
+        return None, None
+    node = record
+    try:
+        for part in alias.split("/")[1:]:
+            node = node[int(part)] if isinstance(node, list) else node[part]
+    except KeyError:
+        return None, None
+    return alias, node
+
+
 class ReviewService:
     def __init__(
         self,
@@ -68,6 +222,7 @@ class ReviewService:
         scans: ScanSource,
     ):
         self.store, self.scans = store, scans
+        self.identity_counts = {}
         self.region_titles = self.load_region_titles()
         self.replace_queue(references, diagnostics)
         self.requests, self.decisions = self.store.requests, self.store.decisions
@@ -270,6 +425,10 @@ class ReviewService:
                 else None,
                 "field_path": ref.field_path,
                 "label": resolved.label,
+                "identity_kind": resolved.descriptor.identity_kind,
+                "review_issues": identity_issues(
+                    resolved.record, self.region_identity_counts(ref.region, version)
+                ),
                 "field": deepcopy(field),
                 "review_state": state(field),
                 "version": version,
@@ -286,6 +445,8 @@ class ReviewService:
                 if errors
                 else ["accept"]
                 if restricted
+                else ["accept", "correct"]
+                if resolved.descriptor.identity_kind
                 else ["accept", "correct", "no_data", "illegible"],
                 "warnings": warnings,
                 "diagnostics": errors,
@@ -295,6 +456,17 @@ class ReviewService:
 
             item.update(self.item_context(ref, resolved, context))
             return item
+
+    def region_identity_counts(self, region, version):
+        cached = self.identity_counts.get(region)
+        if cached is None or cached[0] != version:
+            counts = Counter(
+                identity
+                for record in self.store.regions[region][0]
+                for identity in identity_ids(record)
+            )
+            self.identity_counts[region] = (version, counts)
+        return self.identity_counts[region][1]
 
     def load_region_titles(self):
         root = getattr(self.scans, "root", None)
@@ -449,12 +621,31 @@ class ReviewService:
                 ]
                 if card["role"] != "coding-front" and not refs:
                     continue
+                count = sum(
+                    self.item_resolved.get(candidate.item_id, False)
+                    for candidate in refs
+                )
+                errors = any(
+                    diagnostic.get("region") in {None, ref.region}
+                    and diagnostic.get("batch") in {None, card["image"]}
+                    and diagnostic.get("page") in {None, card.get("page")}
+                    for diagnostic in [
+                        *self.diagnostics,
+                        *self.progress_diagnostics.values(),
+                    ]
+                )
                 cards.append(
                     {
                         "card_id": physical_card_id(
                             ref.region, card["image"], card.get("page")
                         ),
                         "score": card.get("confidence"),
+                        # Review confidence is separate from machine confidence.
+                        # Only supplied fields count; absent flags are not decisions.
+                        "reviewed": bool(refs) and count == len(refs) and not errors,
+                        "total": len(refs),
+                        "resolved": count,
+                        "unresolved": len(refs) - count,
                         "household_index": index,
                         "role": card["role"],
                         "household_no": household.get("household_no", {}).get("value"),
@@ -471,7 +662,8 @@ class ReviewService:
                         ),
                     }
                 )
-        details["cards"] = cards
+        # Stable sorting preserves printed order within each progress group.
+        details["cards"] = sorted(cards, key=lambda card: card["reviewed"])
         return details
 
     def dwelling_groups(self, region=None):
@@ -610,6 +802,9 @@ class ReviewService:
                         "diagnostics": errors,
                     }
                 )
+            # Completed dwellings remain available for inspection and undo.
+            # Unfinished work retains the supplied queue's priority order.
+            rows.sort(key=lambda row: row["status"] == "complete")
             resolved = sum(row["resolved"] for row in rows)
             # Dynamic diagnostics describe an existing supplied reference, never an
             # extra flag. Even references that no longer resolve remain in scope.
@@ -862,7 +1057,12 @@ class ReviewService:
                     if not resolved.descriptor.valid_correction(value):
                         raise ReviewError(
                             "invalid_value",
-                            "Enter nonblank text exactly as written"
+                            "Enter 1–4 ASCII digits with an optional letter"
+                            if resolved.descriptor.identity_kind == "dwelling"
+                            or resolved.descriptor.front_dwelling_number
+                            else "Enter 1–2 ASCII digits; zeros are preserved"
+                            if resolved.descriptor.identity_kind
+                            else "Enter nonblank text exactly as written"
                             if resolved.descriptor.spec.kind == "text"
                             else "Enter 1–64 ASCII digits; zeros are preserved",
                         )
@@ -901,9 +1101,134 @@ class ReviewService:
             }
             if undo_target:
                 event["undo_target"] = undo_target
+            if resolved.descriptor.identity_kind:
+                alias_path, alias = identity_alias(record, ref.field_path)
+                if action == "undo":
+                    for change in target.get("identity_changes", []):
+                        if alias_path != change["path"] or (
+                            snapshot(alias) != change["after"]
+                            or active_decisions(
+                                alias.get("review", {}).get("history", [])
+                            )
+                        ):
+                            raise ReviewError(
+                                "undo_conflict",
+                                "The municipality copy was reviewed or changed later; undo that change first",
+                                409,
+                            )
+                        alias_review = deepcopy(alias.get("review"))
+                        alias.clear()
+                        alias.update(deepcopy(change["before"]))
+                        if alias_review is not None:
+                            alias["review"] = alias_review
+                elif (
+                    action == "correct"
+                    and alias is not None
+                    and alias.get("value") != after.get("value")
+                ):
+                    if alias.get("negated") is True:
+                        raise ReviewError(
+                            "identity_conflict",
+                            "The other municipality copy is crossed out; editing it is deferred",
+                            409,
+                        )
+                    if active_decisions(alias.get("review", {}).get("history", [])):
+                        raise ReviewError(
+                            "identity_conflict",
+                            "The other municipality copy has review history; undo its decisions before changing this value",
+                            409,
+                        )
+                    alias_before = snapshot(alias)
+                    alias_review = deepcopy(alias.get("review"))
+                    alias_after = deepcopy(alias_before)
+                    alias_after.update(
+                        value=after["value"],
+                        status="ok",
+                        code=after.get("code"),
+                        label=after.get("label"),
+                        origin="corrected",
+                    )
+                    alias_after.setdefault("original_value", alias_before.get("value"))
+                    event["identity_changes"] = [
+                        {
+                            "path": alias_path,
+                            "before": alias_before,
+                            "after": alias_after,
+                        }
+                    ]
+                    alias.clear()
+                    alias.update(alias_after)
+                    if alias_review is not None:
+                        alias["review"] = alias_review
             history.append(event)
             field.clear()
             field.update(after, review={"state": after_state, "history": history})
+            if resolved.descriptor.identity_kind and action != "accept":
+                if action == "undo":
+                    if (
+                        target.get("identity_links")
+                        and "identity_note_topology" not in target
+                    ) or (
+                        "identity_note_topology" in target
+                        and identity_note_topology(record)
+                        != target["identity_note_topology"]
+                    ):
+                        raise ReviewError(
+                            "undo_conflict",
+                            "Associated notes changed since this identity correction; check their ownership before undoing",
+                            409,
+                        )
+                    for change in target.get("identity_ids", []):
+                        household = record["dwelling"]["households"][change["index"]]
+                        if household.get("record_id") != change["after"]:
+                            raise ReviewError(
+                                "undo_conflict",
+                                "Another identity field changed later; undo that change first",
+                                409,
+                            )
+                        household["record_id"] = change["before"]
+                    for change in target.get("identity_links", []):
+                        note = record["dwelling"]["notes"][change["index"]]
+                        if note.get("household_id") != change["after"]:
+                            raise ReviewError(
+                                "undo_conflict",
+                                "A linked note changed later; undo that change first",
+                                409,
+                            )
+                        note["household_id"] = change["before"]
+                    self.check_identity_collisions(
+                        [h.get("record_id") for h in record["dwelling"]["households"]],
+                        [
+                            h.get("record_id")
+                            for h in current.record["dwelling"]["households"]
+                        ],
+                        ref.region,
+                        current.record_index,
+                        identity_ids(record),
+                        target.get("identity_conflicts"),
+                    )
+                else:
+                    event["identity_note_topology"] = identity_note_topology(record)
+                    conflicts = self.identity_collision_owners(
+                        ref.region,
+                        {
+                            household.get("record_id")
+                            for household in current.record["dwelling"]["households"]
+                        },
+                    )
+                    if conflicts:
+                        event["identity_conflicts"] = conflicts
+                    link_changes, id_changes = self.rebuild_identity_ids(
+                        record,
+                        current.record,
+                        ref.region,
+                        current.record_index,
+                        ref.field_path,
+                    )
+                    if link_changes:
+                        event["identity_links"] = link_changes
+                    if id_changes:
+                        event["identity_ids"] = id_changes
             resolved.record["schema_version"] = review_schema_version(
                 record["schema_version"]
             )
@@ -922,6 +1247,141 @@ class ReviewService:
                 "replayed": False,
                 "saved_locally": True,
             }
+
+    def rebuild_identity_ids(self, record, original, region, record_index, pointer):
+        old_ids = [
+            household.get("record_id")
+            for household in original["dwelling"]["households"]
+        ]
+        affected = (
+            range(len(old_ids))
+            if pointer == "/dwelling/dwelling_no"
+            else [0]
+            if pointer == "/dwelling/municipality"
+            else [int(pointer.split("/")[3])]
+        )
+        affected = set(affected)
+        overrides = {}
+        if pointer == "/dwelling/municipality" or (
+            record["dwelling"]["municipality"].get("value")
+            != original["dwelling"]["municipality"].get("value")
+        ):
+            for index, household in enumerate(record["dwelling"]["households"]):
+                if "municipality" not in household and (
+                    index == 0 or not household.get("record_id")
+                ):
+                    overrides[index] = record["dwelling"]["municipality"].get("value")
+                    affected.add(index)
+        for index in affected:
+            household = record["dwelling"]["households"][index]
+            if (
+                index
+                and "municipality" not in household
+                and not household.get("record_id")
+                and "municipality_mismatch" in record["dwelling"].get("flags", [])
+            ):
+                raise ReviewError(
+                    "identity_conflict",
+                    "Legacy household lost its municipality; rebuild from cache before editing identity",
+                    409,
+                )
+        derived = identity_ids(record, overrides)
+        ids = [
+            derived[index] if index in affected else old_id
+            for index, old_id in enumerate(old_ids)
+        ]
+        self.check_identity_collisions(ids, old_ids, region, record_index, derived)
+        for household, identity in zip(record["dwelling"]["households"], ids):
+            household["record_id"] = identity
+        changes = []
+        for index, note in enumerate(record["dwelling"].get("notes", [])):
+            linked = note.get("household_id")
+            if (linked is not None and old_ids.count(linked) == 1) or (
+                linked is None and len(ids) == 1
+            ):
+                new_link = ids[0] if linked is None else ids[old_ids.index(linked)]
+                if new_link != linked:
+                    changes.append(
+                        {"index": index, "before": linked, "after": new_link}
+                    )
+                    note["household_id"] = new_link
+        return changes, [
+            {"index": index, "before": old, "after": new}
+            for index, (old, new) in enumerate(zip(old_ids, ids))
+            if index in affected
+        ]
+
+    @staticmethod
+    def identity_owner(region, household):
+        cards = sorted(
+            physical_card_id(region, card["image"], card.get("page"))
+            for card in household.get("cards", [])
+            if card["role"] == "coding-front"
+        )
+        return digest(json.dumps(cards).encode()) if cards else None
+
+    def identity_collision_owners(self, region, identities):
+        """Remember original conflict owners so Undo can restore known defects."""
+        owners = {identity: set() for identity in identities if identity is not None}
+        unknown = set()
+        for record in self.store.regions[region][0]:
+            for household, derived in zip(
+                record["dwelling"]["households"], identity_ids(record)
+            ):
+                owner = self.identity_owner(region, household)
+                for identity in {household.get("record_id"), derived} & owners.keys():
+                    if owner is None:
+                        unknown.add(identity)
+                    else:
+                        owners[identity].add(owner)
+        return [
+            {"identity": identity, "owners": sorted(values)}
+            for identity, values in sorted(owners.items())
+            if len(values) > 1 and identity not in unknown
+        ]
+
+    def check_identity_collisions(
+        self, ids, old_ids, region, record_index, derived, allowed_conflicts=None
+    ):
+        permitted = {
+            entry["identity"]: set(entry["owners"]) for entry in allowed_conflicts or []
+        }
+        for index, identity in enumerate(ids):
+            if identity is None or identity == old_ids[index]:
+                continue
+            conflicts = set()
+            for other_index, other_record in enumerate(self.store.regions[region][0]):
+                stored = (
+                    ids
+                    if other_index == record_index
+                    else [
+                        h.get("record_id")
+                        for h in other_record["dwelling"]["households"]
+                    ]
+                )
+                candidate_ids = (
+                    derived
+                    if other_index == record_index
+                    else identity_ids(other_record)
+                )
+                for household_index, household in enumerate(
+                    other_record["dwelling"]["households"]
+                ):
+                    if other_index == record_index and household_index == index:
+                        continue
+                    if identity in {
+                        stored[household_index],
+                        candidate_ids[household_index],
+                    }:
+                        conflicts.add(self.identity_owner(region, household))
+            if conflicts and (
+                None in conflicts or not conflicts <= permitted.get(identity, set())
+            ):
+                raise ReviewError(
+                    "identity_conflict",
+                    "That coding identity already belongs to another household; records cannot be merged in review",
+                    409,
+                )
 
     def undo_latest(
         self, decision_id: str, reviewer: str, expected_version: str, request_id: str

@@ -1095,6 +1095,9 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
 
 def _mirror_municipality(source: dict, target: dict) -> dict:
     """Mirror the first household's shared alias without duplicating audit IDs."""
+    # Each alias retains its own extraction evidence and Undo snapshots.
+    if all(source.get(key) == target.get(key) for key in ("value", "status")):
+        return deepcopy(target)
     field = deepcopy(source)
     field.pop("review", None)
     if review := target.get("review"):

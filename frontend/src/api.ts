@@ -36,6 +36,8 @@ export interface Item {
   region_title: string | null;
   card_score: number | null;
   field_kind: string;
+  identity_kind?: 'municipality' | 'dwelling' | 'household' | null;
+  review_issues?: Diagnostic[];
   column?: string;
   household_count?: number;
   dwelling_flags?: string[];
@@ -65,6 +67,10 @@ export interface CardField {
   review_state: ReviewState;
 }
 export interface Card {
+  reviewed?: boolean;
+  total?: number;
+  resolved?: number;
+  unresolved?: number;
   score?: number | null;
   card_id: string;
   household_index: number | null;

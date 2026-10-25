@@ -263,7 +263,11 @@ def test_generated_identity_warnings_with_nullable_display_id(tmp_path, capsys):
         assert summary["dwellings"][0]["record_id"] is None
         for queued in client.get("/api/queue").json()["items"]:
             item = client.get(f"/api/review-items/{queued['id']}").json()
-            assert item["allowed_actions"] == ["accept"]
+            assert item["allowed_actions"] == ["accept", "correct"]
+            assert item["identity_kind"] in {"municipality", "dwelling", "household"}
+            assert "incomplete_identity" in {
+                issue["code"] for issue in item["review_issues"]
+            }
             assert item["dwelling_flags"] == ["identity_reread"]
             context = next(
                 field

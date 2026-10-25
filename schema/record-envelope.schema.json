@@ -446,6 +446,123 @@
             "corrected"
           ]
         },
+        "identity_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "enum": [
+                  "/dwelling/municipality",
+                  "/dwelling/households/0/municipality"
+                ]
+              },
+              "before": {
+                "$ref": "#/$defs/field_snapshot"
+              },
+              "after": {
+                "$ref": "#/$defs/field_snapshot"
+              }
+            }
+          }
+        },
+        "identity_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "index",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "identity_conflicts": {
+          "type": "array",
+          "description": "Original collision owners, keyed by stable physical coding-card identity, that Undo may restore.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["identity", "owners"],
+            "properties": {
+              "identity": { "type": "string" },
+              "owners": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          }
+        },
+        "identity_note_topology": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["image", "front_page", "page"],
+            "properties": {
+              "image": { "type": ["string", "null"] },
+              "front_page": { "type": ["integer", "null"] },
+              "page": { "type": ["integer", "null"] }
+            }
+          }
+        },
+        "identity_ids": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "index",
+              "before",
+              "after"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
         "undo_target": {
           "type": "string",
           "minLength": 1
