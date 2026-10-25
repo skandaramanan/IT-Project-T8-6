@@ -8,7 +8,7 @@ import urllib.request
 import webbrowser
 
 
-def open_when_ready(port: int, timeout: float = 30):
+def open_when_ready(port: int, timeout: float = 300):
     url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
