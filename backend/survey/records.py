@@ -82,7 +82,8 @@ def validate_records(
                 "wrong_region", f"record {number} does not belong to {region}"
             )
         for path, field in current_fields(record):
-            validate_history(field, descriptor("/" + "/".join(map(str, path))))
+            logical = retained_field_path(path)
+            validate_history(field, descriptor("/" + "/".join(map(str, logical))))
         for household in record["dwelling"]["households"]:
             for card in household.get("cards", []):
                 if card["role"] != "coding-front":
@@ -91,7 +92,120 @@ def validate_records(
                 if key in seen and not allow_duplicate_cards:
                     raise ReviewError("ambiguous_card", f"duplicate coding card {key}")
                 seen.add(key)
+        if record["schema_version"] == "0.7.0":
+            validate_prepared_record(record)
+    if records and all(r["schema_version"] == "0.7.0" for r in records):
+        from survey.review.relinking import duplicate_index, identity, owner
+
+        duplicates = {
+            c for members in duplicate_index(records).values() for c in members
+        }
+        for record in records:
+            for h in record["dwelling"]["households"]:
+                flags = h.get("flags", [])
+                if h["record_id"] != identity(h) or (
+                    ("duplicate_record_id" in flags) != (owner(region, h) in duplicates)
+                ):
+                    raise ReviewError(
+                        "invalid_records",
+                        "Derived identity or duplicate flags disagree with physical card readings",
+                    )
+        sources, bundle_ids = set(), set()
+        for record in records:
+            for h in record["dwelling"]["households"]:
+                active = list(h.get("cards", []))
+                for bundle in h.get("retained_supplements", []):
+                    if bundle["id"] in bundle_ids or bundle["source_members"] != [
+                        owner(region, h)
+                    ]:
+                        raise ReviewError(
+                            "invalid_records",
+                            "Retained evidence has duplicate identity or an invalid custodian",
+                        )
+                    bundle_ids.add(bundle["id"])
+                    active.extend(bundle["payload"].get("cards", []))
+                for c in active:
+                    key = c["image"], c.get("page")
+                    if key in sources and not allow_duplicate_cards:
+                        raise ReviewError(
+                            "ambiguous_card",
+                            f"Physical source {key} occurs more than once in active or retained evidence",
+                        )
+                    sources.add(key)
+            for c in record["dwelling"].get("cards", []):
+                key = c["image"], c.get("page")
+                if key in sources:
+                    raise ReviewError(
+                        "ambiguous_card",
+                        f"Supplementary source {key} occurs more than once",
+                    )
+                sources.add(key)
     audit_index({region: records})
+
+
+def retained_field_path(path):
+    """Retained payloads keep their original front/note field semantics."""
+    if "retained_supplements" in path and "payload" in path:
+        return ("dwelling", *path[path.index("payload") + 1 :])
+    return path
+
+
+def validate_prepared_record(record):
+    from survey.review.relinking import coding_source
+
+    pdfs = set()
+    for h in record["dwelling"]["households"]:
+        card = coding_source(h)
+        pdfs.add(card["image"])
+        if (
+            not safe_pdf(card["image"])
+            or type(card.get("page")) is not int
+            or card["page"] < 1
+        ):
+            raise ReviewError(
+                "invalid_records",
+                "Coding sources require a PDF basename and original page",
+            )
+        active = []
+        for event in h.get("link_history", []):
+            if event["card_id"] != physical_card_id(
+                record["region"], card["image"], card["page"]
+            ):
+                raise ReviewError(
+                    "invalid_history",
+                    "Link history belongs to a different physical card",
+                )
+            if event["request"]["action"] != event["action"]:
+                raise ReviewError("invalid_history", "Link event and request disagree")
+            if event["action"] == "undo":
+                if (
+                    not active
+                    or active[-1]["id"] != event.get("undo_target")
+                    or event["request"]["undo_target"] != event["undo_target"]
+                ):
+                    raise ReviewError(
+                        "invalid_history",
+                        "Link Undo must reverse its latest applicable operation",
+                    )
+                active.pop()
+            else:
+                if "structure" not in event:
+                    raise ReviewError(
+                        "invalid_history",
+                        "Link event has no reversible structural effect",
+                    )
+                active.append(event)
+    for card in record["dwelling"].get("cards", []):
+        if card["role"] not in {"survey-front", "survey-back"}:
+            raise ReviewError(
+                "invalid_records",
+                "Active dwelling evidence must be a survey front or back",
+            )
+        pdfs.add(card["image"])
+    if len(pdfs) != 1:
+        raise ReviewError(
+            "wrong_boundary", "A prepared dwelling must stay within one PDF"
+        )
 
 
 def audit_index(regions: dict[str, list[dict]]) -> tuple[dict, dict]:
@@ -99,18 +213,26 @@ def audit_index(regions: dict[str, list[dict]]) -> tuple[dict, dict]:
     requests, decisions, locations = {}, {}, {}
     for region, records in regions.items():
         for number, record in enumerate(records, 1):
+            entries = []
             for path, field in current_fields(record):
                 location = f"{region}.jsonl record {number} /{'/'.join(map(str, path))}"
                 for event in field.get("review", {}).get("history", []):
-                    for key, index in (("request_id", requests), ("id", decisions)):
-                        identity = (key, event[key])
-                        if identity in locations:
-                            raise ReviewError(
-                                "invalid_history",
-                                f"Duplicate audit {key}: {locations[identity]} and {location}",
-                            )
-                        locations[identity] = location
-                        index[event[key]] = event
+                    entries.append((location, event))
+            for h in record["dwelling"]["households"]:
+                entries.extend(
+                    (f"{region}.jsonl record {number} link history", e)
+                    for e in h.get("link_history", [])
+                )
+            for location, event in entries:
+                for key, index in (("request_id", requests), ("id", decisions)):
+                    identity = (key, event[key])
+                    if identity in locations:
+                        raise ReviewError(
+                            "invalid_history",
+                            f"Duplicate audit {key}: {locations[identity]} and {location}",
+                        )
+                    locations[identity] = location
+                    index[event[key]] = event
     return requests, decisions
 
 
@@ -430,6 +552,45 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
         raise ReviewError(
             "unsupported_source",
             "Only the household's first coding card owns its stored fields",
+        )
+    if record["schema_version"] == "0.7.0":
+        if spec is None or spec.role != "coding-front":
+            raise ReviewError("unsupported_field", "Unknown coding-card field")
+        label = spec.spec.name
+        key, group = FIELD_MAP[label]
+        suffix = (
+            f"house/{key}"
+            if group == "house"
+            else key
+            if group in {"dwelling", "household"}
+            else f"{group}/{key}"
+        )
+        pointer = f"/dwelling/households/{index}/{suffix}"
+        logical = re.sub(r"/households/[0-9]+/", "/households/*/", ref.field_path)
+        if logical != re.sub(r"/households/[0-9]+/", "/households/*/", pointer):
+            raise ReviewError(
+                "unsupported_field", "Prepared fields require per-card ownership"
+            )
+        node = record
+        try:
+            for part in pointer.split("/")[1:]:
+                node = node[int(part)] if isinstance(node, list) else node[part]
+        except (KeyError, IndexError, TypeError) as error:
+            raise ReviewError(
+                "stale_pointer", "The card's own field is absent"
+            ) from error
+        if node.get("source", "coding-front") != "coding-front":
+            raise ReviewError(
+                "unsupported_source", "Coding fields require their own coding source"
+            )
+        return Resolved(
+            record,
+            node,
+            label,
+            "household" if group == "dwelling" else group,
+            household,
+            record_index,
+            descriptor(pointer),
         )
     if ref.field_path == f"/dwelling/households/{index}/municipality":
         if "municipality" not in household:
@@ -759,7 +920,9 @@ def current_fields(node: Any, path: tuple = ()):
         if {"value", "status"} <= node.keys():
             yield path, node
             return
-        children = node.items()
+        children = (
+            (k, v) for k, v in node.items() if k not in {"link_history", "structure"}
+        )
     elif isinstance(node, list):
         children = enumerate(node)
     else:

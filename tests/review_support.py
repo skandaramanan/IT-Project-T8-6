@@ -14,6 +14,16 @@ from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
 
 
+def historical_app(settings):
+    """Exercise the original published-format API contract explicitly in tests.
+
+    Production create_app/CLI still requires prepared per-card review data.
+    """
+    from survey.review.api import create_app
+
+    return create_app(settings, require_prepared=False)
+
+
 def synthetic_record():
     fields = {
         "Municipality": "27",

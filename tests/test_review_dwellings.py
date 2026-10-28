@@ -7,9 +7,9 @@ from shutil import copyfile
 import pytest
 from fastapi.testclient import TestClient
 from review_support import decide, refs, setup_review
+from review_support import historical_app as create_app
 
 from survey.records import Reference, ReviewError, card_index
-from survey.review.api import create_app
 from survey.review.service import ReviewService
 
 

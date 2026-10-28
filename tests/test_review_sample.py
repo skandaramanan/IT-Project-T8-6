@@ -26,7 +26,9 @@ def test_sample_preserves_originals_and_uses_only_local_remote(tmp_path):
     assert git(checkout, "status", "--porcelain") == ""
     records, _ = read_records(checkout / "results/demo.jsonl", "demo")
     entries = [json.loads(line) for line in flags.read_text().splitlines()]
-    assert len(entries) == 3
+    assert (
+        len(entries) == 4
+    )  # every card owns its building fields, including explicit omissions
     for entry in entries:
         resolve_field(records, Reference(**entry))
     assert len(records[0]["dwelling"]["households"]) == 2

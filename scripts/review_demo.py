@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from survey.extraction.record import build_record
+from survey.review.prepare import prepare_records
 
 
 def git(where, *args):
@@ -57,6 +58,7 @@ def create_demo(root: Path):
         ]:
             draw.text((50, y), text, fill="black", font_size=30)
         pages.append(image)
+    records, _ = prepare_records(records)
     record = records[0]
     record["dwelling"]["households"].append(records[1]["dwelling"]["households"][0])
     record["dwelling"]["address"] = {
@@ -69,6 +71,8 @@ def create_demo(root: Path):
         {"role": "survey-front", "image": "synthetic.pdf", "page": 3},
         {"role": "survey-back", "image": "synthetic.pdf", "page": 4},
     ]
+    for household in record["dwelling"]["households"]:
+        household.pop("relink", None)  # this synthetic group now has a front
     record["dwelling"]["notes"] = [
         {
             "front_page": 3,
@@ -103,7 +107,7 @@ def create_demo(root: Path):
     pointers = [
         (1, "/dwelling/households/0/coding/weekly_rent"),
         (2, "/dwelling/households/1/coding/weekly_rent"),
-        (1, "/dwelling/house/garden"),
+        (1, "/dwelling/households/0/house/garden"),
         (3, "/dwelling/address"),
         (4, "/dwelling/notes/0/text"),
     ]

@@ -1,5 +1,10 @@
 # IT-113: local review backend
 
+The per-card reviewer requires prepared schema `0.7.0` data and matching flags.
+Published extraction files remain valid for shared validation but are not
+converted at startup. See [review preparation, relinking and Undo](review-relinking.md)
+before adopting a fresh dataset; a code update does not replace production data.
+
 The review store indexes region JSONL in memory for direct lookup. Region JSONL
 is the only durable record: each field's current payload and append-only audit
 history are replaced together in one atomic file save. There is no database or

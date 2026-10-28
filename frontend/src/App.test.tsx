@@ -1571,6 +1571,74 @@ it('validates the survey front dwelling number like the coding card', async () =
   expect(server.mutations[0].body).toMatchObject({ action: 'correct', value: '0006b' });
 });
 
+describe('prepared per-card review', () => {
+  function prepared(overrides: Partial<Item> = {}) {
+    return field('identity', {
+      label: 'Dwelling number', identity_kind: 'dwelling', prepared_review: true, assigned: true,
+      field_path: '/dwelling/households/0/dwelling_no', allowed_actions: ['accept', 'correct'],
+      source: { pdf: 'original.pdf', page: 21, card_id: 'card1', role: 'coding-front' },
+      duplicate_peers: [], ...overrides,
+    });
+  }
+
+  it('confirms duplicates before committing and retains Compare after advancing', async () => {
+    const server = backend([prepared(), field('rent', { prepared_review: true,
+      source: { pdf: 'original.pdf', page: 21, card_id: 'card1', role: 'coding-front' } })]);
+    const real = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation(async (input, options) => {
+      if (String(input).endsWith('/preview')) return response({ version: 'v1', duplicate_confirmation: 'c'.repeat(64),
+        duplicate: { identity: '03-0007-01', card_ids: ['card1', 'peer'] }, membership: { outcome: 'ambiguous' } });
+      const result = await real(input, options);
+      if (!String(input).endsWith('/decisions')) return result;
+      const saved = await result.json() as Saved;
+      return response({ ...saved, item: { ...saved.item, duplicate_peers: [{ card_id: 'peer', page: 54, pdf: 'original.pdf',
+        identity: '03-0007-01', address: 'Other address', scan_url: '/api/scans/peer' }] } });
+    });
+    const user = await start('Review', 'Dwelling number');
+    loaded();
+    await user.click(screen.getByRole('button', { name: 'Fix' }));
+    await user.clear(screen.getByLabelText('Your correction'));
+    await user.type(screen.getByLabelText('Your correction'), '7');
+    await user.click(screen.getByRole('button', { name: 'Save 7' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm duplicate identity' });
+    expect(server.mutations).toHaveLength(0);
+    await user.click(within(dialog).getByRole('button', { name: 'Go back' }));
+    expect(screen.getByLabelText('Your correction')).toHaveValue('7');
+    await user.click(screen.getByRole('button', { name: 'Save 7' }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save anyway' }));
+    await screen.findByRole('heading', { name: 'Weekly Rent' });
+    expect(screen.getByText(/Duplicate identity on coding page 21/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Compare' })).toBeVisible();
+    expect(server.mutations).toHaveLength(1);
+    expect(server.mutations[0].body.duplicate_confirmation).toBe('c'.repeat(64));
+  });
+
+  it('requires explicit retention before saving a last-card link', async () => {
+    const server = backend([prepared()]);
+    const real = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation(async (input, options) => {
+      if (String(input).endsWith('/link-candidates')) return response({ version: 'v1', outcome: 'supplementary_pending', requires_retention: true,
+        candidates: [{ card_id: 'target', current: false, clear: true, coding_pages: [334], front_pages: [332], address: 'Destination address', reason: 'Compatible readings' }] });
+      if (String(input).endsWith('/link')) {
+        const body = JSON.parse(String(options?.body));
+        server.mutations.push({ path: String(input), body });
+        return response({ saved_locally: true, item: prepared({ retained_bundle_count: 1 }),
+          decision: { id: 'link-operation', action: 'link', reviewer: 'Jane Smith', timestamp: '2026-10-29T00:00:00Z' }, sync: shared, structural_change: true });
+      }
+      return real(input, options);
+    });
+    const user = await start('Review', 'Dwelling number');
+    await user.click(screen.getByRole('button', { name: 'Link to dwelling' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Link coding card to dwelling' });
+    await user.click(within(dialog).getByLabelText(/Destination address/));
+    expect(within(dialog).getByRole('button', { name: 'Save link' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox'));
+    await user.click(within(dialog).getByRole('button', { name: 'Save link' }));
+    await screen.findByRole('button', { name: 'Retained evidence (1)' });
+    expect(server.mutations[0].body).toMatchObject({ target_card_id: 'target', retain_supplements: true });
+  });
+});
+
 describe('high-confidence context disclosure', () => {
   const title = 'High-confidence fields not queued for review';
   type Row = NonNullable<Item['card_fields']>[number];

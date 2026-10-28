@@ -103,7 +103,10 @@ def identity_ids(record, municipality_overrides=None):
                         index, identity_municipality(dwelling, household, index)
                     )
                     or "",
-                    dwelling["dwelling_no"].get("value") or "",
+                    household.get("dwelling_no", dwelling.get("dwelling_no", {})).get(
+                        "value"
+                    )
+                    or "",
                     household["household_no"].get("value") or "",
                 )
             )
@@ -114,6 +117,17 @@ def identity_ids(record, municipality_overrides=None):
 
 def identity_issues(record, identity_counts):
     dwelling = record["dwelling"]
+    if record["schema_version"] == "0.7.0":
+        codes = {flag for h in dwelling["households"] for flag in h.get("flags", [])}
+        messages = {
+            "duplicate_record_id": "Other physical coding cards have the same identity. Compare their readings; each card is preserved.",
+            "incomplete_identity": "Some of this card's identity readings are missing or invalid.",
+            "missing_card_reading": "Some independent readings could not be recovered from retained artifacts.",
+        }
+        return [
+            {"code": c, "message": messages.get(c, c.replace("_", " "))}
+            for c in sorted(codes)
+        ]
     ids = identity_ids(record)
     issues = []
     if any(identity is None for identity in ids) or any(
@@ -236,13 +250,21 @@ class ReviewService:
         collides with a valid reference. Existing editors retain region versions.
         """
         with self.store.lock:
+            self.assignment_references = list(references)
+            self.assignment_diagnostics = deepcopy(diagnostics)
             valid = {}
             errors = deepcopy(diagnostics)
-            for ref in references:
+            for assignment_index, ref in enumerate(references):
                 try:
+                    from survey.review.prepared_service import rebind_reference
+
+                    ref = rebind_reference(self, ref)
+                    if ref is None:
+                        continue  # retained supplementary evidence is outside the queue
                     resolved, _ = self.store.current(ref)
                     if resolved.front_page is not None:
                         ref = replace(ref, front_page=resolved.front_page)
+                        self.assignment_references[assignment_index] = ref
                 except ReviewError as error:
                     errors.append(
                         {
@@ -266,9 +288,26 @@ class ReviewService:
                 key = diagnostic.get("region"), diagnostic.get("batch")
                 self.diagnostic_counts[key] = self.diagnostic_counts.get(key, 0) + 1
             self.rebuild_progress()
+            from survey.review.prepared_service import build_card_registry
+
+            build_card_registry(self)
 
     def reindex_history(self, regions=None):
         self.requests, self.decisions = self.store.requests, self.store.decisions
+        if any(
+            r["schema_version"] == "0.7.0"
+            for records, _ in self.store.regions.values()
+            for r in records
+        ):
+            if regions is None:
+                self.replace_queue(
+                    self.assignment_references, self.assignment_diagnostics
+                )
+            else:
+                from survey.review.prepared_service import refresh_regions
+
+                refresh_regions(self, regions)
+            return
         if regions is None:
             self.rebuild_progress()
         else:
@@ -323,8 +362,19 @@ class ReviewService:
                 }
             self.item_resolved[ref.item_id] = done
             counts[1] += int(done)
-        self.dwelling_references = {}
-        for ref in self.references.values():
+        if regions is None:
+            self.dwelling_references = {}
+        else:
+            self.dwelling_references = {
+                key: refs
+                for key, refs in self.dwelling_references.items()
+                if refs[0].region not in regions
+            }
+        for ref in (
+            self.references.values()
+            if regions is None
+            else (r for rg in regions for r in self.region_references.get(rg, []))
+        ):
             try:
                 record = self.store.current(ref)[0].record
             except ReviewError:
@@ -365,7 +415,11 @@ class ReviewService:
 
     def reference(self, item_id: str) -> Reference:
         try:
-            return self.references[item_id]
+            return (
+                self.references[item_id]
+                if item_id in self.references
+                else self.voluntary_references[item_id]
+            )
         except KeyError as error:
             raise ReviewError(
                 "missing_item", "Item is not in the supplied flagged set", 404
@@ -455,6 +509,10 @@ class ReviewService:
             }
 
             item.update(self.item_context(ref, resolved, context))
+            if resolved.record["schema_version"] == "0.7.0":
+                from survey.review.prepared_service import item_details
+
+                item.update(item_details(self, ref, resolved))
             return item
 
     def region_identity_counts(self, region, version):
@@ -562,6 +620,7 @@ class ReviewService:
             (label, path)
             for label, path, _ in field_pointers(
                 index,
+                review=resolved.record["schema_version"] == "0.7.0",
                 household_municipality=(
                     "municipality" in resolved.household and not prefer_shared
                 ),
@@ -592,6 +651,7 @@ class ReviewService:
                 {
                     "id": field_ref.item_id
                     if field_ref.item_id in self.references
+                    or field_ref.item_id in getattr(self, "voluntary_references", {})
                     else None,
                     "label": label,
                     "column": printed_column(label)
@@ -651,7 +711,20 @@ class ReviewService:
                         "household_no": household.get("household_no", {}).get("value"),
                         "record_id": household.get("record_id"),
                         "page": card.get("page"),
-                        "first_item_id": refs[0].item_id if refs else None,
+                        "first_item_id": refs[0].item_id
+                        if refs
+                        else next(
+                            (
+                                r.item_id
+                                for r in getattr(self, "voluntary_by_card", {}).get(
+                                    physical_card_id(
+                                        ref.region, card["image"], card.get("page")
+                                    ),
+                                    [],
+                                )
+                            ),
+                            None,
+                        ),
                         "next_item_id": next(
                             (
                                 candidate.item_id
@@ -834,6 +907,29 @@ class ReviewService:
             )
             return {
                 "dwellings": rows,
+                "association_summary": {
+                    "duplicate_cards": sum(
+                        "duplicate_record_id" in h.get("flags", [])
+                        for rg, (records, _) in self.store.regions.items()
+                        if region is None or rg == region
+                        for r in records
+                        for h in r["dwelling"]["households"]
+                    ),
+                    "pending_links": sum(
+                        h.get("relink", {}).get("state") in {"pending", "provisional"}
+                        for rg, (records, _) in self.store.regions.items()
+                        if region is None or rg == region
+                        for r in records
+                        for h in r["dwelling"]["households"]
+                    ),
+                    "retained_bundles": sum(
+                        len(h.get("retained_supplements", []))
+                        for rg, (records, _) in self.store.regions.items()
+                        if region is None or rg == region
+                        for r in records
+                        for h in r["dwelling"]["households"]
+                    ),
+                },
                 "diagnostics": diagnostics,
                 "total": total,
                 "resolved": resolved,
@@ -849,6 +945,25 @@ class ReviewService:
         with self.store.lock:
             group = self.dwelling_groups(region).get(dwelling_id)
             if group is None:
+                if any(
+                    r["schema_version"] == "0.7.0"
+                    and self.dwelling_id(rg, r) == dwelling_id
+                    for rg, (records, _) in self.store.regions.items()
+                    if region is None or rg == region
+                    for r in records
+                ):
+                    return {
+                        "items": [],
+                        "diagnostics": [],
+                        "total": 0,
+                        "resolved": 0,
+                        "unresolved": 0,
+                        "complete": False,
+                        "scope": {
+                            "region": region,
+                            "basis": "supplied flagged fields only",
+                        },
+                    }
                 raise ReviewError(
                     "missing_dwelling",
                     "Dwelling is not in the supplied flagged set for this region",
@@ -967,7 +1082,33 @@ class ReviewService:
         request_id: str,
         value: str | None = None,
         undo_target: str | None = None,
+        duplicate_confirmation: str | None = None,
     ) -> dict:
+        prior = self.requests.get(request_id)
+        target = self.decisions.get(undo_target) if undo_target else None
+        ref = (
+            self.reference(item_id)
+            if prior is None and not (target and "card_id" in target)
+            else None
+        )
+        if (
+            (prior and "card_id" in prior)
+            or (target and "card_id" in target)
+            or (ref and self.store.current(ref)[0].record["schema_version"] == "0.7.0")
+        ):
+            from survey.review.prepared_service import apply_decision
+
+            return apply_decision(
+                self,
+                item_id,
+                action,
+                reviewer,
+                expected_version,
+                request_id,
+                value,
+                undo_target,
+                duplicate_confirmation,
+            )
         reviewer = reviewer.strip()
         if not reviewer or len(reviewer) > 100:
             raise ReviewError(
@@ -1390,6 +1531,18 @@ class ReviewService:
             event = self.decisions.get(decision_id)
             if not event:
                 raise ReviewError("missing_decision", "Unknown decision", 404)
+            if event.get("card_id") and self.card_registry.get(
+                event["card_id"], {}
+            ).get("retained"):
+                raise ReviewError(
+                    "retained_evidence",
+                    "Restore the retained evidence before undoing a supplementary field decision",
+                    409,
+                )
+            if event.get("request", {}).get("action") == "link":
+                from survey.review.prepared_service import undo_link
+
+                return undo_link(self, event, reviewer, expected_version, request_id)
             return self.apply_decision(
                 event["item_id"],
                 "undo",

@@ -22,9 +22,20 @@ def _reason(field: Mapping[str, Any]) -> str:
     return f"score {field['confidence']}"
 
 
-def _pointers(index: int) -> Iterator[tuple[int, str, str]]:
+def _pointers(index: int, *, review=False) -> Iterator[tuple[int, str, str]]:
     """Household ``index``'s coding-card fields in printed order (FIELD_SCHEMA),
     as (order, label, pointer)."""
+    if review:
+        from survey.review.fields import field_pointers
+
+        pointers = {
+            label: pointer
+            for label, pointer, kind in field_pointers(index, review=True)
+            if kind != "front"
+        }
+        for order, spec in enumerate(FIELD_SCHEMA):
+            yield order, spec.name, pointers[spec.name]
+        return
     for order, spec in enumerate(FIELD_SCHEMA):
         key, group = FIELD_MAP[spec.name]
         # Every household keeps its own municipality; the first's is the
@@ -78,7 +89,21 @@ def build_flags(
             )
             score = card.get("confidence")
             dwelling_flags = record["dwelling"].get("flags", [])
-            for order, label, pointer in _pointers(index):
+            prepared = record["schema_version"] == "0.7.0"
+            if prepared:
+                dwelling_flags = sorted(
+                    (
+                        set(dwelling_flags)
+                        - {
+                            "duplicate_record_id",
+                            "missing_record_id",
+                            "municipality_mismatch",
+                            "dwelling_number_mismatch",
+                        }
+                    )
+                    | set(record["dwelling"]["households"][index].get("flags", []))
+                )
+            for order, label, pointer in _pointers(index, review=prepared):
                 field = record
                 try:
                     for part in pointer.split("/")[1:]:

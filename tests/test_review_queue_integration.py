@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from review_support import git, setup_review, synthetic_record, write_record
+from review_support import historical_app as create_app
 
 from dual_extract import pair_cards
 from survey import cli
@@ -21,7 +22,6 @@ from survey.confidence.field import score_fields
 from survey.extraction.card_fields import FIELD_SCHEMA
 from survey.extraction.record import FIELD_MAP, build_record
 from survey.records import current_fields, field_pointer
-from survey.review.api import create_app
 
 BASE = "http://127.0.0.1:8765"
 MODELS = {"a": "gemini-3.5-flash-lite", "b": "qwen2.5-vl"}

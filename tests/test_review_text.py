@@ -7,10 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader, PdfWriter
 from review_support import decide, refs, setup_review, write_record
+from review_support import historical_app as create_app
 
 from survey.pipeline import MergeRefused, _keep_corrections
 from survey.records import RecordStore, Reference, ReviewError, schema_errors
-from survey.review.api import create_app
 from survey.review.service import ReviewService
 
 FRONT = Reference("demo", "synthetic.pdf", 3, "/dwelling/address")

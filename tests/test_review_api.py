@@ -3,9 +3,9 @@ from dataclasses import replace
 import pytest
 from fastapi.testclient import TestClient
 from review_support import git, setup_review
+from review_support import historical_app as create_app
 
 from survey import cli, records
-from survey.review.api import create_app
 from survey.review.launch import open_when_ready
 
 BASE = "http://127.0.0.1:8765"
