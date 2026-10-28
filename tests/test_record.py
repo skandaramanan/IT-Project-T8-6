@@ -66,9 +66,8 @@ def test_the_record_carries_all_62_fields():
     rec = record()
     household = rec["dwelling"]["households"][0]
     emitted = (
-        2  # municipality and dwelling_no sit on the dwelling
-        + 1  # household_no on the household
-        + len(rec["dwelling"]["house"])
+        3  # municipality, dwelling_no and household_no on the household
+        + len(household["house"])
         + len(household["head"])
         + len(household["counts"])
         + len(household["coding"])
@@ -135,7 +134,10 @@ def test_void_marks_become_no_data():
 
 
 def test_codes_carry_their_meaning():
-    assert record()["dwelling"]["house"]["structural_material"]["label"] == "Wood"
+    assert (
+        record()["dwelling"]["households"][0]["house"]["structural_material"]["label"]
+        == "Wood"
+    )
 
 
 def test_sentinels_stay_values_with_a_label():

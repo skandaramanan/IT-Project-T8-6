@@ -2,29 +2,23 @@
 
 import json
 import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from survey.extraction.record import build_record
 from survey.records import RecordStore, Reference
 from survey.review.api import Settings
+from survey.review.relinking import finish_records
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
 
 
-def historical_app(settings):
-    """Exercise the original published-format API contract explicitly in tests.
-
-    Production create_app/CLI still requires prepared per-card review data.
-    """
-    from survey.review.api import create_app
-
-    return create_app(settings, require_prepared=False)
-
-
-def synthetic_record():
+def card_record():
+    """The synthetic dwelling as extraction builds it: per-card, unfinished."""
     fields = {
         "Municipality": "27",
         "Number of Dwelling": "6",
@@ -76,6 +70,56 @@ def synthetic_record():
     return first
 
 
+def legacy(record):
+    """Convert a per-card record to published 0.6.0 (shared first-card fields)."""
+    record = deepcopy(record)
+    d, hs = record["dwelling"], record["dwelling"]["households"]
+    shared = {
+        "municipality": deepcopy(hs[0]["municipality"]),
+        "dwelling_no": hs[0].pop("dwelling_no"),
+        "house": hs[0].pop("house"),
+    }
+    for h in hs[1:]:
+        h.pop("dwelling_no")
+        h.pop("house")
+    record["dwelling"] = {**shared, **d}
+    record["schema_version"] = "0.6.0"
+    return record
+
+
+def synthetic_record():
+    """The synthetic dwelling in the active shape."""
+    return prepare_shape(card_record())
+
+
+# Module-level switch flipped by the `shape` fixture: False = published 0.6.0
+# (shared first-card ownership), True = prepared 0.7.0 (per-card ownership).
+PREPARED = False
+
+
+@pytest.fixture(params=["0.6.0", "0.7.0"])
+def shape(request, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "PREPARED", request.param == "0.7.0")
+    return request.param
+
+
+def per_card(pointer, index=0):
+    """Map a legacy shared-building pointer to its 0.7.0 per-card pointer."""
+    if not PREPARED:
+        return pointer
+    for tail in ("municipality", "dwelling_no"):
+        if pointer == f"/dwelling/{tail}":
+            return f"/dwelling/households/{index}/{tail}"
+    if pointer.startswith("/dwelling/house/"):
+        return f"/dwelling/households/{index}/house/{pointer.rsplit('/', 1)[1]}"
+    return pointer
+
+
+def prepare_shape(record):
+    """Return a per-card (build_record) record in the active data shape."""
+    return finish_records([record])[0] if PREPARED else legacy(record)
+
+
 def refs():
     return [
         Reference(
@@ -84,8 +128,8 @@ def refs():
         Reference(
             "demo", "synthetic.pdf", 2, "/dwelling/households/1/coding/weekly_rent"
         ),
-        Reference("demo", "synthetic.pdf", 1, "/dwelling/house/garden"),
-        Reference("demo", "synthetic.pdf", 1, "/dwelling/municipality"),
+        Reference("demo", "synthetic.pdf", 1, per_card("/dwelling/house/garden")),
+        Reference("demo", "synthetic.pdf", 1, per_card("/dwelling/municipality")),
         Reference(
             "demo", "synthetic.pdf", 1, "/dwelling/households/0/head/occupation_of_head"
         ),

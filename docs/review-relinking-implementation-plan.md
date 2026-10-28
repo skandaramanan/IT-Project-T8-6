@@ -2,6 +2,9 @@
 
 Status: implementation on this branch; production data preparation/adoption remains
 separate. See [the implementation/operator guide](review-relinking.md).
+Updated: 0.7.0 per-card ownership is now used by extraction, association, merge
+scoring and published output too, not only the reviewer; the ownership rows below
+describe the pre-0.7.0 state.
 
 Planning branch: `eric-zhang/review-dwelling-relinking-plan`.
 

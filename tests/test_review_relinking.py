@@ -4,14 +4,14 @@ import json
 from copy import deepcopy
 
 import pytest
-from review_support import synthetic_pdf
+from review_support import legacy, synthetic_pdf
 
 from survey.extraction.record import build_record
 from survey.records import RecordStore, Reference, ReviewError
 from survey.review.fields import field_pointers
 from survey.review.prepare import prepare_records
 from survey.review.prepared_service import card_context, link, preview
-from survey.review.relinking import inventory, owner
+from survey.review.relinking import finish_records, inventory, owner
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
 
@@ -60,7 +60,8 @@ def start(tmp_path, records=None):
         raw_record(2, household="2", rooms="7"),
         with_front(raw_record(3, "7"), 4, "7"),
     ]
-    prepared, _ = prepare_records(records)
+    # build_record output is per-card 0.7.0; finishing it gives the review state.
+    prepared = finish_records(records)
     directory = tmp_path / "results"
     directory.mkdir(exist_ok=True)
     (directory / "demo.jsonl").write_text(
@@ -189,7 +190,7 @@ def test_identity_normalization_scopes_duplicates_to_pdf(tmp_path):
     third["dwelling"]["households"][0]["cards"][0]["image"] = "other.pdf"
     a["dwelling"]["households"][0]["record_id"] = None
     b["dwelling"]["households"][0]["record_id"] = None
-    rows, receipt = prepare_records([a, b, third])
+    rows, receipt = prepare_records([legacy(r) for r in (a, b, third)])
     assert len(receipt["derived_identity_changes"]) == 2
     assert len(receipt["preserved_cards"]) == 3
     assert all(
@@ -199,6 +200,88 @@ def test_identity_normalization_scopes_duplicates_to_pdf(tmp_path):
     assert "duplicate_record_id" in rows[0]["dwelling"]["households"][0]["flags"]
     assert "duplicate_record_id" in rows[1]["dwelling"]["households"][0]["flags"]
     assert "duplicate_record_id" not in rows[2]["dwelling"]["households"][0]["flags"]
+
+
+def grouped(*records):
+    for r in records[1:]:
+        records[0]["dwelling"]["households"].extend(r["dwelling"]["households"])
+    return records[0]
+
+
+def test_fixing_a_misread_to_agree_with_a_coding_only_group_keeps_it(tmp_path):
+    group = grouped(raw_record(1, "13"), raw_record(2, "12", household="2"))
+    service = start(tmp_path, [group])
+    saved = correct(service, 1, "dwelling_no", "12")
+    assert saved["membership"]["outcome"] == "unchanged"
+    assert current(service, 1)[2] is current(service, 2)[2]
+
+
+def test_unnumbered_front_group_competes_with_another_numbered_dwelling(tmp_path):
+    group = with_front(
+        grouped(raw_record(1, "13"), raw_record(2, "12", household="2")), 3, "12"
+    )
+    group["dwelling"]["handwritten"]["dwelling_no"].update(
+        status="illegible", value=None
+    )
+    other = with_front(raw_record(5, "12", household="3"), 6, "12")
+    service = start(tmp_path, [group, other])
+    saved = correct(service, 1, "dwelling_no", "12")
+    assert saved["membership"]["outcome"] == "ambiguous"
+    assert current(service, 1)[2] is current(service, 2)[2]
+
+
+def test_sole_card_keeps_its_unnumbered_front_after_a_number_correction(tmp_path):
+    record = with_front(raw_record(1, "13"), 2, "13")
+    record["dwelling"]["handwritten"]["dwelling_no"].update(
+        status="illegible", value=None
+    )
+    service = start(tmp_path, [record])
+    saved = correct(service, 1, "dwelling_no", "31")
+    assert saved["membership"]["outcome"] == "unchanged"
+    assert "relink" not in current(service, 1)[3]
+
+
+def test_mixed_group_still_reading_the_card_is_a_manual_choice(tmp_path):
+    group = with_front(
+        grouped(
+            raw_record(1, "6", municipality="72"), raw_record(2, "6", household="2")
+        ),
+        3,
+        "6",
+    )
+    group["dwelling"]["cards"].append(
+        {"role": "survey-front", "image": "synthetic.pdf", "page": 4}
+    )
+    group["dwelling"]["flags"] = ["fronts_disagree"]
+    service = start(tmp_path, [group])
+    saved = correct(service, 1, "municipality", "27")
+    assert saved["membership"]["outcome"] == "ambiguous"
+    assert current(service, 1)[2] is current(service, 2)[2]
+
+
+def test_resaving_the_same_identity_value_does_not_move_the_card(tmp_path):
+    service = start(tmp_path, [with_front(raw_record(1, "6"), 2, "6"), raw_record(3)])
+    saved = correct(service, 3, "municipality", "27")
+    assert not saved["structural_change"]
+    assert current(service, 1)[2] is not current(service, 3)[2]
+
+
+def test_later_identity_edit_in_the_destination_blocks_structural_undo(tmp_path):
+    service = start(
+        tmp_path,
+        [
+            raw_record(1),
+            with_front(raw_record(3, "7"), 4, "7"),
+            with_front(raw_record(5, "9"), 6, "9"),
+            with_front(raw_record(7, "9", household="2"), 8, "9"),
+        ],
+    )
+    saved = correct(service, 1, "dwelling_no", "7")
+    assert saved["structural_change"]
+    later = correct(service, 3, "dwelling_no", "9", "target-edit")
+    assert later["membership"]["outcome"] == "ambiguous"
+    with pytest.raises(ReviewError, match="changed its municipality or dwelling"):
+        undo(service, saved)
 
 
 def test_ambiguous_destination_saves_correction_and_duplicate_without_moving(tmp_path):
@@ -340,7 +423,7 @@ def test_missing_per_card_fields_are_not_borrowed(tmp_path):
     record["dwelling"]["households"].append(
         raw_record(2, rooms="7")["dwelling"]["households"][0]
     )
-    prepared, report = prepare_records([record])
+    prepared, report = prepare_records([legacy(record)])
     second = prepared[0]["dwelling"]["households"][1]
     assert second["house"]["total_number_of_rooms"]["status"] == "omitted"
     assert second["dwelling_no"]["value"] is None
@@ -350,10 +433,11 @@ def test_missing_per_card_fields_are_not_borrowed(tmp_path):
 
 def test_recovered_fields_use_own_primary_reading_and_no_borrowed_confidence(tmp_path):
     record = raw_record(1, rooms="6")
-    record["dwelling"]["house"]["total_number_of_rooms"]["confidence"] = 0.98
     record["dwelling"]["households"].append(
         raw_record(2, rooms="7")["dwelling"]["households"][0]
     )
+    record = legacy(record)
+    record["dwelling"]["house"]["total_number_of_rooms"]["confidence"] = 0.98
     rows, _ = prepare_records(
         [record],
         {
@@ -470,7 +554,7 @@ def test_link_request_replay_does_not_duplicate_retained_bundle(tmp_path):
 
 
 def test_preparation_refuses_review_history_and_is_deterministic(tmp_path):
-    original = raw_record(1)
+    original = legacy(raw_record(1))
     original["dwelling"]["dwelling_no"].update(origin="corrected", original_value="5")
     first, receipt = prepare_records([original])
     second, repeated = prepare_records([original])
@@ -597,13 +681,22 @@ def test_http_duplicate_confirmation_unqueued_peer_edit_and_progress(prepared_ap
     assert queue["association_summary"]["duplicate_cards"] == 0
 
 
-def test_normal_http_app_requires_prepared_data(tmp_path):
+def test_http_app_serves_published_data_and_refuses_a_mixed_dataset(tmp_path):
     from fastapi.testclient import TestClient
-    from review_support import setup_review
+    from review_support import git, setup_review, synthetic_record
 
     from survey.review.api import create_app
 
     _, settings = setup_review(tmp_path, with_git=True)
+    with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
+        assert not client.get("/api/health").json()["diagnostics"]
+    other = synthetic_record()
+    other["region"] = "other"
+    prepared, _ = prepare_records([other])
+    checkout = settings.data_checkout
+    (checkout / "results" / "other.jsonl").write_text(json.dumps(prepared[0]) + "\n")
+    git(checkout, "add", "results/other.jsonl")
+    git(checkout, "commit", "-m", "Mix one prepared region")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8765") as client:
         assert (
             client.get("/api/health").json()["diagnostics"][0]["code"]
@@ -618,6 +711,7 @@ def test_staging_is_deterministic_pins_evidence_and_preserves_inputs(tmp_path):
     record["dwelling"]["households"].append(
         raw_record(2, rooms="7")["dwelling"]["households"][0]
     )
+    record = legacy(record)
     source = tmp_path / "published"
     source.mkdir()
     original = json.dumps(record) + "\n"
@@ -736,7 +830,7 @@ def test_departing_card_cannot_leave_its_owned_note_in_a_multi_card_group(tmp_pa
 
 def test_region_refresh_does_not_resolve_unaffected_assignments(tmp_path, monkeypatch):
     service = start(tmp_path)
-    rows, _ = prepare_records([raw_record(1)])
+    rows, _ = prepare_records([legacy(raw_record(1))])
     rows[0]["region"] = "other"
     # Physical IDs are region-scoped; derive flags in this independent region.
     from survey.review.relinking import refresh_identities
@@ -763,7 +857,7 @@ def test_primary_alias_recovery_uses_saved_reply_without_extraction():
     record = raw_record(1)
     record["dwelling"]["households"].append(raw_record(2)["dwelling"]["households"][0])
     rows, _ = prepare_records(
-        [record],
+        [legacy(record)],
         {
             ("demo", "synthetic.pdf", 2): {
                 "fields": {"Number of Dwelling": "6"},
@@ -785,7 +879,7 @@ def test_preparation_has_no_pipeline_model_or_scoring_dependency(monkeypatch):
         "survey.extraction.qwen_server",
     ):
         monkeypatch.setitem(sys.modules, module, None)
-    rows, _ = prepare_records([raw_record(1)])
+    rows, _ = prepare_records([legacy(raw_record(1))])
     assert rows[0]["schema_version"] == "0.7.0"
 
 
@@ -794,8 +888,11 @@ def test_later_explicit_provisional_link_blocks_prior_automatic_undo(tmp_path):
     source["dwelling"]["households"].append(
         raw_record(2, household="2")["dwelling"]["households"][0]
     )
-    service = start(tmp_path, [source, with_front(raw_record(3, "7"), 4, "7")])
-    # No matching dwelling 8 exists: split this card to a provisional group.
+    service = start(
+        tmp_path,
+        [source, with_front(raw_record(3, "7"), 4, "7")],
+    )
+    # Page 2 still reads 6 and no dwelling 8 exists: split to a provisional group.
     saved = correct(service, 1, "dwelling_no", "8")
     assert saved["structural_change"]
     cid = owner("demo", current(service, 1)[3])

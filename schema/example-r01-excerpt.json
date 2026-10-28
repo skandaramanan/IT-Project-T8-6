@@ -1,26 +1,8 @@
 {
-  "schema_version": "0.6.0",
+  "schema_version": "0.7.0",
   "region": "williamstown",
   "batch": "1973-0002-00049-1-25-1-20",
   "dwelling": {
-    "municipality": {
-      "value": "27",
-      "code": "27",
-      "label": "Williamstown",
-      "status": "ok",
-      "confidence": 0.96,
-      "negated": false,
-      "source": "coding-front"
-    },
-    "dwelling_no": {
-      "value": "6",
-      "code": null,
-      "label": null,
-      "status": "ok",
-      "confidence": 0.93,
-      "negated": false,
-      "source": "coding-front"
-    },
     "address": {
       "value": "164 Hall St, Spotswood",
       "code": null,
@@ -37,61 +19,79 @@
       "confidence": 0.88,
       "source": "survey-front"
     },
-    "house": {
-      "type_of_dwelling": {
-        "value": "1",
-        "code": "1",
-        "label": "Detached, one storey",
-        "status": "ok",
-        "confidence": 0.95,
-        "negated": false
-      },
-      "structural_material": {
-        "value": "1",
-        "code": "1",
-        "label": "Wood",
-        "status": "ok",
-        "confidence": 0.94,
-        "negated": false
-      },
-      "age_of_house": {
-        "value": "13",
-        "code": null,
-        "label": null,
-        "status": "ok",
-        "confidence": 0.9,
-        "negated": false
-      },
-      "garden": {
-        "value": "3",
-        "code": "3",
-        "label": "Some cultivated space",
-        "status": "ok",
-        "confidence": 0.91,
-        "negated": false
-      },
-      "state_of_repair": {
-        "value": "1",
-        "code": "1",
-        "label": "Good or fair repair",
-        "status": "ok",
-        "confidence": 0.89,
-        "negated": false
-      },
-      "number_of_sleepouts": {
-        "value": "4",
-        "code": "4",
-        "label": "Two or more sleepouts",
-        "status": "ok",
-        "confidence": 0.82,
-        "negated": false,
-        "origin": "corrected",
-        "original_value": "0"
-      }
-    },
     "households": [
       {
         "record_id": "27-0006-01",
+        "municipality": {
+          "value": "27",
+          "code": "27",
+          "label": "Williamstown",
+          "status": "ok",
+          "confidence": 0.96,
+          "negated": false,
+          "source": "coding-front"
+        },
+        "dwelling_no": {
+          "value": "6",
+          "code": null,
+          "label": null,
+          "status": "ok",
+          "confidence": 0.93,
+          "negated": false,
+          "source": "coding-front"
+        },
+        "house": {
+          "type_of_dwelling": {
+            "value": "1",
+            "code": "1",
+            "label": "Detached, one storey",
+            "status": "ok",
+            "confidence": 0.95,
+            "negated": false
+          },
+          "structural_material": {
+            "value": "1",
+            "code": "1",
+            "label": "Wood",
+            "status": "ok",
+            "confidence": 0.94,
+            "negated": false
+          },
+          "age_of_house": {
+            "value": "13",
+            "code": null,
+            "label": null,
+            "status": "ok",
+            "confidence": 0.9,
+            "negated": false
+          },
+          "garden": {
+            "value": "3",
+            "code": "3",
+            "label": "Some cultivated space",
+            "status": "ok",
+            "confidence": 0.91,
+            "negated": false
+          },
+          "state_of_repair": {
+            "value": "1",
+            "code": "1",
+            "label": "Good or fair repair",
+            "status": "ok",
+            "confidence": 0.89,
+            "negated": false
+          },
+          "number_of_sleepouts": {
+            "value": "4",
+            "code": "4",
+            "label": "Two or more sleepouts",
+            "status": "ok",
+            "confidence": 0.82,
+            "negated": false,
+            "origin": "corrected",
+            "original_value": "0"
+          }
+        },
         "household_no": {
           "value": "1",
           "code": null,
@@ -213,7 +213,7 @@
           "normal_household_income": {
             "value": "999",
             "code": "999",
-            "label": "Unknown because over \u00a310",
+            "label": "Unknown because over £10",
             "status": "ok",
             "confidence": 0.91,
             "negated": false
@@ -397,15 +397,7 @@
             "confidence": null
           }
         ],
-        "municipality": {
-          "value": "27",
-          "code": "27",
-          "label": "Williamstown",
-          "status": "ok",
-          "confidence": 0.96,
-          "negated": false,
-          "source": "coding-front"
-        }
+        "flags": []
       }
     ],
     "notes": [

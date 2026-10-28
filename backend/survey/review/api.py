@@ -113,7 +113,7 @@ def error_response(code, message, status):
     )
 
 
-def create_app(settings: Settings, *, require_prepared: bool = True) -> FastAPI:
+def create_app(settings: Settings) -> FastAPI:
     sessions = {}
     stop = Event()
     worker = None
@@ -129,14 +129,17 @@ def create_app(settings: Settings, *, require_prepared: bool = True) -> FastAPI:
             sync = GitSync(settings.data_checkout, store, settings.data_branch)
             sync.writer_lock.acquire()
             store.reload()
-            if require_prepared and any(
-                r["schema_version"] != "0.7.0"
+            # One ownership model per dataset: published 0.6.0 data keeps the
+            # shared first-card reviewer until a prepared 0.7.0 seed is adopted.
+            prepared = {
+                r["schema_version"] == "0.7.0"
                 for records, _ in store.regions.values()
                 for r in records
-            ):
+            }
+            if len(prepared) > 1:
                 raise ReviewError(
                     "review_preparation_required",
-                    "Prepare a separate schema 0.7.0 review dataset before starting this reviewer; published results were not changed",
+                    "The review dataset mixes prepared schema 0.7.0 and published records; adopt one prepared seed for every region",
                 )
             refs, diagnostics = load_queue(settings.flags)
             service = ReviewService(

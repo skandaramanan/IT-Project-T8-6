@@ -408,10 +408,15 @@ def analyze_candidate(
                 "conflict": after_conflict,
             }
         )
+    # Only a changed dwelling identity re-plans membership: re-saving the same
+    # value must not move the card.
+    published = model.inventory(service.store.regions[ref.region][0])[ref.card_id][3]
     membership = (
         model.plan_membership(records, ref.card_id)
         if action == "correct"
         and candidate.descriptor.identity_kind in {"municipality", "dwelling"}
+        and model.dwelling_key(model.inventory(records)[ref.card_id][3])
+        != model.dwelling_key(published)
         else {"outcome": "unchanged", "target_card_id": None, "candidates": []}
     )
     return {

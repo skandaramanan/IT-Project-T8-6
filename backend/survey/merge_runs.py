@@ -91,15 +91,9 @@ def cache_reading(path):
 
 
 def coding_targets(record, index):
-    d = record["dwelling"]
-    h = d["households"][index]
+    h = record["dwelling"]["households"][index]
     for label, (key, group) in FIELD_MAP.items():
-        if group in {"dwelling", "house"}:
-            if index:
-                continue
-            fields = d if group == "dwelling" else d["house"]
-        else:
-            fields = h if group == "household" else h[group]
+        fields = h if group in {"household", "dwelling"} else h[group]
         yield label, fields[key]
     yield "Municipality", h["municipality"]
 

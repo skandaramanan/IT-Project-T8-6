@@ -522,13 +522,17 @@ def card_index(records: list[dict]) -> dict:
     return matches
 
 
-def field_pointer(key: str, group: str, index: int) -> str:
-    """The JSON pointer to a FIELD_MAP field on household ``index``."""
-    if group == "dwelling":
+def field_pointer(key: str, group: str, index: int, *, shared=False) -> str:
+    """The JSON pointer to a FIELD_MAP field on household ``index``.
+
+    Each card owns its fields (0.7.0); ``shared`` gives the 0.6.0 pointer,
+    where dwelling and house fields sit once on the dwelling.
+    """
+    if shared and group == "dwelling":
         return f"/dwelling/{key}"
-    if group == "house":
+    if shared and group == "house":
         return f"/dwelling/house/{key}"
-    if group == "household":
+    if group in {"dwelling", "household"}:
         return f"/dwelling/households/{index}/{key}"
     return f"/dwelling/households/{index}/{group}/{key}"
 
@@ -605,7 +609,7 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             spec,
         )
     for label, (key, group) in FIELD_MAP.items():
-        pointer = field_pointer(key, group, index)
+        pointer = field_pointer(key, group, index, shared=True)
         if pointer != ref.field_path:
             continue
         if group in {"dwelling", "house"} and index != 0:

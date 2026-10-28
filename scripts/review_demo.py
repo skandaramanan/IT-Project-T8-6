@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from survey.extraction.record import build_record
-from survey.review.prepare import prepare_records
+from survey.review.relinking import finish_records
 
 
 def git(where, *args):
@@ -58,7 +58,6 @@ def create_demo(root: Path):
         ]:
             draw.text((50, y), text, fill="black", font_size=30)
         pages.append(image)
-    records, _ = prepare_records(records)
     record = records[0]
     record["dwelling"]["households"].append(records[1]["dwelling"]["households"][0])
     record["dwelling"]["address"] = {
@@ -71,8 +70,6 @@ def create_demo(root: Path):
         {"role": "survey-front", "image": "synthetic.pdf", "page": 3},
         {"role": "survey-back", "image": "synthetic.pdf", "page": 4},
     ]
-    for household in record["dwelling"]["households"]:
-        household.pop("relink", None)  # this synthetic group now has a front
     record["dwelling"]["notes"] = [
         {
             "front_page": 3,
@@ -102,6 +99,7 @@ def create_demo(root: Path):
         draw.text((50, 150), label, fill="black", font_size=30)
         draw.text((50, 250), value, fill="black", font_size=30)
         pages.append(image)
+    finish_records([record])  # build_record output is already schema 0.7.0
     (results / "demo.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
     pages[0].save(scan_dir / "synthetic.pdf", save_all=True, append_images=pages[1:])
     pointers = [

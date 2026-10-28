@@ -78,12 +78,12 @@ def patch(path: Path, excluded_path: Path) -> tuple[int, int, int]:
             readings[card["image"], card["page"]] = result
             groups = {
                 "household": household,
+                "dwelling": household,
+                "house": household["house"],
                 "head": household["head"],
                 "counts": household["counts"],
                 "coding": household["coding"],
             }
-            if index == 0:  # the dwelling's fields came from its first card
-                groups |= {"dwelling": dwelling, "house": dwelling["house"]}
             filled += fill(groups, result)
         _score(record, readings, MODEL_ID)
     _settle_identities(records)

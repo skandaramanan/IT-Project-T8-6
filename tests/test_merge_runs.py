@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import asdict, replace
 
 import pytest
+import review_support
 from review_support import decide, refs, setup_review
 
 from survey.confidence.card import card_confidence
@@ -13,6 +14,12 @@ from survey.extraction.card_fields import FIELD_SCHEMA
 from survey.extraction.record import build_record
 from survey.merge_runs import cache_reading, merge_region, score_household
 from survey.records import validate_records
+
+
+@pytest.fixture
+def prepared(monkeypatch):
+    """Merges read only prepared 0.7.0 data."""
+    monkeypatch.setattr(review_support, "PREPARED", True)
 
 
 def reading(**updates):
@@ -45,7 +52,11 @@ def test_second_household_uses_own_shared_raw_fields():
     pairs, scores, _ = score_household(r, 1, a, b)
     assert pairs["Garden"]["a"] == "2"
     assert scores["Garden"]["source_agreement"] == "disagree"
-    assert r["dwelling"]["house"]["garden"]["value"] == "1"
+    assert r["dwelling"]["households"][0]["house"]["garden"]["value"] == "1"
+    # a later card scores its own dwelling_no and house fields (0.7.0)
+    assert h["house"]["garden"]["confidence"] == scores["Garden"]["confidence"]
+    assert h["dwelling_no"]["confidence"] == scores["Number of Dwelling"]["confidence"]
+    assert "Number of Dwelling" in pairs
     assert h["cards"][0]["confidence"] == card_confidence(
         s["confidence"] for s in scores.values()
     )
@@ -56,17 +67,17 @@ def test_explicit_gemini_blank_and_omission_never_take_qwen():
     del a.fields["Washouse"]
     r = single(a)
     _, scores, _ = score_household(r, 0, a, reading())
-    assert r["dwelling"]["house"]["garden"]["value"] is None
+    assert r["dwelling"]["households"][0]["house"]["garden"]["value"] is None
     assert scores["Garden"]["source_agreement"] == "one_blank"
-    assert r["dwelling"]["house"]["washouse"]["status"] == "omitted"
+    assert r["dwelling"]["households"][0]["house"]["washouse"]["status"] == "omitted"
     assert scores["Washouse"]["confidence"] == 0.0
 
 
 def test_only_whole_gemini_failure_substitutes_qwen():
     r = single(reading())
     score_household(r, 0, None, reading(Garden="2"), first_state="failed")
-    assert r["dwelling"]["house"]["garden"]["value"] == "2"
-    assert r["dwelling"]["house"]["garden"]["confidence"] == 0.85
+    assert r["dwelling"]["households"][0]["house"]["garden"]["value"] == "2"
+    assert r["dwelling"]["households"][0]["house"]["garden"]["confidence"] == 0.85
 
 
 def test_missing_qwen_scores_primary_and_failure_stays_distinct(tmp_path):
@@ -83,7 +94,9 @@ def test_missing_qwen_scores_primary_and_failure_stays_distinct(tmp_path):
     assert {s["source_agreement"] for s in audit[0]["fields"].values()} == {
         "no_second_opinion"
     }
-    assert merged[0]["dwelling"]["house"]["garden"]["confidence"] == 0.91
+    assert (
+        merged[0]["dwelling"]["households"][0]["house"]["garden"]["confidence"] == 0.91
+    )
     assert cache_reading(tmp_path / "absent.json")[1] == "absent"
     cached(tmp_path / "failed", ExtractionResult())
     assert cache_reading(tmp_path / "failed/synthetic_p0001.json")[1] == "failed"
@@ -97,13 +110,13 @@ def test_primary_alias_fill_only_changes_unreviewed_omission(tmp_path):
     cached(tmp_path / "a", a)
     cached(tmp_path / "b", a)
     merged, audit = merge_region("demo", [r], tmp_path / "a", tmp_path / "b")
-    assert merged[0]["dwelling"]["house"]["washouse"]["value"] == "1"
+    assert merged[0]["dwelling"]["households"][0]["house"]["washouse"]["value"] == "1"
     assert audit[0]["overrides"]["Washouse"] == "primary_label_alias_recovered"
-    assert r["dwelling"]["house"]["washouse"]["status"] == "omitted"
+    assert r["dwelling"]["households"][0]["house"]["washouse"]["status"] == "omitted"
 
 
 @pytest.mark.parametrize("action", ["accept", "correct", "no_data", "illegible"])
-def test_real_review_payload_and_history_survive(tmp_path, action):
+def test_real_review_payload_and_history_survive(tmp_path, action, prepared):
     service, _ = setup_review(tmp_path)
     result = decide(
         service, refs()[1], action=action, value="09" if action == "correct" else None
@@ -137,22 +150,22 @@ def test_real_review_payload_and_history_survive(tmp_path, action):
     validate_records(merged, "demo")
 
 
-def test_accepted_omitted_field_never_filled(tmp_path):
+def test_accepted_omitted_field_never_filled(tmp_path, prepared):
     service, _ = setup_review(tmp_path)
-    ref = replace(refs()[2], field_path="/dwelling/house/washouse")
+    ref = replace(refs()[2], field_path="/dwelling/households/0/house/washouse")
     service.replace_queue([ref], [])
     accepted = decide(service, ref, action="accept", value=None)["item"]["field"]
     a = reading()
     r = single(a)
-    r["dwelling"]["house"]["washouse"] = deepcopy(accepted)
+    r["dwelling"]["households"][0]["house"]["washouse"] = deepcopy(accepted)
     score_household(r, 0, a, a)
-    assert r["dwelling"]["house"]["washouse"] == accepted
+    assert r["dwelling"]["households"][0]["house"]["washouse"] == accepted
 
 
 def test_identity_reread_is_preserved_without_qwen_agreement():
     a = reading()
     r = single(a)
-    r["dwelling"]["dwelling_no"]["value"] = "7"
+    r["dwelling"]["households"][0]["dwelling_no"]["value"] = "7"
     _, scores, overrides = score_household(r, 0, a, a)
     assert scores["Number of Dwelling"]["value"] == "7"
     assert scores["Number of Dwelling"]["confidence"] == 0.0
@@ -172,13 +185,13 @@ def test_ordinary_agreement_uses_recalibrated_score():
     a = reading()
     r = single(a)
     score_household(r, 0, a, a)
-    assert r["dwelling"]["house"]["garden"]["confidence"] == 0.98
+    assert r["dwelling"]["households"][0]["house"]["garden"]["confidence"] == 0.98
 
 
 def test_unexplained_primary_drift_refuses():
     a = reading()
     r = single(a)
-    r["dwelling"]["house"]["garden"]["value"] = "9"
+    r["dwelling"]["households"][0]["house"]["garden"]["value"] = "9"
     with pytest.raises(ValueError, match="differs"):
         score_household(r, 0, a, a)
 
@@ -349,7 +362,7 @@ def test_reviewed_qwen_discrepancy_refuses_without_overwriting_human_decision(tm
     inputs = prepared_merge(tmp_path)
     path = inputs[1] / "demo.jsonl"
     record = json.loads(path.read_text())
-    field = record["dwelling"]["house"]["garden"]
+    field = record["dwelling"]["households"][0]["house"]["garden"]
     # A human-modified published value is not proof of the supplied raw
     # reading's lineage; preserve it and require matching evidence.
     field.update(value="2", origin="corrected", original_value="1")

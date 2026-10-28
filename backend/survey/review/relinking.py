@@ -128,6 +128,34 @@ def refresh_identities(records):
                 )
 
 
+def finish_records(records):
+    """Give per-card records their derived review state (schema 0.7.0).
+
+    A card with no survey front is provisional, a note's ``household_id``
+    resolves to its card within its own group, and IDs and identity flags are
+    recomputed. Shared by the pipeline and preparation, so both write the same.
+    """
+    for r in records:
+        d = r["dwelling"]
+        fronted = any(c["role"] == "survey-front" for c in d.get("cards", []))
+        for h in d["households"]:
+            if not fronted and "relink" not in h:
+                h["relink"] = {
+                    "state": "provisional",
+                    "reason": "This card has no associated survey front",
+                }
+        for note in d.get("notes", []):
+            if note.get("household_card_id") or note.get("household_id") is None:
+                continue
+            matches = [
+                h for h in d["households"] if h["record_id"] == note["household_id"]
+            ]
+            if len(matches) == 1:
+                note["household_card_id"] = owner(r["region"], matches[0])
+    refresh_identities(records)
+    return records
+
+
 def front_number(dwelling):
     raw = dwelling.get("handwritten", {}).get("dwelling_no", {})
     if raw.get("status") != "ok":
@@ -211,6 +239,34 @@ def group_candidate(record, key, pdf, *, current=False):
     }
 
 
+def current_fits(record, h, key):
+    """Keep an existing association unless its other evidence contradicts it.
+
+    Unknown readings do not contradict. The edited card alone does not
+    corroborate its own group: a sole coding-only card has nothing to keep.
+    """
+    d = record["dwelling"]
+    known = {dwelling_key(o) for o in d["households"] if o is not h} - {None}
+    number = front_number(d)
+    if (
+        known - {key}
+        or (number and number != key.split("-")[1])
+        or "fronts_disagree" in d.get("flags", [])
+    ):
+        return False
+    return len(d["households"]) > 1 or any(
+        c["role"] == "survey-front" for c in d.get("cards", [])
+    )
+
+
+def partly_fits(record, h, key):
+    """A sibling card or the front still reads this card's dwelling."""
+    d = record["dwelling"]
+    return key in {dwelling_key(o) for o in d["households"] if o is not h} or (
+        front_number(d) == key.split("-")[1]
+    )
+
+
 def plan_membership(records, card_id):
     ri, _, record, h = inventory(records)[card_id]
     key, pdf = dwelling_key(h), coding_source(h)["image"]
@@ -220,12 +276,17 @@ def plan_membership(records, card_id):
             c = group_candidate(r, key, pdf, current=i == ri)
             if c:
                 candidates.append(c)
-    current = next((c for c in candidates if c["current"] and c["clear"]), None)
     others = [c for c in candidates if not c["current"]]
-    # A coding-only current group is provisional, not a competing destination.
-    if current and not others:
-        outcome, target = "unchanged", None
-    elif current or len(others) > 1 or (others and not others[0]["clear"]):
+    if key and current_fits(record, h, key):
+        # The existing association competes with any other compatible group.
+        outcome, target = ("ambiguous" if others else "unchanged"), None
+    elif (
+        (key and partly_fits(record, h, key))
+        or len(others) > 1
+        or (others and not others[0]["clear"])
+    ):
+        # Mixed evidence that still backs this group is a reviewer's choice,
+        # never an automatic split.
         outcome, target = "ambiguous", None
     elif others:
         outcome, target = "clear", others[0]["card_id"]
@@ -271,6 +332,11 @@ def frame(record):
         "envelope": {k: deepcopy(v) for k, v in record.items() if k != "dwelling"},
         "flags": deepcopy(record["dwelling"].get("flags", [])),
         "topology": topology(record),
+        # Each member's dwelling identity, so Undo sees a later edit to any of them.
+        "keys": {
+            owner(record["region"], h): dwelling_key(h)
+            for h in record["dwelling"]["households"]
+        },
     }
 
 
@@ -391,6 +457,12 @@ def undo_move(records, effect):
             raise ReviewError(
                 "undo_conflict",
                 "Affected dwelling membership or supplementary ownership changed; undo that dependency first",
+                409,
+            )
+        if actual["keys"] != expected["keys"]:
+            raise ReviewError(
+                "undo_conflict",
+                "A card in an affected dwelling changed its municipality or dwelling; undo that dependency first",
                 409,
             )
         affected.append(r)

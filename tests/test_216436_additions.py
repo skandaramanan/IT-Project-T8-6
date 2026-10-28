@@ -181,7 +181,7 @@ def test_coding_corrections_keep_identity_aliases_and_missing_machine_values():
     additions.annotate_corrections(record, {("coding", 585): original}, index)
     dwelling = record["dwelling"]
     assert dwelling["households"][0]["record_id"] == "14-0233-01"
-    for field in [dwelling["municipality"], dwelling["households"][0]["municipality"]]:
+    for field in [dwelling["households"][0]["municipality"]]:
         assert (field["value"], field["original_value"], field["origin"]) == (
             "14",
             "21",
@@ -302,12 +302,12 @@ def test_existing_review_and_manual_correction_payloads_cannot_be_overwritten():
         image=additions.PDF_NAME,
         page=551,
     )
-    old["dwelling"]["dwelling_no"].update(
+    old["dwelling"]["households"][0]["dwelling_no"].update(
         origin="corrected", original_value="209522", review={"state": "accepted"}
     )
     additions.protect_published_corrections([old], [deepcopy(old)])
     changed = deepcopy(old)
-    changed["dwelling"]["dwelling_no"].pop("review")
+    changed["dwelling"]["households"][0]["dwelling_no"].pop("review")
     with pytest.raises(ValueError, match="overwrite a published correction or review"):
         additions.protect_published_corrections([old], [changed])
     with pytest.raises(ValueError, match="overwrite a published correction or review"):

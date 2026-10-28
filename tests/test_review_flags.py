@@ -5,6 +5,7 @@ import json
 import random
 
 import pytest
+from review_support import legacy
 
 from survey import cli
 from survey.extraction.card_fields import FIELD_SCHEMA, FIELD_SCHEMA_BY_NAME
@@ -24,7 +25,10 @@ def record(record_id="27-0006-01", region="216412", card_confidence=None, **scor
         "Number of Dwelling": dwelling,
         "Number of Household": household,
     }
-    built = build_record(fields, region=region, image="unit.pdf", page=int(dwelling))
+    # These cover the published 0.6.0 queue (shared first-card fields).
+    built = legacy(
+        build_record(fields, region=region, image="unit.pdf", page=int(dwelling))
+    )
     for _, field in current_fields(built):
         field |= {"status": "ok", "confidence": AGREE_CONFIDENCE}
     built["dwelling"]["households"][0]["cards"][0]["confidence"] = card_confidence

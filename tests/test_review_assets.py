@@ -10,8 +10,7 @@ def test_no_build_serves_existing_test_page(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "FRONTEND_DIST", tmp_path / "no-build")
     _, settings = setup_review(tmp_path, with_git=True)
     with TestClient(
-        api.create_app(settings, require_prepared=False),
-        base_url="http://127.0.0.1:8765",
+        api.create_app(settings), base_url="http://127.0.0.1:8765"
     ) as client:
         assert "integration test" in client.get("/").text
         assert client.get("/app.js").status_code == 200
@@ -29,8 +28,7 @@ def test_build_served_outside_cwd_and_api_routes_still_work(tmp_path, monkeypatc
     _, settings = setup_review(tmp_path, with_git=True)
     monkeypatch.chdir(tmp_path)
     with TestClient(
-        api.create_app(settings, require_prepared=False),
-        base_url="http://127.0.0.1:8765",
+        api.create_app(settings), base_url="http://127.0.0.1:8765"
     ) as client:
         assert client.get("/").text == '<script src="/assets/reviewer.js"></script>'
         response = client.get("/assets/reviewer.js")

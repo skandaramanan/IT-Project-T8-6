@@ -45,7 +45,7 @@ def _pointers(index: int, *, review=False) -> Iterator[tuple[int, str, str]]:
         # Other dwelling-level fields belong to the first household.
         elif group in {"dwelling", "house"} and index:
             continue
-        yield order, spec.name, field_pointer(key, group, index)
+        yield order, spec.name, field_pointer(key, group, index, shared=True)
 
 
 def build_flags(

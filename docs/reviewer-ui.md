@@ -231,7 +231,7 @@ at the configured scan root (`Node ID`/`Node Title`, including UTF-8 BOM); missi
 metadata falls back to the region ID. Region IDs are never replaced by guessed suburbs.
 Coding fields follow `FIELD_SCHEMA` printed order, not `FIELD_MAP` domain grouping.
 Other stored fields are visible but only supplied flags can be opened for decisions.
-Shared building fields appear on household 0 only. The active field scrolls into view.
+In 0.6.0 data shared building fields appear on household 0 only; in 0.7.0 each card shows its own. The active field scrolls into view.
 Card tabs show scan page and remaining flags. Code meanings use the existing closed
 and sentinel maps; ordinary amounts remain valid and unknown digit codes can still
 be saved with the backend's warning. No new validation policy is introduced.
@@ -341,7 +341,7 @@ The field locator names its printed column and label, without claiming a pixel
 location or universal line number (C2 prints an extra field). Columns remain
 expanded, including decided fields. The card selector omits unqueued coding
 cards and places reviewed cards last; Open survey front exposes the front scan
-directly. The actual shared building fields remain on household 0.
+directly. In 0.6.0 data the shared building fields remain on household 0.
 
 Readable, pending fields outside the supplied queue with confidence at least
 0.98 appear under High-confidence fields not queued for review. This disclosure

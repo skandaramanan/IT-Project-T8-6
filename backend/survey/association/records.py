@@ -2,15 +2,16 @@
 
 Each coding card is a household and gives it its identity (``record_id``); the
 survey front adds the address, the dwelling as written, and the person grid.
-A household whose identity doesn't check out is still written, with a null
-``record_id`` and its dwelling's flags saying why (D007), so a reviewer can
-fix it rather than lose it.
+Each household keeps its own card's municipality, dwelling number and house
+(schema 0.7.0). A household whose identity doesn't check out is still written,
+with a null ``record_id`` and its dwelling's flags saying why (D007), so a
+reviewer can fix it rather than lose it. A record_id two cards share is kept
+by both; ``survey.review.relinking.finish_records`` flags every peer.
 """
 
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
@@ -33,9 +34,6 @@ Extracted = list[tuple[SegmentedCard, ExtractionResult | None]]
 Locate = Callable[[SegmentedCard], tuple[str, int]]
 
 log = logging.getLogger(__name__)
-
-# A household not placed by its dwelling number.
-UNSURE = {ReviewFlag.UNPLACED, ReviewFlag.PAIRED_BY_POSITION}
 
 # Front fields D007 already has a dwelling slot for; the rest go in ``handwritten``.
 FRONT_SLOTS = ("address", "families_in_dwelling")
@@ -97,14 +95,11 @@ def _record(
         households.append(household)
     if not households:
         return None
-    # The shared municipality is the first card's; every household also keeps
-    # its own field, including when its record_id is null.
-    if len({h["dwelling"]["municipality"]["value"] for h in households}) > 1:
-        dwelling.flags.add(ReviewFlag.MUNICIPALITY_MISMATCH)
-
     record = households[0]
     out = record["dwelling"]
     out["households"] = [h["dwelling"]["households"][0] for h in households]
+    if len({h["municipality"]["value"] for h in out["households"]}) > 1:
+        dwelling.flags.add(ReviewFlag.MUNICIPALITY_MISMATCH)
 
     # A front not read (a run without them, or a failed reading) adds nothing.
     fronts = [
@@ -150,10 +145,11 @@ def build_dwelling_records(
     Every coding card read with any value is written. One whose number fits no
     front pairs with the front at the batch's usual offset, flagged
     ``paired_by_position``; one that still fits none is a dwelling of its own,
-    flagged ``unplaced``. A household with no record_id,
-    or with one another household also has, is written with a null
-    ``record_id``. A record's ``flags`` say why it needs a look. A coding card
-    with no value at all is a blank page or a reverse, and is left unplaced.
+    flagged ``unplaced``. A household with no record_id is written with a
+    null one; one another household also has is kept as read, and
+    ``relinking.finish_records`` flags the duplicates. A record's ``flags`` say
+    why it needs a look. A coding card with no value at all is a blank page or
+    a reverse, and is left unplaced.
 
     A dwelling with no coding card yields no record. Nor does one with a coding
     card that has no reading, which would otherwise be recorded a household
@@ -209,34 +205,12 @@ def build_dwelling_records(
         (d, _record(d, results, region=region, batch=batch, locate=locate))
         for d in dwellings
     ]
-    # A record_id two households share is kept by neither, unless only one of
-    # them sits with a front by its number and was read whole: a card placed
-    # by position alone, or not at all, or whose identity a second reading
-    # filled, is the likelier misread.
-    second = {locate(c) for c in reread}
-
-    def unsure(dwelling: Dwelling, household: dict[str, Any]) -> bool:
-        card = household["cards"][0]
-        return bool(dwelling.flags & UNSURE) or (card["image"], card["page"]) in second
-
-    placed, lone = Counter(), Counter()
-    for dwelling, record in built:
-        for household in record["dwelling"]["households"] if record else []:
-            if household["record_id"]:
-                is_lone = unsure(dwelling, household)
-                (lone if is_lone else placed)[household["record_id"]] += 1
     # Every front is unnumbered when none was read; flagging each is noise.
     quiet = set() if fronts_read else {ReviewFlag.MISSING_DWELLING_NO}
     records = []
     for dwelling, record in built:
         if record is None:
             continue
-        for household in record["dwelling"]["households"]:
-            record_id = household["record_id"]
-            shared = placed[record_id] + lone[record_id] > 1
-            if shared and (placed[record_id] != 1 or unsure(dwelling, household)):
-                household["record_id"] = None
-                dwelling.flags.add(ReviewFlag.DUPLICATE_RECORD_ID)
         if flags := dwelling.flags - quiet:
             record["dwelling"]["flags"] = sorted(map(str, flags))
         records.append(record)
@@ -249,10 +223,10 @@ def _has_value(result: ExtractionResult | None) -> bool:
 
 def _identity(record: dict[str, Any]) -> str:
     """What was read for record_id, blanks shown as ?: 21-28548-1, 21-487-?."""
-    dwelling = record["dwelling"]
+    household = record["dwelling"]["households"][0]
     parts = (
-        dwelling["municipality"],
-        dwelling["dwelling_no"],
-        dwelling["households"][0]["household_no"],
+        household["municipality"],
+        household["dwelling_no"],
+        household["household_no"],
     )
     return "-".join(field["value"] or "?" for field in parts)

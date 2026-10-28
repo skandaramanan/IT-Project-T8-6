@@ -81,7 +81,8 @@ def prepare_records(records, readings=None, evidence=None):
                 if raw is not None
                 else None
             )
-            own = recovered["dwelling"] if recovered else None
+            # build_record gives the card its own readings (schema 0.7.0).
+            own = recovered["dwelling"]["households"][0] if recovered else None
             if hi == 0:
                 if "municipality" in h and h["municipality"] != d["municipality"]:
                     raise ValueError(
@@ -138,22 +139,7 @@ def prepare_records(records, readings=None, evidence=None):
                     h["flags"] = sorted(
                         set(h.get("flags", [])) | {"missing_card_reading"}
                     )
-            if not any(c["role"] == "survey-front" for c in d.get("cards", [])):
-                h["relink"] = {
-                    "state": "provisional",
-                    "reason": "This card has no associated survey front",
-                }
             report["cards"] += 1
-        # Existing non-null note links are resolved only within their own group.
-        for note in d.get("notes", []):
-            matches = [
-                h
-                for h in d["households"]
-                if note.get("household_id") is not None
-                and h["record_id"] == note["household_id"]
-            ]
-            if len(matches) == 1:
-                note["household_card_id"] = model.owner(new["region"], matches[0])
         for path, field in current_fields(old):
             target = path
             if path[:2] in {
@@ -186,7 +172,8 @@ def prepare_records(records, readings=None, evidence=None):
         for key in ("municipality", "dwelling_no", "house"):
             d.pop(key, None)
         new["schema_version"] = model.REVIEW_SCHEMA
-    model.refresh_identities(candidate)
+    # Note links resolve against the published IDs, before they are re-derived.
+    model.finish_records(candidate)
     for old, new in zip(records, candidate):
         old_cards = old["dwelling"].get("cards", []) + [
             c for h in old["dwelling"]["households"] for c in h.get("cards", [])

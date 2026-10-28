@@ -1,9 +1,21 @@
 # Per-card review and dwelling relinking
 
-The reviewer requires schema `0.7.0`: each physical coding card owns its municipality,
-dwelling number and building readings. Published extraction JSONL remains in its
-existing format and still passes shared validation. Nothing is transformed at
-startup, and this implementation does not replace the production review seed.
+In schema `0.7.0` data, each physical coding card owns its municipality,
+dwelling number and building readings. Extraction, association, merge scoring
+and the pipeline all write 0.7.0 (the pipeline calls `finish_records` on each
+region before writing, and refuses previous results that are not 0.7.0). Nothing
+is transformed at startup. Published results are still `0.6.0` today; until they
+are converted once with `scripts/prepare_review_dataset.py` (needs the Gemini
+cache; no model calls), the reviewer keeps serving a fully `0.6.0` dataset with
+shared first-card ownership and without relinking. It refuses a dataset that mixes
+the two. Cards with no cache (216428 p49, 216460 p378, 216463 p279) stay
+`missing_card_reading`.
+
+Planner rule: when a card no longer fully fits its group but a sibling or the
+front still reads its dwelling ("partly fits", e.g. a `fronts_disagree` group),
+the outcome is `ambiguous` (manual), never an automatic split. Structural Undo is
+refused if any member of an affected dwelling changed its municipality/dwelling
+since the move; frames record each member's dwelling key.
 
 ## Prepare and adopt separately
 
@@ -48,6 +60,10 @@ Git remote. Sample and benchmark tools use disposable copies and preserve source
 
 - Municipality/dwelling-number corrections evaluate membership within the same
   region/PDF. Household-number edits update identity/duplicates only.
+- A card keeps its current dwelling unless that dwelling's other evidence (another
+  card's known reading or a readable front number) contradicts the correction.
+  Unknown readings do not contradict. A sole coding-only card does not corroborate
+  itself. If another compatible dwelling also exists, the link stays manual.
 - A unique homogeneous destination corroborated by front number can receive the
   complete coding household automatically, preserving its own readings/history.
   Mixed readings, missing front numbers, coding-only candidates and competing
@@ -116,9 +132,8 @@ to latency, separately from the dependency checks.
 
 Preview and commit evaluate the same planner independently; confirmation expires
 when the regional version changes. Scan access accepts only registered active or
-retained physical sources. A test-only `create_app(..., require_prepared=False)`
-seam retains historical API regressions; the normal CLI/application does not fall
-back to shared first-card ownership.
+retained physical sources. Ownership is chosen per dataset, never per record:
+a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 

@@ -203,9 +203,8 @@ written, so a reviewer can fix it rather than lose it.
   when there is nothing to check.
 - A dwelling number can end in a letter, which names another dwelling: 487A
   is `21-0487A-01`, not 487.
-- A corrected identity rebuilds `record_id` on the next run. If that leaves a
-  nulled record_id unshared, the other household gets it back. Nothing else
-  rebuilds it, so an unrelated correction can't undo a null.
+- A corrected identity rebuilds `record_id` on the next run. (Superseded by
+  0.7.0: `record_id` is never nulled to dedupe; see "Per-card ownership" below.)
 - A coding card with no value at all is still skipped: it is a blank page or
   a reverse taken for a card.
 
@@ -213,6 +212,9 @@ This is the fallback IT-75 asked for when the number is missing or illegible.
 Anything keyed on `record_id` must expect null.
 
 ### Household municipality is retained (0.6.0, IT-123 review)
+
+> Updated by 0.7.0 (below): the `dwelling.municipality` alias and shared
+> first-card ownership described here no longer apply.
 
 Every household now carries its own `municipality` field object, including a
 blank or malformed reading. `dwelling.municipality` remains the first coding
@@ -237,6 +239,41 @@ Automatic front recovery requires no meaningful front fields or persons.
 Explicit classifications verified against the original scans can override a
 segmentation error using `--verified-coding`; those decisions are auditable
 region/PDF/page metadata, not an inference from a plausible record ID.
+
+### Per-card ownership (0.7.0, IT-153)
+
+0.7.0 is the schema everywhere: extraction (`build_record`), association,
+merge scoring, published results and the reviewer. The pipeline runs
+`relinking.finish_records` on each region before writing (provisional relink for
+frontless cards, `household_card_id` on notes, identity flags) and refuses
+previous results that are not 0.7.0, telling the operator to run
+`scripts/prepare_review_dataset.py` first. Published results are still 0.6.0
+today; whoever holds the Gemini cache converts them once with that script (no
+model calls). Three cards have no cache (216428 p49, 216460 p378, 216463 p279)
+and stay `missing_card_reading`. Every card scores its own
+dwelling/house/municipality confidence.
+
+Every household owns its `municipality`, `dwelling_no` and `house` fields,
+read from its own physical coding card. The dwelling-level aliases are removed.
+A later card's readings come from its own retained primary artifact. If none
+exists, they are omitted with null confidence and a `missing_card_reading`
+flag, and never copied from another card. Physical identity is the coding
+card's region, PDF and page. `record_id` is derived, nullable when incomplete
+and nonunique: association no longer nulls a `record_id` that two cards share, and
+a repeated identity sets the `duplicate_record_id` household flag on every peer
+(matched within the same region and PDF) instead of being rejected. Identity
+corrections apply to their own card only and do not "settle" a duplicate; a
+blanked household number gives a null `record_id` plus `incomplete_identity`.
+
+Households may also carry `flags`, a `relink` state, `link_history` and
+`retained_supplements`. A retained bundle holds the read-only front, notes,
+address and person rows of a dwelling whose last coding card moved away.
+Notes gain an optional `household_card_id` physical owner. Review events gain
+the structural effect and guards Undo checks. See
+[review-relinking.md](../review-relinking.md).
+
+A dataset is all 0.6.0 or all 0.7.0. During the transition the reviewer still
+serves a fully 0.6.0 dataset and refuses a mixed one.
 
 ## Alternatives considered
 
@@ -340,7 +377,7 @@ corpus envelope: nullable/lettered household IDs, corresponding note household I
 and optional dwelling flags. These shapes apply to 0.5.0 and 0.6.0; older schemas
 retain their ID rules. Saves preserve 0.5.0 without down-conversion. Other versions,
 including 0.4.0, are upgraded to 0.6.0 on save, retaining each household's municipality.
-Current extraction builders use 0.6.0.
+Current extraction builders use 0.7.0 (per-card ownership, above).
 Established survey-front definitions and IT-89 note ownership supply bounded text
 review. Text corrections are limited to 10,000 characters and reject NUL;
 the same rules validate saved correction history. No person column/page structure or coding-back fields are invented.

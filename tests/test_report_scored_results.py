@@ -47,7 +47,7 @@ def candidate(
         )
         for _, field in current_fields(record):
             field["confidence"] = 0.64
-        garden = record["dwelling"]["house"]["garden"]
+        garden = record["dwelling"]["households"][0]["house"]["garden"]
         garden["confidence"] = 0.98
         if index == 0 and protected_first:
             garden["origin"] = "corrected"
@@ -104,12 +104,12 @@ def candidate(
                 "comparison_fields": len(FIELD_SCHEMA) * records,
                 "raw_classes": classes,
                 "classes": classes,
-                "exported_fields": (len(FIELD_SCHEMA) + 2) * records,
-                "numeric_field_scores": (len(FIELD_SCHEMA) + 1) * records,
+                "exported_fields": (len(FIELD_SCHEMA) + 1) * records,
+                "numeric_field_scores": len(FIELD_SCHEMA) * records,
                 "protected_fields": int(protected_first),
                 "skip_review_fields": records - int(protected_first),
-                "mean_numeric_field_confidence": (0.98 + 0.64 * len(FIELD_SCHEMA))
-                / (len(FIELD_SCHEMA) + 1),
+                "mean_numeric_field_confidence": (0.98 + 0.64 * (len(FIELD_SCHEMA) - 1))
+                / len(FIELD_SCHEMA),
                 "null_ids": records,
                 "flags": {"unplaced": records},
             }
@@ -175,7 +175,7 @@ def test_counts_dates_paths_and_provenance_follow_candidate(tmp_path):
     result = reporter.report(directory, secondary_evidence=sample)
     assert result["dwellings"] == result["coding_cards"] == 3
     assert result["comparison_fields"] == 3 * len(FIELD_SCHEMA)
-    assert result["exported_fields"] == 3 * (len(FIELD_SCHEMA) + 2)
+    assert result["exported_fields"] == 3 * (len(FIELD_SCHEMA) + 1)
     assert result["protected_fields"] == 1
     assert result["overrides"] == {
         "human_review_preserved": 1,
@@ -385,7 +385,7 @@ def test_unlabelled_coding_null_is_counted_in_confidence_completeness(tmp_path):
     directory, sample = candidate(tmp_path)
     path = directory / "demo.jsonl"
     records = [json.loads(line) for line in path.read_text().splitlines()]
-    field = records[0]["dwelling"]["house"]["washouse"]
+    field = records[0]["dwelling"]["households"][0]["house"]["washouse"]
     assert "source" not in field
     field["confidence"] = None
     write_jsonl(path, records)
@@ -393,12 +393,12 @@ def test_unlabelled_coding_null_is_counted_in_confidence_completeness(tmp_path):
     summary = json.loads(summary_path.read_text())
     summary[0]["numeric_field_scores"] -= 1
     summary[0]["mean_numeric_field_confidence"] = (
-        0.98 + 0.64 * (len(FIELD_SCHEMA) - 1)
-    ) / len(FIELD_SCHEMA)
+        0.98 + 0.64 * (len(FIELD_SCHEMA) - 2)
+    ) / (len(FIELD_SCHEMA) - 1)
     write_json(summary_path, summary)
     result = reporter.report(directory, secondary_evidence=sample)
-    assert result["coding_field_leaves"] == len(FIELD_SCHEMA) + 1
-    assert result["numeric_coding_field_leaves"] == len(FIELD_SCHEMA)
+    assert result["coding_field_leaves"] == len(FIELD_SCHEMA)
+    assert result["numeric_coding_field_leaves"] == len(FIELD_SCHEMA) - 1
     assert result["acceptance"]["AC1"]["coding_confidence_complete"] is False
 
 

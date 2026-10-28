@@ -11,10 +11,10 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader, PdfWriter
-from review_support import historical_app as create_app
 from review_support import setup_review
 
 from survey.records import ReviewError
+from survey.review.api import create_app
 from survey.review.drive import MAX_IMPORT_BYTES, BatchDownloads, DriveClient
 
 BASE = "http://127.0.0.1:8765"
