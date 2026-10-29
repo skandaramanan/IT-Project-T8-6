@@ -189,6 +189,7 @@ written, so a reviewer can fix it rather than lose it.
   `276303`), or another household in the batch has the same one. A household
   placed with its front by number keeps a record_id that only cards placed by
   position, or not placed at all, share; they are the likelier misreads.
+  (Superseded by 0.7.0 for shared IDs: see "Per-card ownership" below.)
 - A coding card that gives no usable record_id has its identity block read
   again from a crop. That reading may only fill what the first left blank or
   malformed, and must agree with every part the first read has. The
@@ -198,11 +199,10 @@ written, so a reviewer can fix it rather than lose it.
   coding card whose number fits no front, paired with the front at the
   batch's usual page offset), `unplaced` (a coding card that still fits no
   front, written as a dwelling of its own), `missing_record_id`,
-  `duplicate_record_id`, `municipality_mismatch` or `dwelling_number_mismatch`
-  (the households' dwelling numbers differ, or the front's handwritten number
-  differs from a household's), along with the grouping
+  `duplicate_record_id` or `municipality_mismatch`, along with the grouping
   flags association already raised, which were only logged before. Absent
-  when there is nothing to check.
+  when there is nothing to check. (0.7.0 rederives the identity flags on each
+  household; see "Per-card ownership" below.)
 - A dwelling number can end in a letter, which names another dwelling: 487A
   is `21-0487A-01`, not 487.
 - A corrected identity rebuilds `record_id` on the next run. (Superseded by
@@ -265,6 +265,18 @@ a repeated identity sets the `duplicate_record_id` household flag on every peer
 (matched within the same region and PDF) instead of being rejected. Identity
 corrections apply to their own card only and do not "settle" a duplicate; a
 blanked household number gives a null `record_id` plus `incomplete_identity`.
+
+Identity flags are household flags, rederived on every save:
+`duplicate_record_id`, `incomplete_identity`, `municipality_mismatch` (the
+dwelling's cards name different municipalities) and `dwelling_number_mismatch`
+(the cards' dwelling numbers differ, or the front's handwritten number differs
+from this card's; a card with a blank or invalid municipality is skipped).
+`dwelling.flags` keeps the association flags and `missing_record_id` (a card
+has no ID); `finish_records` drops the legacy dwelling-level
+`duplicate_record_id`. `dwelling.flags` may still carry association's
+`municipality_mismatch`, which compares raw strings; the queue and reviewer use
+the household one (`flags.py`). `identity_reread` stays a dwelling flag:
+association flags the dwelling, not the card.
 
 Households may also carry `flags`, a `relink` state, `link_history` and
 `retained_supplements`. A retained bundle holds the read-only front, notes,

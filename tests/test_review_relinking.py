@@ -325,6 +325,9 @@ def test_correcting_back_to_the_current_group_clears_a_pending_link(tmp_path):
     )
     correct(service, 1, "dwelling_no", "9")
     assert current(service, 1)[3]["relink"]["state"] == "pending"
+    # Same dwelling, another spelling: nothing was replanned, so still pending.
+    correct(service, 1, "dwelling_no", "0009", "respelt")
+    assert current(service, 1)[3]["relink"]["state"] == "pending"
     saved = correct(service, 1, "dwelling_no", "7", "back")
     assert saved["membership"]["outcome"] == "unchanged"
     assert all(
@@ -333,6 +336,28 @@ def test_correcting_back_to_the_current_group_clears_a_pending_link(tmp_path):
     )
     undo(service, saved)
     assert current(service, 1)[3]["relink"]["state"] == "pending"
+
+
+def test_correcting_back_clears_pending_but_keeps_an_earlier_link(tmp_path):
+    service = start(
+        tmp_path,
+        [
+            raw_record(1, "7"),
+            with_front(raw_record(2, "7"), 3, "7"),
+            with_front(raw_record(4, "9"), 5, "9"),
+            with_front(raw_record(6, "9"), 7, "9"),
+        ],
+    )
+    cid = owner("demo", current(service, 1)[3])
+    tid = owner("demo", current(service, 2)[3])
+    link(service, cid, tid, False, "Reviewer", service.store.regions["demo"][1], "l")
+    assert current(service, 1)[3]["relink"]["state"] == "manual_linked"
+    correct(service, 1, "dwelling_no", "9")
+    assert current(service, 1)[3]["relink"]["state"] == "pending"
+    correct(service, 1, "dwelling_no", "7", "back")
+    # A later automatic move may have replaced the link, so it is not restored.
+    assert "relink" not in current(service, 1)[3]
+    assert len(current(service, 1)[3]["link_history"]) == 1
 
 
 def test_last_card_retains_evidence_and_link_undo_keeps_number_correction(tmp_path):

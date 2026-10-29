@@ -141,7 +141,7 @@
         "flags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Why this dwelling needs a look, e.g. unplaced, duplicate_record_id. Absent when there is nothing to check."
+          "description": "Why this dwelling needs a look, e.g. unplaced, identity_reread. Absent when there is nothing to check."
         }
       }
     },
@@ -683,7 +683,7 @@
         "flags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Why this dwelling needs a look, e.g. unplaced, duplicate_record_id. Absent when there is nothing to check."
+          "description": "Why this dwelling needs a look, e.g. unplaced, identity_reread. Absent when there is nothing to check."
         },
         "persons": { "type": "array", "items": { "$ref": "#/$defs/person" } }
       },

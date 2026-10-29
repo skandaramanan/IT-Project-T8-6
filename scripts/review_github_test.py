@@ -125,7 +125,7 @@ def prepare(args):
     )
     flags = [
         json.loads(line)
-        for line in (root / "demo/flags.jsonl").read_text().splitlines()
+        for line in (root / "demo/flags.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     seed = root / "provision"
     command("git", "clone", "--no-hardlinks", CODE, seed)

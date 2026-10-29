@@ -83,6 +83,11 @@ Git remote. Sample and benchmark tools use disposable copies and preserve source
   number correction can save first. Multi-card person ownership or a note
   explicitly owned by the departing card stays pending rather than being split
   or reassigned automatically.
+- `identity_reread` is a dwelling flag, so it follows a card only when the card
+  is the dwelling's last. A card leaving a larger dwelling leaves it behind.
+- Correcting a pending card back into its group clears the pending state.
+  An earlier link or automatic move's label is not restored (a later move may
+  have replaced it); the move itself and `link_history` stand.
 
 Retained bundles keep the former scans, address, handwriting, notes, people and
 histories read-only inside the same regional file. They are accessible from the
@@ -140,7 +145,7 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,058 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,059 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 100 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,

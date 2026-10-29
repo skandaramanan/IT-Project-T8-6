@@ -384,6 +384,7 @@ def analyze_candidate(
         "duplicate_confirmation": confirmation,
         "duplicate": after_conflict,
         "membership": membership,
+        "replanned": changed,
     }
 
 
@@ -477,6 +478,7 @@ def apply_decision(
             "request": request,
         }
         membership = None
+        replanned = False
         if action == "undo":
             if value is not None:
                 raise ReviewError("invalid_action", "Undo does not accept a value")
@@ -535,6 +537,7 @@ def apply_decision(
                         409,
                     )
                 membership = analysis["membership"]
+                replanned = analysis["replanned"]
         event.update(after=deepcopy(after), after_state=after_state)
         history.append(event)
         field.clear()
@@ -567,7 +570,7 @@ def apply_decision(
                         "provisional": "This card has no associated survey front",
                     }[outcome],
                 }
-            elif h.get("relink", {}).get("state") == "pending":
+            elif replanned and h.get("relink", {}).get("state") == "pending":
                 # The card fits its group again, so the earlier pending link no longer applies.
                 if any(
                     c["role"] == "survey-front"
