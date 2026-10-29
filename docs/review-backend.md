@@ -1,8 +1,8 @@
 # IT-113: local review backend
 
 Per-card ownership is schema `0.7.0`, written by extraction, association, merge
-scoring and the pipeline. Published `0.6.0` data (what `results/` holds until it is
-converted) keeps the shared first-card reviewer; a dataset mixing the
+scoring and the pipeline. `results/` holds converted `0.7.0` data. Legacy `0.6.0`
+data still loads with the shared first-card reviewer; a dataset mixing the
 two is refused at startup. Published files are not converted at startup. See [review preparation, relinking and Undo](review-relinking.md)
 before adopting a fresh dataset; a code update does not replace production data.
 

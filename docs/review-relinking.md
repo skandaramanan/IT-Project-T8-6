@@ -4,12 +4,12 @@ In schema `0.7.0` data, each physical coding card owns its municipality,
 dwelling number and building readings. Extraction, association, merge scoring
 and the pipeline all write 0.7.0 (the pipeline calls `finish_records` on each
 region before writing, and refuses previous results that are not 0.7.0). Nothing
-is transformed at startup. Published results are still `0.6.0` today; until they
-are converted once with `scripts/prepare_review_dataset.py` (needs the Gemini
-cache; no model calls), the reviewer keeps serving a fully `0.6.0` dataset with
-shared first-card ownership and without relinking. It refuses a dataset that mixes
-the two. The conversion needs a cached reading for each of the 55 non-first
-household cards; any card without one stays `missing_card_reading`.
+is transformed at startup. The published `results/` were converted once from
+`0.6.0` with `scripts/prepare_review_dataset.py`, using cached Gemini readings of
+the 55 non-first household cards (no other model calls); a card without a
+reading would stay `missing_card_reading`. A fully `0.6.0` dataset still loads
+with shared first-card ownership and without relinking; a dataset mixing the two
+is refused.
 
 Planner rule: when a card no longer fully fits its group but a sibling or the
 front still reads its dwelling ("partly fits", e.g. a `fronts_disagree` group),

@@ -568,31 +568,6 @@ def test_preparation_refuses_review_history_and_is_deterministic(tmp_path):
         prepare_records([original])
 
 
-def test_corpus_independent_room_readings_and_protected_mapping():
-    from pathlib import Path
-
-    root = Path(__file__).parents[1]
-    row = json.loads((root / "results/216421.jsonl").read_text().splitlines()[40])
-    pdf = row["dwelling"]["households"][1]["cards"][0]["image"]
-    rows, report = prepare_records(
-        [row],
-        {
-            ("216421", pdf, 175): {
-                "fields": {
-                    "Number of Dwelling": "56",
-                    "Total Number of Rooms": "7",
-                    "Garden": "3",
-                    "Structural Material": "2",
-                }
-            }
-        },
-    )
-    hs = rows[0]["dwelling"]["households"]
-    assert hs[0]["house"]["total_number_of_rooms"]["value"] == "6"
-    assert hs[1]["house"]["total_number_of_rooms"]["value"] == "7"
-    assert report["preserved_fields"]
-
-
 @pytest.fixture
 def prepared_api(tmp_path):
     from fastapi.testclient import TestClient
@@ -758,23 +733,25 @@ def test_staging_is_deterministic_pins_evidence_and_preserves_inputs(tmp_path):
         prepare_dataset(source, a)
 
 
-def test_every_published_corrected_mapping_is_preserved():
+def test_every_published_corrected_field_survived_preparation():
     from pathlib import Path
 
     from survey.records import current_fields
 
+    # 0.6.0 counted 34: four corrected municipalities sat on both the dwelling
+    # alias and household 0. Preparation kept all 30 distinct fields.
     root = Path(__file__).parents[1]
-    protected = []
-    for path in sorted((root / "results").glob("*.jsonl")):
-        protected.extend(
-            row
-            for line in path.read_text().splitlines()
-            if line
-            for row in [json.loads(line)]
-            if any(f.get("origin") == "corrected" for _, f in current_fields(row))
-        )
-    _, receipt = prepare_records(protected)
-    assert receipt["protected_fields"] == 34
+    rows = [
+        json.loads(line)
+        for path in sorted((root / "results").glob("*.jsonl"))
+        for line in path.read_text().splitlines()
+        if line
+    ]
+    assert {r["schema_version"] for r in rows} == {"0.7.0"}
+    assert (
+        sum(f.get("origin") == "corrected" for r in rows for _, f in current_fields(r))
+        == 30
+    )
 
 
 def test_changed_retained_bundle_refuses_unsafe_undo(tmp_path):
