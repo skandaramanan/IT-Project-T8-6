@@ -111,7 +111,8 @@ export default function RelinkingTools({ item, savedItem, disabled, onFix, onSub
         setError('');
         try {
           const fresh = await api<CardContext>(`/api/cards/${item.source.card_id}`);
-          await onSubmit(`/api/decisions/${item.undo_link_id}/undo`, { expected_version: fresh.version, request_id: crypto.randomUUID() });
+          const refused = await onSubmit(`/api/decisions/${item.undo_link_id}/undo`, { expected_version: fresh.version, request_id: crypto.randomUUID() });
+          if (refused) setError(refused);
         } catch (e) { setError((e as Error).message); }
       }}>Undo last link</button>}
     </div>

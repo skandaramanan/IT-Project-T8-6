@@ -1661,6 +1661,23 @@ describe('prepared per-card review', () => {
     expect(within(dialog).getByRole('button', { name: 'Save link' })).toBeEnabled();
     expect(server.mutations).toHaveLength(1);
   });
+
+  it('shows why the server refused an Undo of the last link', async () => {
+    const server = backend([prepared({ undo_link_id: 'link-operation' })]);
+    const real = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation(async (input, options) => {
+      if (String(input).endsWith('/api/cards/card1')) return response({ version: 'v2' });
+      if (String(input).endsWith('/undo')) {
+        server.mutations.push({ path: String(input), body: JSON.parse(String(options?.body)) });
+        return response({ error: { code: 'missing_remote', message: 'The data checkout has no remote' } }, 422);
+      }
+      return real(input, options);
+    });
+    const user = await start('Review', 'Dwelling number');
+    await user.click(screen.getByRole('button', { name: 'Undo last link' }));
+    expect(await screen.findByText('The data checkout has no remote')).toBeVisible();
+    expect(server.mutations).toHaveLength(1);
+  });
 });
 
 describe('high-confidence context disclosure', () => {

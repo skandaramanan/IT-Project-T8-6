@@ -830,6 +830,10 @@ def test_a_qwen_export_prepares_only_from_its_own_cache(tmp_path):
 
     with pytest.raises(ValueError, match="qwen2.5-vl-server-2000000px results"):
         prepare_dataset(source, tmp_path / "wrong", tmp_path / "cache")
+    (source / "extractor.json").write_text("{}")
+    with pytest.raises(ValueError, match="does not name its extractor"):
+        prepare_dataset(source, tmp_path / "unnamed", tmp_path / "cache")
+    (source / "extractor.json").write_text(manifest)
     out = tmp_path / "stage"
     prepare_dataset(source, out, tmp_path / "cache", cache_name=name)
     later = RecordStore(out).regions["demo"][0][0]["dwelling"]["households"][1]

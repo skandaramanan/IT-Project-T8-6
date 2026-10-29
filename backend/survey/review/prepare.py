@@ -275,7 +275,11 @@ def prepare_dataset(
     regions = read_dataset(sorted(previous.glob("*.jsonl")))
     manifest = previous / "extractor.json"
     manifest_bytes = manifest.read_bytes() if manifest.exists() else None
-    extractor = json.loads(manifest_bytes)["extractor"] if manifest_bytes else GEMINI
+    extractor = (
+        json.loads(manifest_bytes).get("extractor") if manifest_bytes else GEMINI
+    )
+    if not extractor:
+        raise ValueError(f"{manifest} does not name its extractor")
     cache_name = cache_name or GEMINI
     # Another extractor's readings must never fill this export's cards.
     if cache is not None and cache_name.split("/")[0] != extractor:

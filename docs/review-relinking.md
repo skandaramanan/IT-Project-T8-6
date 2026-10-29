@@ -154,7 +154,7 @@ a mixed published/prepared dataset is refused at startup.
 
 - Backend suite: 1,063 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
-- React suite: 101 passed; TypeScript and production build passed.
+- React suite: 102 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,
   including confirmation before a duplicate save, unqueued peer repair, retained
   scans/notes, and link Undo preserving a later building correction.
@@ -168,8 +168,10 @@ a mixed published/prepared dataset is refused at startup.
 - `results/qwen2.5-vl-server-2000000px/` (44 files) was converted the same way
   from IT-124's own Qwen cache (the corpus handoff, with 216436 from its
   complete-scan handoff, sha256 as pinned in `results/merge-manifest.json`):
-  5,429 cards, 0 missing per-card fields, record values unchanged. Every
-  published Qwen field still matches its raw reading (the merge's cache check).
+  5,429 cards, 0 missing per-card fields, every existing field unchanged (147
+  per-card building fields added). IDs and flags were rederived as for the Gemini
+  files. Every published Qwen field still matches its raw reading (the merge's
+  cache check).
   The manifest's `secondary_files` hashes describe the 0.6.0 files IT-125 merged,
   which remain in Git history.
   Flagged records rose from 351 to 492 by design: D007 flags every peer sharing
