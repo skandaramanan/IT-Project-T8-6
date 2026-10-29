@@ -145,7 +145,7 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,059 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,061 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 100 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,
@@ -165,8 +165,9 @@ a mixed published/prepared dataset is refused at startup.
   municipalities sat on both the dwelling alias and household 0). Synthetic
   regressions cover independent per-card readings, ambiguous-plus-duplicate
   outcomes, a pending link clearing when a correction is reverted, the reread
-  flag following a last-card move, failures/retries/restarts, stale writes,
-  retained field history, changed ownership dependencies, and reinstated Undo.
+  flag following a last-card move, a rerun regaining a retained front,
+  failures/retries/restarts, stale writes, retained field history, changed
+  ownership dependencies, and reinstated Undo.
 - A 20-run synthetic benchmark sized to the largest published region's 270
   dwellings measured the automatic-move dependency check plus inverse at
   0.653 ms median / 0.821 ms maximum on this host. It had no large retained bundle

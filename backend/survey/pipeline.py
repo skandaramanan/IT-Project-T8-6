@@ -853,6 +853,10 @@ def _fronts(dwelling: dict[str, Any]) -> list[dict[str, Any]]:
     return [card for card in dwelling.get("cards", []) if card["role"] != SURVEY_BACK]
 
 
+def _sources(cards: list[dict[str, Any]]) -> set[tuple[str, int | None]]:
+    return {(card["image"], card.get("page")) for card in cards}
+
+
 def _keep_front(old: dict[str, Any], new: dict[str, Any]) -> None:
     """A front read before but unusable now (say, on ``--fresh``) keeps what
     was read before, rather than blanking the address and persons."""
@@ -948,7 +952,13 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
     if not corrections and not _relinked(old):
         return
     image, page = min(_coding_cards(old))
-    if _household_cards(new) != _household_cards(old):
+    # A retained bundle holds former evidence, so its record mustn't regain
+    # any of it as a front either: that source would appear twice.
+    retains = any(h.get("retained_supplements") for h in old["dwelling"]["households"])
+    if _household_cards(new) != _household_cards(old) or (
+        retains
+        and _sources(_fronts(old["dwelling"])) != _sources(_fronts(new["dwelling"]))
+    ):
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     # Same grouping, so households pair by position; finish_records leaves a
     # relink already present alone.
@@ -956,17 +966,14 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
         old["dwelling"]["households"], new["dwelling"]["households"]
     ):
         for key in _LINK_KEYS:
-            if key in before:
+            # UNFRONTED is rederived; the rebuild may have found a front.
+            if key in before and before[key] != UNFRONTED:
                 now[key] = deepcopy(before[key])
     for path, field in corrections:
         try:
             if field.get("review") and field.get("source") == "survey-front":
-                before_fronts = {
-                    (c["image"], c.get("page")) for c in _fronts(old["dwelling"])
-                }
-                after_fronts = {
-                    (c["image"], c.get("page")) for c in _fronts(new["dwelling"])
-                }
+                before_fronts = _sources(_fronts(old["dwelling"]))
+                after_fronts = _sources(_fronts(new["dwelling"]))
                 if len(before_fronts) != 1 or before_fronts != after_fronts:
                     raise KeyError("reviewed front ownership changed")
             *parents, last = _note_by_front(path, old, new)
