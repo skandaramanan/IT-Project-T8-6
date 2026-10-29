@@ -140,7 +140,7 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,057 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,058 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 100 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,

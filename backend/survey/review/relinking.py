@@ -158,6 +158,14 @@ def finish_records(records):
             if len(matches) == 1:
                 note["household_card_id"] = owner(r["region"], matches[0])
     refresh_identities(records)
+    for r in records:
+        d = r["dwelling"]
+        # Legacy dwelling-level identity flags; each card now carries its own.
+        flags = set(d.pop("flags", [])) - {"duplicate_record_id", "missing_record_id"}
+        if any(h["record_id"] is None for h in d["households"]):
+            flags.add("missing_record_id")
+        if flags:
+            d["flags"] = sorted(flags)
     return records
 
 

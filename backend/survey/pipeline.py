@@ -839,20 +839,6 @@ def _settle_identities(records: list[dict[str, Any]]) -> None:
     across the region (``finish_records``); a duplicate keeps its ID and is
     flagged on every peer. A dwelling is flagged while a card has no ID."""
     finish_records(records)
-    for record in records:
-        dwelling = record["dwelling"]
-        flags = set(dwelling.pop("flags", [])) - _LEGACY_DWELLING_IDENTITY_FLAGS
-        if any(h["record_id"] is None for h in dwelling["households"]):
-            flags.add(ReviewFlag.MISSING_RECORD_ID)
-        if flags:
-            dwelling["flags"] = sorted(flags)
-
-
-# Legacy dwelling-level identity flags; finish_records rederives them per card.
-_LEGACY_DWELLING_IDENTITY_FLAGS = {
-    ReviewFlag.MISSING_RECORD_ID,
-    ReviewFlag.DUPLICATE_RECORD_ID,
-}
 
 
 def _front_read(dwelling: dict[str, Any]) -> bool:

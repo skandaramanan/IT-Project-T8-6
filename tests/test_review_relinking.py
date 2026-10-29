@@ -144,6 +144,19 @@ def undo(service, saved, request_id="undo"):
     )
 
 
+def test_finishing_drops_legacy_dwelling_identity_flags():
+    kept, unread = raw_record(1), raw_record(2, municipality="")
+    for r in (kept, unread):
+        r["dwelling"]["flags"] = [
+            "duplicate_record_id",
+            "missing_record_id",
+            "unplaced",
+        ]
+    finish_records([kept, unread])
+    assert kept["dwelling"]["flags"] == ["unplaced"]
+    assert unread["dwelling"]["flags"] == ["missing_record_id", "unplaced"]
+
+
 def test_auto_move_keeps_own_readings_and_undo_preserves_later_edits(tmp_path):
     service = start(tmp_path)
     saved = correct(service, 1, "dwelling_no", "7")
