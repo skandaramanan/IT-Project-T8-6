@@ -17,7 +17,8 @@ UNFRONTED = {
     "state": "provisional",
     "reason": "This card has no associated survey front",
 }
-IDENTITY_FLAGS = {
+# Per-household identity flags refresh_identities recomputes from scratch.
+DERIVED_IDENTITY_FLAGS = {
     "duplicate_record_id",
     "incomplete_identity",
     "municipality_mismatch",
@@ -115,7 +116,7 @@ def refresh_identities(records):
         front = front_number(r["dwelling"])
         for h in hs:
             h["record_id"] = identity(h)
-            flags = set(h.get("flags", [])) - IDENTITY_FLAGS
+            flags = set(h.get("flags", [])) - DERIVED_IDENTITY_FLAGS
             if h["record_id"] is None:
                 flags.add("incomplete_identity")
             if owner(r["region"], h) in duplicates:

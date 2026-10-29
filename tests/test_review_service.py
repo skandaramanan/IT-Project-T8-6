@@ -74,7 +74,7 @@ def test_reviewer_digits_are_not_ocr_normalized(tmp_path, value):
     assert service.item(refs()[1].item_id)["review_state"] == "pending"
 
 
-@pytest.mark.usefixtures("published")
+@pytest.mark.usefixtures("shape")
 @pytest.mark.parametrize("action", ["correct", "no_data", "illegible"])
 def test_negated_fields_are_accept_only(tmp_path, action):
     service, _ = setup_review(tmp_path)
@@ -404,7 +404,7 @@ def test_live_identity_issues_leave_historical_flags_unchanged(tmp_path):
     )
 
 
-@pytest.mark.usefixtures("published")
+@pytest.mark.usefixtures("shape")
 @pytest.mark.parametrize("action", ["no_data", "illegible"])
 def test_coding_identity_requires_an_explicit_corrected_value(tmp_path, action):
     service, _ = setup_review(tmp_path)

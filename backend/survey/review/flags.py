@@ -13,6 +13,14 @@ from survey.records import card_index, field_pointer
 from survey.review.routing import needs_review
 from survey.review.service import state
 
+# Dwelling-level identity flags a prepared record queues per household instead.
+_DWELLING_IDENTITY_FLAGS = {
+    "duplicate_record_id",
+    "missing_record_id",
+    "municipality_mismatch",
+    "dwelling_number_mismatch",
+}
+
 
 def _reason(field: Mapping[str, Any]) -> str:
     if field["status"] != "ok":
@@ -92,15 +100,7 @@ def build_flags(
             prepared = record["schema_version"] == SCHEMA_VERSION
             if prepared:
                 dwelling_flags = sorted(
-                    (
-                        set(dwelling_flags)
-                        - {
-                            "duplicate_record_id",
-                            "missing_record_id",
-                            "municipality_mismatch",
-                            "dwelling_number_mismatch",
-                        }
-                    )
+                    (set(dwelling_flags) - _DWELLING_IDENTITY_FLAGS)
                     | set(record["dwelling"]["households"][index].get("flags", []))
                 )
             for order, label, pointer in _pointers(index, review=prepared):

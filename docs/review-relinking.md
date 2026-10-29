@@ -8,8 +8,8 @@ is transformed at startup. Published results are still `0.6.0` today; until they
 are converted once with `scripts/prepare_review_dataset.py` (needs the Gemini
 cache; no model calls), the reviewer keeps serving a fully `0.6.0` dataset with
 shared first-card ownership and without relinking. It refuses a dataset that mixes
-the two. Cards with no cache (216428 p49, 216460 p378, 216463 p279) stay
-`missing_card_reading`.
+the two. The conversion needs a cached reading for each of the 55 non-first
+household cards; any card without one stays `missing_card_reading`.
 
 Planner rule: when a card no longer fully fits its group but a sibling or the
 front still reads its dwelling ("partly fits", e.g. a `fronts_disagree` group),

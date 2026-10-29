@@ -317,10 +317,12 @@ def item_details(service, ref, resolved):
 
 
 def check_action(item, action, value):
-    if item["diagnostics"] or action not in item["allowed_actions"]:
+    if item["diagnostics"]:
         raise ReviewError(
             "unsupported_action", "Resolve scan or source diagnostics before reviewing"
         )
+    if action not in item["allowed_actions"]:
+        raise ReviewError("unsupported_action", "Action is unsupported for this field")
     if action != "correct" and value is not None:
         raise ReviewError("invalid_value", "Only corrections accept a value")
     return item
