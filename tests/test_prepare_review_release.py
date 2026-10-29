@@ -1,5 +1,6 @@
 """Release bundles require an explicit override for uncommitted content."""
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -26,6 +27,7 @@ def source(tmp_path, monkeypatch):
         "uv.lock",
         ".python-version",
         "README.md",
+        "THIRD_PARTY_NOTICES.md",
         "tests/review_support.py",
     ]:
         (repo / name).write_text("fixture\n")
@@ -66,6 +68,12 @@ def test_clean_release_records_revision_and_contents(source, tmp_path):
             json.loads(archive.read("survey-review/RELEASE-MANIFEST.json")) == manifest
         )
         assert archive.read("survey-review/README.md") == b"fixture\n"
+        notice = archive.read("survey-review/THIRD_PARTY_NOTICES.md")
+        assert notice == (source / "THIRD_PARTY_NOTICES.md").read_bytes()
+        assert (
+            manifest["files"]["THIRD_PARTY_NOTICES.md"]
+            == hashlib.sha256(notice).hexdigest()
+        )
 
 
 @pytest.mark.parametrize("name", ["README.md", "untracked.txt"])

@@ -31,6 +31,7 @@ def prepare_release(output: Path, *, allow_dirty: bool = False):
         "uv.lock",
         ".python-version",
         "README.md",
+        "THIRD_PARTY_NOTICES.md",
         "tests/review_support.py",
     ]
     files = []
