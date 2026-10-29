@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import ScanViewer from './ScanViewer';
 import ScanBatch from './ScanBatch';
 import Dialog from './Dialog';
+import RelinkingTools, { CardComparison } from './RelinkingTools';
 import Help, { readPreference, savePreference, SHORTCUTS_KEY, HELP_KEY } from './Help';
 import History from './History';
 import { api, ApiError, reviewSummaryCsv } from './api';
 import type {
   Action,
   CardField,
+  DecisionPreview,
   Dwelling,
   DwellingQueue,
   Item,
@@ -119,6 +121,10 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [alternatives, setAlternatives] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [duplicateDialog, setDuplicateDialog] = useState<{
+    request: Pending; preview: DecisionPreview; cardIds: string[];
+  } | null>(null);
+  const [showDuplicateComparison, setShowDuplicateComparison] = useState(false);
   const [lastSaved, setLastSaved] = useState<{
     item: Item;
     decisionId: string;
@@ -240,15 +246,17 @@ export default function App() {
     return failure;
   }
   async function run(work: () => Promise<void>) {
-    if (busyRef.current) return;
+    if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       await work();
+      return true;
     } catch (e) {
       handleFailure(e);
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -267,12 +275,12 @@ export default function App() {
     );
     setQueue(data);
   }
-  async function openItem(id: string, retainDraft = false) {
+  async function openItem(id: string, retainDraft = false, loadDwelling = false) {
     // Remove old evidence before the request; late image events cannot enable it.
     setScanLoaded('');
     setScanFailed(false);
     const next = await api<Item>(`/api/review-items/${id}`);
-    if (retainDraft) {
+    if (retainDraft || loadDwelling) {
       setDwellingItems(
         await api<Queue>(
           `/api/dwellings/${next.dwelling_id}/items?${new URLSearchParams({ region: next.region })}`,
@@ -401,25 +409,41 @@ export default function App() {
     setCorrecting(false);
     setDraft(result.item.field.value ?? '');
     const undone = result.decision.action === 'undo';
+    // Clear the old evidence gate before asynchronous refreshes. A cached scan
+    // may finish loading during them, and its new load must remain authoritative.
+    if (undone) { setScanLoaded(''); setScanFailed(false); }
     setLastSaved(
       undone
         ? null
         : {
             item: result.item,
             decisionId: result.decision.id,
-            text: `${result.item.review_state === 'accepted' ? 'Accepted' : 'Saved'}: ${result.item.label} ${result.item.field.value ?? statuses[result.item.field.status]}`,
+            text: result.decision.action === 'link'
+              ? `Linked coding card on page ${result.item.source.page}`
+              : `${result.item.review_state === 'accepted' ? 'Accepted' : 'Saved'}: ${result.item.label} ${result.item.field.value ?? statuses[result.item.field.status]}`,
           },
     );
     setItem(result.item);
+    let freshItems = dwellingItems?.items ?? [];
+    if (result.item.prepared_review) {
+      try {
+        const fresh = await api<Queue>(`/api/dwellings/${result.item.dwelling_id}/items?${new URLSearchParams({ region: result.item.region })}`);
+        setDwellingItems(fresh);
+        freshItems = fresh.items;
+        await refreshQueue();
+      } catch {
+        setNeedsReload(true);
+        setNotice('Saved on this computer. Reload the current card before continuing; refreshed grouping could not be loaded.');
+        return;
+      }
+    }
     if (undone) {
       setCompletedCard(null);
-      setScanLoaded('');
-      setScanFailed(false);
       setNotice(
         'Undo saved on this computer. The original decision stays in the history.',
       );
     } else {
-      await advanceWithinCard(result.item, dwellingItems?.items ?? []);
+      await advanceWithinCard(result.item, freshItems);
     }
   }
   async function nextCard() {
@@ -439,7 +463,7 @@ export default function App() {
   async function decide(action: Action) {
     if (!item || !canDecide || !item.allowed_actions.includes(action)) return;
     if (action === 'correct' && !isValidCorrection(item, draft)) return;
-    await submit({
+    const request: Pending = {
       path: `/api/review-items/${item.id}/decisions`,
       body: {
         action,
@@ -447,7 +471,18 @@ export default function App() {
         expected_version: item.version,
         request_id: crypto.randomUUID(),
       },
-    });
+    };
+    if (action === 'correct' && item.prepared_review && item.identity_kind) {
+      const analysis = await api<DecisionPreview>(`/api/review-items/${item.id}/preview`, {
+        action, value: draft, expected_version: item.version,
+      });
+      if (analysis.duplicate_confirmation) {
+        setShowDuplicateComparison(false);
+        setDuplicateDialog({ request, preview: analysis, cardIds: analysis.duplicate!.card_ids });
+        return;
+      }
+    }
+    await submit(request);
   }
   async function undo(id: string, decisionId: string) {
     const target = await api<Item>(`/api/review-items/${id}`);
@@ -513,13 +548,14 @@ export default function App() {
     groups.some((row) => row.id !== item?.dwelling_id && row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
   const saving = busy && !!pending;
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
-  const canNavigate = !busy && !pending && !correcting && !showHelp && !exited;
+  const canNavigate = !busy && !pending && !correcting && !duplicateDialog && !showHelp && !exited;
   const canDecide =
     !!reviewer &&
     !busy &&
     !pending &&
     !stopped &&
     !needsReload &&
+    !duplicateDialog &&
     !showHelp &&
     !exited &&
     !!item &&
@@ -809,6 +845,10 @@ export default function App() {
           <details className="queue-details">
             <summary>Review details and scans</summary>
             <div className="queue-details-content">
+              {queue?.association_summary && <p>
+                {queue.association_summary.duplicate_cards} cards with duplicate identities · {queue.association_summary.pending_links} pending or provisional links · {queue.association_summary.retained_bundles} retained evidence bundles.
+                Transcription completion does not mean these associations are resolved.
+              </p>}
               <div className="queue-stats">
                 <div className="prog">
                   <b>
@@ -1002,10 +1042,28 @@ export default function App() {
             </div>
             {(item.household_count ?? cards.length) > 1 && (
               <p className="household-context small">
-                {item.household_count ?? cards.length} households in this dwelling. Shared
-                building fields are reviewed on the first coding card only. A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
+                {item.household_count ?? cards.length} households in this dwelling. {item.prepared_review
+                  ? 'Each coding card keeps its own dwelling and building readings.'
+                  : 'Shared building fields are reviewed on the first coding card only.'} A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
               </p>
             )}
+            <RelinkingTools item={item} savedItem={lastSaved?.item} disabled={!canNavigate || needsReload || stopped}
+              onFix={(id) => void run(async () => { await openItem(id, false, true); setCorrecting(true); })}
+              onSubmit={async (path, body) => {
+                let refused = '';
+                await run(async () => {
+                  try {
+                    await submit({ path, body });
+                  } catch (e) {
+                    // 422: the server refused this choice; another may be accepted.
+                    // The form shows why, so the page needn't repeat it. A stop
+                    // still stops the session.
+                    if (e instanceof ApiError && e.status === 422 && !stopCodes.has(e.code)) refused = e.message;
+                    else throw e;
+                  }
+                });
+                return refused;
+              }} />
             {!!item.review_issues?.length && (
               <div className="review-issues household-context small" role="status">
                 <strong>Needs attention: </strong>
@@ -1015,7 +1073,7 @@ export default function App() {
             {!!item.dwelling_flags?.length && (
               <details className="source-notes household-context small">
                 <summary>Source notes ({item.dwelling_flags.length})</summary>
-                <p>Original extraction and association notes. Correcting values does not regroup cards or people.</p>
+                <p>{item.prepared_review ? 'Original extraction and association notes. Current identity and linking notices are shown separately.' : 'Original extraction and association notes. Correcting values does not regroup cards or people.'}</p>
                 <ul>
                   {item.dwelling_flags.map((flag) => <li key={flag}>{sourceNoteLabels[flag] ?? flag.replaceAll('_', ' ')}</li>)}
                 </ul>
@@ -1510,6 +1568,22 @@ export default function App() {
           }}
           onClose={closeHelp}
         />
+      )}
+      {duplicateDialog && (
+        <Dialog title="Confirm duplicate identity" wide onClose={() => { if (!busy) setDuplicateDialog(null); }}>
+          <p>This correction reads as {duplicateDialog.preview.duplicate?.identity}, also present on another physical coding card. Save anyway preserves every card and flags the conflict. The flag does not block transcription completion.</p>
+          <p>The comparison shows currently saved readings. Your proposed correction has not been saved yet.</p>
+          <button className="btn" disabled={busy} onClick={() => setShowDuplicateComparison((shown) => !shown)}>Compare</button>
+          {showDuplicateComparison && <CardComparison cardIds={duplicateDialog.cardIds} />}
+          <div className="dfoot">
+            <button className="btn" disabled={busy} onClick={() => setDuplicateDialog(null)}>Go back</button>
+            <button className="btn primary" disabled={busy} onClick={() => void run(async () => {
+              await submit({ ...duplicateDialog.request, body: { ...duplicateDialog.request.body,
+                duplicate_confirmation: duplicateDialog.preview.duplicate_confirmation } });
+              setDuplicateDialog(null);
+            })}>Save anyway</button>
+          </div>
+        </Dialog>
       )}
       {exited && (
         <Dialog title="You're all saved" compact onClose={() => setExited(false)}>

@@ -20,6 +20,7 @@ from survey.association import records as association
 from survey.extraction.base import ExtractionResult
 from survey.extraction.record import build_omitted_field, build_record
 from survey.pipeline import MAX_FAILURE_STREAK, MergeRefused, _merge, run
+from survey.review.relinking import finish_records
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = json.loads(
@@ -167,9 +168,14 @@ def test_a_fixture_batch_runs_end_to_end_and_writes_valid_json(tmp_path):
         c["page"] for r in records for c in r["dwelling"]["households"][0]["cards"]
     ] == [3, 7]
     # D016: banded high is 0.92, unbanded flash-lite 0.91, a field never returned 0.0
-    assert records[0]["dwelling"]["house"]["garden"]["confidence"] == 0.92
-    assert records[0]["dwelling"]["municipality"]["confidence"] == 0.91
-    assert records[0]["dwelling"]["house"]["bathroom"]["confidence"] == 0.0
+    assert (
+        records[0]["dwelling"]["households"][0]["house"]["garden"]["confidence"] == 0.92
+    )
+    assert records[0]["dwelling"]["households"][0]["municipality"]["confidence"] == 0.91
+    assert (
+        records[0]["dwelling"]["households"][0]["house"]["bathroom"]["confidence"]
+        == 0.0
+    )
     cache = raw_dir / "gemini-3.5-flash-lite"
     assert sorted(p.name for p in cache.iterdir()) == [
         "unit_p0003.json",
@@ -336,7 +342,7 @@ class SameHouseholdExtractor(FakeExtractor):
         return result
 
 
-def test_a_shared_record_id_stays_null_until_a_correction_settles_it(tmp_path):
+def test_a_shared_record_id_stays_flagged_until_a_correction_settles_it(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
 
     def rerun(records):
@@ -352,48 +358,56 @@ def test_a_shared_record_id_stays_null_until_a_correction_settles_it(tmp_path):
     def ids(records):
         return [r["dwelling"]["households"][0]["record_id"] for r in records]
 
+    def duplicates(records):
+        return [
+            "duplicate_record_id" in r["dwelling"]["households"][0]["flags"]
+            for r in records
+        ]
+
     records = rerun([])
-    assert ids(records) == [None, None]
-    assert all("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+    assert ids(records) == ["27-0006-01", "27-0006-01"]
+    assert duplicates(records) == [True, True]
 
     # A correction elsewhere leaves the identity unsettled.
     head = records[0]["dwelling"]["households"][0]["head"]
     key = next(iter(head))
     head[key] = {**head[key], **CORRECTED}
     records = rerun(records)
-    assert ids(records) == [None, None]
+    assert ids(records) == ["27-0006-01", "27-0006-01"]
+    assert duplicates(records) == [True, True]
 
     # Correcting one household's number settles both.
     household = records[1]["dwelling"]["households"][0]
     household["household_no"] = {**household["household_no"], **CORRECTED}
     records = rerun(records)
     assert ids(records) == ["27-0006-01", "27-0006-02"]
-    assert not any("duplicate_record_id" in r["dwelling"]["flags"] for r in records)
+    assert duplicates(records) == [False, False]
 
 
-def test_a_shared_record_id_comes_back_once_the_other_is_corrected():
+def test_a_shared_record_id_is_unflagged_once_the_other_is_corrected():
     def dwelling(page: int, municipality: str, **household) -> dict:
         field = {"value": None, "status": "ok", "confidence": None}
         return {
+            "region": "north",
             "dwelling": {
-                "municipality": {**field, "value": municipality},
-                "dwelling_no": {**field, "value": "6"},
-                "flags": ["duplicate_record_id"],
                 "households": [
                     {
-                        "record_id": None,
+                        "record_id": "27-0006-01",
+                        "municipality": {**field, "value": municipality},
+                        "dwelling_no": {**field, "value": "6"},
                         "household_no": {**field, "value": "1"},
+                        "flags": ["duplicate_record_id"],
                         "cards": [
                             {"role": "coding-front", "image": "unit.pdf", "page": page}
                         ],
                         **household,
                     }
                 ],
-            }
+            },
         }
 
     corrected = dwelling(5, "28")  # was 27, the shared 27-0006-01
-    corrected["dwelling"]["municipality"]["origin"] = "corrected"
+    corrected["dwelling"]["households"][0]["municipality"]["origin"] = "corrected"
     merged = _merge([], [dwelling(3, "27"), corrected])
 
     assert [r["dwelling"]["households"][0]["record_id"] for r in merged] == [
@@ -401,6 +415,7 @@ def test_a_shared_record_id_comes_back_once_the_other_is_corrected():
         "28-0006-01",
     ]
     assert not any("flags" in r["dwelling"] for r in merged)
+    assert [r["dwelling"]["households"][0]["flags"] for r in merged] == [[], []]
 
 
 def test_an_interrupted_run_resumes_without_rereading_finished_cards(tmp_path):
@@ -436,8 +451,11 @@ def test_a_fresh_run_reads_every_card_again_and_keeps_corrections(tmp_path):
         raw_dir=raw_dir,
     )
     records = _read(tmp_path)
-    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
-    records[0]["dwelling"]["house"]["garden"] = corrected
+    corrected = {
+        **records[0]["dwelling"]["households"][0]["house"]["garden"],
+        **CORRECTED,
+    }
+    records[0]["dwelling"]["households"][0]["house"]["garden"] = corrected
     _write(tmp_path, records)
 
     fresh = FakeExtractor()
@@ -451,7 +469,9 @@ def test_a_fresh_run_reads_every_card_again_and_keeps_corrections(tmp_path):
     )
 
     assert (fresh.calls, summary.records) == (2, 2)
-    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+    assert (
+        _read(tmp_path)[0]["dwelling"]["households"][0]["house"]["garden"] == corrected
+    )
     assert (raw_dir / f"{FakeExtractor.name}.previous").is_dir()
 
 
@@ -474,8 +494,8 @@ def test_a_correction_that_breaks_the_record_id_stops_the_run(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
     records = _read(tmp_path)
-    dwelling_no = records[0]["dwelling"]["dwelling_no"]
-    records[0]["dwelling"]["dwelling_no"] = {
+    dwelling_no = records[0]["dwelling"]["households"][0]["dwelling_no"]
+    records[0]["dwelling"]["households"][0]["dwelling_no"] = {
         **dwelling_no,
         **CORRECTED,
         "value": "12345",
@@ -598,15 +618,18 @@ def test_a_corrected_field_survives_a_rerun_that_reextracts(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
     records = _read(tmp_path)
-    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
-    records[0]["dwelling"]["house"]["garden"] = corrected
+    corrected = {
+        **records[0]["dwelling"]["households"][0]["house"]["garden"],
+        **CORRECTED,
+    }
+    records[0]["dwelling"]["households"][0]["house"]["garden"] = corrected
     _write(tmp_path, records)
 
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
 
     records = _read(tmp_path)
     assert len(records) == 2
-    assert records[0]["dwelling"]["house"]["garden"] == corrected
+    assert records[0]["dwelling"]["households"][0]["house"]["garden"] == corrected
     jsonschema.validate(records[0], SCHEMA)
 
 
@@ -623,15 +646,20 @@ def test_rerunning_with_saved_corrections_reads_no_card_again(tmp_path):
         raw_dir=raw_dir,
     )
     records = _read(tmp_path)
-    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
-    records[0]["dwelling"]["house"]["garden"] = corrected
+    corrected = {
+        **records[0]["dwelling"]["households"][0]["house"]["garden"],
+        **CORRECTED,
+    }
+    records[0]["dwelling"]["households"][0]["house"]["garden"] = corrected
     _write(tmp_path, records)
 
     again = FakeExtractor()
     run(scan_dir, region="north", extractor=again, out_dir=tmp_path, raw_dir=raw_dir)
 
     assert again.calls == 0
-    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+    assert (
+        _read(tmp_path)[0]["dwelling"]["households"][0]["house"]["garden"] == corrected
+    )
 
 
 def test_a_corrected_household_number_carries_its_record_id(tmp_path):
@@ -649,7 +677,10 @@ def test_a_corrected_household_number_carries_its_record_id(tmp_path):
     household = _read(tmp_path)[0]["dwelling"]["households"][0]
     assert household["record_id"] == "27-0006-02"
     other = _read(tmp_path)[1]["dwelling"]["households"][0]
-    assert other["record_id"] is None  # the uncorrected machine collision loses
+    # The uncorrected machine collision keeps its ID; both cards are flagged.
+    assert other["record_id"] == "27-0006-02"
+    assert "duplicate_record_id" in household["flags"]
+    assert "duplicate_record_id" in other["flags"]
     assert household["household_no"] == corrected
 
 
@@ -676,7 +707,7 @@ def test_a_results_file_with_a_malformed_record_stops_the_run_before_extraction(
         run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
         record = _read(tmp_path)[0]
         if line == "bare-value":  # a hand edit that breaks the envelope (D025)
-            record["dwelling"]["house"]["garden"] = "1"
+            record["dwelling"]["households"][0]["house"]["garden"] = "1"
         for card in record["dwelling"]["households"][0]["cards"]:
             if line == "no-coding-card" and card["role"] == "coding-front":
                 card["role"] = "survey-front"
@@ -697,7 +728,9 @@ def _plant_bare_value(monkeypatch) -> None:
 
     def broken(*args, **kwargs):
         record = build(*args, **kwargs)
-        record["dwelling"]["house"]["stray"] = "1"  # a field _score doesn't visit
+        record["dwelling"]["households"][0]["house"]["stray"] = (
+            "1"  # a field _score doesn't visit
+        )
         return record
 
     monkeypatch.setattr(association, "build_record", broken)
@@ -712,7 +745,7 @@ def test_an_invalid_record_is_reported_and_not_written(tmp_path, monkeypatch, ca
     assert (summary.invalid_records, summary.records) == (1, 0)
     assert _read(tmp_path) == []
     assert "unit.pdf p3: 27-0006-01 fails the schema" in caplog.text
-    assert "dwelling/house/stray" in caplog.text
+    assert "dwelling/households/0/house/stray" in caplog.text
 
 
 def test_an_invalid_rereading_keeps_the_previous_record(tmp_path, monkeypatch):
@@ -761,7 +794,7 @@ class CorrectingExtractor(FakeExtractor):
     def extract(self, image_path: Path) -> ExtractionResult:
         if self.calls == 0:
             records = _read(self.out_dir)
-            records[0]["dwelling"]["house"]["garden"] = self.corrected
+            records[0]["dwelling"]["households"][0]["house"]["garden"] = self.corrected
             _write(self.out_dir, records)
         return super().extract(image_path)
 
@@ -769,7 +802,7 @@ class CorrectingExtractor(FakeExtractor):
 def test_a_correction_saved_during_a_run_is_not_overwritten(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
-    garden = _read(tmp_path)[0]["dwelling"]["house"]["garden"]
+    garden = _read(tmp_path)[0]["dwelling"]["households"][0]["house"]["garden"]
     corrected = {**garden, **CORRECTED}
 
     run(
@@ -779,10 +812,12 @@ def test_a_correction_saved_during_a_run_is_not_overwritten(tmp_path):
         out_dir=tmp_path,
     )
 
-    assert _read(tmp_path)[0]["dwelling"]["house"]["garden"] == corrected
+    assert (
+        _read(tmp_path)[0]["dwelling"]["households"][0]["house"]["garden"] == corrected
+    )
 
 
-def test_a_blanked_household_number_keeps_the_record_id(tmp_path):
+def test_a_blanked_household_number_leaves_the_card_without_a_record_id(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
     records = _read(tmp_path)
@@ -799,8 +834,12 @@ def test_a_blanked_household_number_keeps_the_record_id(tmp_path):
 
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
 
-    household = _read(tmp_path)[0]["dwelling"]["households"][0]
-    assert household["record_id"] == "27-0006-01"
+    # Every card's record_id is derived from its own fields (schema 0.7.0).
+    record = _read(tmp_path)[0]
+    household = record["dwelling"]["households"][0]
+    assert household["record_id"] is None
+    assert "incomplete_identity" in household["flags"]
+    assert "missing_record_id" in record["dwelling"]["flags"]
     assert household["household_no"] == corrected
 
 
@@ -815,10 +854,20 @@ def test_a_results_file_with_a_bom_is_read_and_rerun(tmp_path):
     assert summary.records == 2
 
 
+def test_a_results_file_of_another_schema_stops_the_run_before_extraction(tmp_path):
+    scan_dir = _batch(tmp_path, _fixture_pages("r01"))
+    _write(tmp_path, [{**_stub(3), "schema_version": "0.6.0"}])
+    extractor = FakeExtractor()
+
+    with pytest.raises(MergeRefused, match="prepare_review_dataset"):
+        run(scan_dir, region="north", extractor=extractor, out_dir=tmp_path)
+    assert extractor.calls == 0
+
+
 def test_merge_replaces_overlapping_records_and_keeps_the_rest():
     merged = _merge([_stub(3, old=True), _stub(9)], [_stub(3, 7)])
 
-    assert merged == [_stub(3, 7), _stub(9)]
+    assert merged == finish_records([_stub(3, 7), _stub(9)])
 
 
 def test_merge_refuses_to_move_a_correction_onto_a_regrouped_record():
@@ -1489,8 +1538,11 @@ def test_a_correction_on_a_kept_source_survives_an_exclusion(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
     records = _read(tmp_path)
-    corrected = {**records[0]["dwelling"]["house"]["garden"], **CORRECTED}
-    records[0]["dwelling"]["house"]["garden"] = corrected
+    corrected = {
+        **records[0]["dwelling"]["households"][0]["house"]["garden"],
+        **CORRECTED,
+    }
+    records[0]["dwelling"]["households"][0]["house"]["garden"] = corrected
     _write(tmp_path, records)
 
     run(
@@ -1502,7 +1554,7 @@ def test_a_correction_on_a_kept_source_survives_an_exclusion(tmp_path):
     )
 
     (record,) = _read(tmp_path)
-    assert record["dwelling"]["house"]["garden"] == corrected
+    assert record["dwelling"]["households"][0]["house"]["garden"] == corrected
     jsonschema.validate(record, SCHEMA)
 
 
@@ -1510,7 +1562,7 @@ def test_excluding_a_reviewed_record_is_refused(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01", "r02"))
     run(scan_dir, region="north", extractor=FakeExtractor(), out_dir=tmp_path)
     records = _read(tmp_path)
-    records[1]["dwelling"]["house"]["garden"].update(CORRECTED)
+    records[1]["dwelling"]["households"][0]["house"]["garden"].update(CORRECTED)
     _write(tmp_path, records)
     before = (tmp_path / "north.jsonl").read_bytes()
 
@@ -1583,12 +1635,14 @@ def test_a_misspelt_label_is_exported_under_the_schemas(tmp_path):
         raw_dir=tmp_path / "raw",
     )
     (record,) = _read(tmp_path)
-    washouse = record["dwelling"]["house"]["washouse"]
+    washouse = record["dwelling"]["households"][0]["house"]["washouse"]
     # its own strike came with it (D023: struck empties the value)
     assert (washouse["status"], washouse["negated"]) == ("no_data", True)
     head = record["dwelling"]["households"][0]["head"]
     assert head["pre_war_occupation"]["value"] == "07"
-    assert record["dwelling"]["house"]["bathroom"]["status"] == "omitted"
+    assert (
+        record["dwelling"]["households"][0]["house"]["bathroom"]["status"] == "omitted"
+    )
     jsonschema.validate(record, SCHEMA)
 
 
@@ -1606,7 +1660,9 @@ def test_an_explicit_canonical_blank_beats_a_misspelt_value(tmp_path):
     scan_dir = _batch(tmp_path, _fixture_pages("r01"))
     run(scan_dir, region="north", extractor=ExplicitBlankExtractor(), out_dir=tmp_path)
     (record,) = _read(tmp_path)
-    assert record["dwelling"]["house"]["washouse"]["status"] == "no_data"
+    assert (
+        record["dwelling"]["households"][0]["house"]["washouse"]["status"] == "no_data"
+    )
 
 
 class ConfiguredExtractor(FakeExtractor):

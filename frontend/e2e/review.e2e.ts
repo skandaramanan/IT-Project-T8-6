@@ -34,10 +34,11 @@ async function waitForHealth(url: string, server: ChildProcess, log: string[]) {
 }
 
 // A fresh demo and backend per test: one writer per data checkout (D029).
-const test = base.extend<{ demo: string; app: string; identityFields: boolean; highConfidenceContext: boolean }>({
+const test = base.extend<{ demo: string; app: string; identityFields: boolean; highConfidenceContext: boolean; retainedCase: boolean }>({
   identityFields: [false, { option: true }],
   highConfidenceContext: [false, { option: true }],
-  demo: async ({ identityFields, highConfidenceContext }, use) => {
+  retainedCase: [false, { option: true }],
+  demo: async ({ identityFields, highConfidenceContext, retainedCase }, use) => {
     // Outside the repo: the backend refuses a data checkout inside the code checkout.
     const root = mkdtempSync(path.join(os.tmpdir(), 'survey-e2e-'));
     const demo = path.join(root, 'demo');
@@ -47,8 +48,8 @@ const test = base.extend<{ demo: string; app: string; identityFields: boolean; h
     });
     if (identityFields) {
       appendFileSync(path.join(demo, 'flags.jsonl'), [
-        '/dwelling/municipality',
-        '/dwelling/dwelling_no',
+        '/dwelling/households/0/municipality',
+        '/dwelling/households/0/dwelling_no',
         '/dwelling/households/0/household_no',
       ].map((field_path) => JSON.stringify({
         region: 'demo', pdf: 'synthetic.pdf', page: 1, field_path, reason: 'Synthetic identity review',
@@ -57,9 +58,19 @@ const test = base.extend<{ demo: string; app: string; identityFields: boolean; h
     if (highConfidenceContext) {
       const file = path.join(demo, 'data checkout/results/demo.jsonl');
       const record = JSON.parse(readFileSync(file, 'utf8'));
-      record.dwelling.house.age_of_house = { value: '007', status: 'ok', confidence: 0.98 };
+      record.dwelling.households[0].house.age_of_house = { value: '007', status: 'ok', confidence: 0.98 };
       record.dwelling.households[0].coding.weekly_rent.confidence = 0.98;
       writeFileSync(file, JSON.stringify(record) + '\n');
+    }
+    if (retainedCase) {
+      const file = path.join(demo, 'data checkout/results/demo.jsonl');
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      const second = record.dwelling.households.pop();
+      second.dwelling_no.value = '7';
+      second.record_id = '27-0007-02';
+      second.relink = { state: 'provisional', reason: 'No associated survey front' };
+      record.dwelling.handwritten = { dwelling_no: { value: '6', status: 'ok', confidence: null, source: 'survey-front' } };
+      writeFileSync(file, JSON.stringify(record) + '\n' + JSON.stringify({ schema_version: '0.7.0', region: 'demo', batch: 'synthetic.pdf', dwelling: { households: [second] } }) + '\n');
     }
     try {
       await use(demo);
@@ -473,5 +484,75 @@ test.describe('identity review', () => {
       await expect(page.getByText(/Undo saved on this computer/)).toBeVisible();
       await expect(page.getByRole('banner')).toContainText('27-0006-01');
     }
+  });
+
+  test('duplicate confirmation precedes saving and an unqueued peer identity can be repaired', async ({ page, demo }) => {
+    await signIn(page);
+    await page.getByRole('button', { name: 'Review', exact: true }).click();
+    const fields = page.getByRole('region', { name: 'Fields to review on this card' });
+    await fields.getByRole('button', { name: /^Number of Household / }).click();
+    await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+    await correct(page, '2');
+    const dialog = page.getByRole('dialog', { name: 'Confirm duplicate identity' });
+    await expect(dialog).toBeVisible();
+    const file = path.join(demo, 'data checkout/results/demo.jsonl');
+    expect(JSON.parse(readFileSync(file, 'utf8')).dwelling.households[0].household_no.value).toBe('1');
+    await dialog.getByRole('button', { name: 'Compare', exact: true }).click();
+    await expect(dialog.getByRole('heading', { name: /Coding page 2/ })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Save anyway' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('Duplicate identity on coding page 1.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Municipality', exact: true })).toBeVisible();
+    const before = await (await page.request.get('/api/queue')).json();
+    await page.getByRole('button', { name: 'Compare', exact: true }).click();
+    const compare = page.getByRole('dialog', { name: 'Compare coding cards' });
+    await compare.getByRole('button', { name: 'Fix Number of Household on page 2' }).click();
+    await expect(page.getByLabel('Your correction')).toHaveValue('2');
+    await expect(page.getByText(/Identity correction outside your assigned queue/)).toBeVisible();
+    await page.getByLabel('Your correction').fill('3');
+    await expect(page.getByRole('button', { name: 'Save 3', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Save 3', exact: true }).click();
+    await expect(page.getByText(/Saved: Number of Household 3/)).toBeVisible();
+    const after = await (await page.request.get('/api/queue')).json();
+    expect(after.total).toBe(before.total);
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    expect(saved.dwelling.households.every((h: { flags: string[] }) => !h.flags.includes('duplicate_record_id'))).toBe(true);
+  });
+});
+
+test.describe('retained evidence', () => {
+  test.use({ identityFields: true, retainedCase: true });
+  test('retains former scans and notes, then undoes the link while keeping a later building correction', async ({ page, demo }) => {
+    await signIn(page);
+    await page.getByRole('button', { name: 'Review', exact: true }).first().click();
+    const fields = page.getByRole('region', { name: 'Fields to review on this card' });
+    await fields.getByRole('button', { name: /^Number of Dwelling / }).click();
+    await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+    await correct(page, '7');
+    await expect(page.getByText(/Saved: Number of Dwelling 7/)).toBeVisible();
+    await page.getByRole('button', { name: 'Link to dwelling' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Link coding card to dwelling' });
+    await dialog.getByRole('radio', { name: /coding pages 2/ }).check();
+    await expect(dialog.getByRole('button', { name: 'Save link' })).toBeDisabled();
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', { name: 'Save link' }).click();
+    await page.getByRole('button', { name: 'Retained evidence (1)' }).click();
+    const retained = page.getByRole('dialog', { name: 'Retained supplementary evidence' });
+    await expect(retained.getByText('Synthetic interview notes\nSecond line', { exact: true })).toBeVisible();
+    await expect(retained.getByRole('img', { name: 'Original scan, page 3' })).toBeVisible();
+    await retained.getByRole('button', { name: 'Close dialog' }).click();
+    await fields.getByRole('button', { name: /^Garden / }).click();
+    await expect(page.getByRole('button', { name: 'Fix', exact: true })).toBeEnabled();
+    await correct(page, '3');
+    await expect(page.getByText(/Saved: Garden 3/)).toBeVisible();
+    await page.getByRole('button', { name: 'Undo last link' }).click();
+    await expect(page.getByText(/Undo saved on this computer/)).toBeVisible();
+    const rows = readFileSync(path.join(demo, 'data checkout/results/demo.jsonl'), 'utf8').trim().split('\n').map((s) => JSON.parse(s));
+    const restored = rows.find((r) => r.dwelling.households.some((h: { cards: { page: number }[] }) => h.cards[0].page === 1));
+    const card = restored.dwelling.households.find((h: { cards: { page: number }[] }) => h.cards[0].page === 1);
+    expect(card.dwelling_no.value).toBe('7');
+    expect(card.house.garden.value).toBe('3');
+    expect(card.retained_supplements).toBeUndefined();
+    expect(restored.dwelling.cards.map((c: { page: number }) => c.page)).toEqual([3, 4]);
   });
 });

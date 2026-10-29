@@ -281,12 +281,12 @@ def annotate_corrections(record, originals, decisions):
         page = household["cards"][0]["page"]
         groups = {
             "household": household,
+            "dwelling": household,
+            "house": household["house"],
             "head": household["head"],
             "counts": household["counts"],
             "coding": household["coding"],
         }
-        if index == 0:
-            groups.update(dwelling=dwelling, house=dwelling["house"])
         for label, (key, group) in FIELD_MAP.items():
             if group in groups:
                 mark(groups[group][key], "coding", page, label)

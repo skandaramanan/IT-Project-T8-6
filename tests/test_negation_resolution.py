@@ -28,12 +28,8 @@ NEGATED = {
 def _field(record: dict, label: str) -> dict:
     key, group = FIELD_MAP[label]
     household = record["dwelling"]["households"][0]
-    if group == "dwelling":
-        return record["dwelling"][key]
-    if group == "household":
+    if group in ("dwelling", "household"):
         return household[key]
-    if group == "house":
-        return record["dwelling"]["house"][key]
     return household[group][key]
 
 
@@ -101,8 +97,8 @@ def test_a_struck_identity_field_does_not_crash_record_id():
         "Number of Household": True,
     }
     record = build_record(card, region="test", struck=struck)
-    assert record["dwelling"]["municipality"]["value"] == "27"
-    assert record["dwelling"]["municipality"]["negated"] is False
+    assert record["dwelling"]["households"][0]["municipality"]["value"] == "27"
+    assert record["dwelling"]["households"][0]["municipality"]["negated"] is False
     assert record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
 
 

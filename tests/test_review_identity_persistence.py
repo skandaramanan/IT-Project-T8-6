@@ -4,10 +4,18 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-from review_support import decide, refs, setup_review, synthetic_record, write_record
+from review_support import (
+    decide,
+    per_card,
+    refs,
+    setup_review,
+    synthetic_record,
+    write_record,
+)
 
 from survey.pipeline import _merge
 from survey.records import RecordStore, ReviewError
+from survey.review.relinking import finish_records, refresh_identities
 from survey.review.service import ReviewService
 
 
@@ -22,6 +30,7 @@ def restart(service, settings, ref):
     )
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize(
     "pointer,value",
     [
@@ -49,6 +58,7 @@ def test_legacy_identity_edits_retain_other_card_municipality(tmp_path, pointer,
     assert second["record_id"].startswith("28-")
 
 
+@pytest.mark.usefixtures("published")
 def test_legacy_ambiguous_missing_municipality_cannot_be_guessed(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -65,6 +75,7 @@ def test_legacy_ambiguous_missing_municipality_cannot_be_guessed(tmp_path):
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_missing_legacy_id_can_inherit_unambiguous_shared_reading(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -79,15 +90,18 @@ def test_missing_legacy_id_can_inherit_unambiguous_shared_reading(tmp_path):
     )
 
 
-def test_alias_evidence_and_undo_survive_extraction_rerun(tmp_path):
+# A rerun merges onto per-card 0.7.0 results only (the pipeline's rule).
+@pytest.mark.parametrize("shape", ["0.7.0"], indirect=True)
+def test_alias_evidence_and_undo_survive_extraction_rerun(tmp_path, shape):
     service, settings = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
-    record["dwelling"]["municipality"]["confidence"] = 0.8
     record["dwelling"]["households"][0]["municipality"].update(
         value="26", confidence=0.4
     )
+    refresh_identities([record])  # the card's own reading derives its ID
     install(service, record)
-    decision = decide(service, refs()[3], value="28")
+    # Agreeing with card 2 keeps the group whole, so the rebuild still merges.
+    decision = decide(service, refs()[3], value="27")
     alias_before = deepcopy(
         service.store.regions["demo"][0][0]["dwelling"]["households"][0]["municipality"]
     )
@@ -109,14 +123,18 @@ def test_alias_evidence_and_undo_survive_extraction_rerun(tmp_path):
     )
 
 
+@pytest.mark.parametrize("shape", ["0.7.0"], indirect=True)
 @pytest.mark.parametrize("change", ["insert", "remove", "reorder"])
-def test_identity_undo_refuses_changed_note_topology_after_rerun(tmp_path, change):
+def test_identity_undo_refuses_changed_note_topology_after_rerun(
+    tmp_path, change, shape
+):
     service, settings = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
     record["dwelling"]["households"].pop()
     record["dwelling"]["notes"][0]["household_id"] = "27-0006-01"
+    finish_records([record])  # links the note to its card
     install(service, record)
-    ref = replace(refs()[3], field_path="/dwelling/dwelling_no")
+    ref = replace(refs()[3], field_path=per_card("/dwelling/dwelling_no"))
     service.replace_queue([ref], [])
     decision = decide(service, ref, value="7")
     rebuilt = deepcopy(record)
@@ -144,17 +162,25 @@ def test_identity_undo_refuses_changed_note_topology_after_rerun(tmp_path, chang
     [merged] = _merge(deepcopy(service.store.regions["demo"][0]), [rebuilt])
     install(service, merged)
     service = restart(service, settings, ref)
+    undo = (
+        decision["decision"]["id"],
+        "Audit",
+        service.item(ref.item_id)["version"],
+        "undo",
+    )
+    if change == "reorder":
+        # 0.7.0 notes are owned by card ID, so a pure reorder is not a change.
+        service.undo_latest(*undo)
+        notes = service.store.regions["demo"][0][0]["dwelling"]["notes"]
+        assert len({n["household_card_id"] for n in notes}) == 1
+        return
     before = (service.store.directory / "demo.jsonl").read_bytes()
-    with pytest.raises(ReviewError, match="Associated notes changed"):
-        service.undo_latest(
-            decision["decision"]["id"],
-            "Audit",
-            service.item(ref.item_id)["version"],
-            "undo",
-        )
+    with pytest.raises(ReviewError, match="evidence association changed"):
+        service.undo_latest(*undo)
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_single_household_identity_repair_links_null_notes_and_undo_restores_null(
     tmp_path,
 ):

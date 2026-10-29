@@ -22,7 +22,7 @@ from survey.review.fields import MAX_TEXT_CORRECTION_LENGTH
 from survey.review.queue import load_queue
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
-from survey.review.sync import GitSync
+from survey.review.sync import GitSync, check_one_schema
 
 FRONTEND_DIST = Path(__file__).parents[3] / "frontend" / "dist"
 
@@ -91,6 +91,20 @@ class VersionedBody(Body):
 class DecisionBody(VersionedBody):
     action: Literal["accept", "correct", "no_data", "illegible"]
     value: str | None = Field(default=None, max_length=MAX_TEXT_CORRECTION_LENGTH)
+    duplicate_confirmation: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+
+
+class PreviewBody(Body):
+    expected_version: str = Field(min_length=1)
+    action: Literal["correct"] = "correct"
+    value: str = Field(max_length=MAX_TEXT_CORRECTION_LENGTH)
+
+
+class LinkBody(VersionedBody):
+    target_card_id: str | None = Field(default=None, min_length=64, max_length=64)
+    retain_supplements: bool = False
 
 
 def error_response(code, message, status):
@@ -115,6 +129,7 @@ def create_app(settings: Settings) -> FastAPI:
             sync = GitSync(settings.data_checkout, store, settings.data_branch)
             sync.writer_lock.acquire()
             store.reload()
+            check_one_schema(store.regions)
             refs, diagnostics = load_queue(settings.flags)
             service = ReviewService(
                 store,
@@ -375,13 +390,51 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/api/scans/{card_id}")
     def scan(card_id: str):
         review = ready()
-        ref = next(
-            (r for r in review.references.values() if r.card_id == card_id), None
-        )
-        if ref is None:
+        card = review.card_registry.get(card_id)
+        if card is None or type(card.get("page")) is not int:
             raise ReviewError("missing_scan", "Unknown physical card", 404)
-        review.store.current(ref)
+        from survey.records import Reference
+
+        ref = Reference(card["region"], card["image"], card["page"], "/")
         return FileResponse(review.scans.get_scan(ref), media_type="image/png")
+
+    @app.get("/api/cards/{card_id}")
+    def card_context(card_id: str):
+        from survey.review.prepared_service import card_context
+
+        return card_context(ready(), card_id)
+
+    @app.get("/api/cards/{card_id}/link-candidates")
+    def link_candidates(card_id: str):
+        from survey.review.prepared_service import link_candidates
+
+        return link_candidates(ready(), card_id)
+
+    @app.post("/api/cards/{card_id}/link")
+    def link(card_id: str, body: LinkBody, request: Request):
+        from survey.review.prepared_service import link
+
+        review = ready()
+        with review.store.lock:
+            sync.verify_checkout()
+            result = link(
+                review,
+                card_id,
+                body.target_card_id,
+                body.retain_supplements,
+                reviewer(request),
+                body.expected_version,
+                body.request_id,
+            )
+        result["sync"] = sync.status()
+        return result
+
+    @app.post("/api/review-items/{item_id}/preview")
+    def preview(item_id: str, body: PreviewBody, request: Request):
+        from survey.review.prepared_service import preview
+
+        reviewer(request)
+        return preview(ready(), item_id, body.action, body.value, body.expected_version)
 
     def completion_sync(item):
         if service.batch_complete(item["region"], item["batch"]):
@@ -399,6 +452,7 @@ def create_app(settings: Settings) -> FastAPI:
                 body.expected_version,
                 body.request_id,
                 body.value,
+                duplicate_confirmation=body.duplicate_confirmation,
             )
         completion_sync(result["item"])
         result["sync"] = sync.status()

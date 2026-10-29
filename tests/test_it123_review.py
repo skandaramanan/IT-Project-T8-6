@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
+from review_support import legacy
 
 from survey.association.dwelling import similar_numbers
 from survey.association.records import build_dwelling_records
@@ -122,10 +123,13 @@ def test_new_schema_requires_per_household_municipality_but_reads_legacy():
         region="north",
     )
     assert not schema_errors(record)
+    published = legacy(record)
     del record["dwelling"]["households"][0]["municipality"]
     assert schema_errors(record)
-    record["schema_version"] = "0.5.0"
-    assert not schema_errors(record)
+    del published["dwelling"]["households"][0]["municipality"]
+    assert schema_errors(published)
+    published["schema_version"] = "0.5.0"
+    assert not schema_errors(published)
 
 
 def test_household_municipality_is_reviewable_on_its_own_coding_card():
@@ -137,25 +141,6 @@ def test_household_municipality_is_reviewable_on_its_own_coding_card():
     )
     ref = Reference("north", "s.pdf", 3, "/dwelling/households/0/municipality")
     assert resolve_field([record], ref).field["value"] == "28"
-
-
-def test_ambiguous_legacy_identity_refuses_a_rewrite_instead_of_guessing():
-    record = build_record(
-        {"Municipality": "27", "Number of Dwelling": "5", "Number of Household": "1"},
-        region="north",
-        image="s.pdf",
-        page=3,
-    )
-    record["schema_version"] = "0.5.0"
-    first = record["dwelling"]["households"][0]
-    del first["municipality"]
-    second = deepcopy(first)
-    second["record_id"] = None
-    second["cards"][0]["page"] = 4
-    record["dwelling"]["households"].append(second)
-    record["dwelling"]["flags"] = ["municipality_mismatch", "duplicate_record_id"]
-    with pytest.raises(MergeRefused, match="rebuild from cache"):
-        _merge([], [record])
 
 
 def test_verified_coding_decisions_are_explicit_and_region_scoped(tmp_path):
@@ -230,7 +215,8 @@ def test_protected_front_and_coding_numbers_are_applied_before_association():
         list(readings.items()), region="north", locate=locate
     )[0]
     dwelling = previous[0]["dwelling"]
-    for field in (dwelling["dwelling_no"], dwelling["handwritten"]["dwelling_no"]):
+    card = dwelling["households"][0]
+    for field in (card["dwelling_no"], dwelling["handwritten"]["dwelling_no"]):
         field.update(origin="corrected", original_value="999")
     raw = {
         front: ExtractionResult(fields={"Dwelling Number (top-left corner)": "999"}),
@@ -255,7 +241,7 @@ def test_protected_front_and_coding_numbers_are_applied_before_association():
     assert merged[0]["dwelling"]["households"][0]["record_id"] == "06-0303-01"
 
 
-def test_conflicting_human_identity_corrections_remain_null_and_flagged():
+def test_conflicting_human_identity_corrections_keep_their_id_and_are_flagged():
     records = [
         build_record(
             {
@@ -273,5 +259,7 @@ def test_conflicting_human_identity_corrections_remain_null_and_flagged():
         household = record["dwelling"]["households"][0]
         household["household_no"].update(origin="corrected", original_value="1")
     merged = _merge([], records)
-    assert all(r["dwelling"]["households"][0]["record_id"] is None for r in merged)
-    assert all("duplicate_record_id" in r["dwelling"]["flags"] for r in merged)
+    # 0.7.0: a duplicate keeps its derived ID and is flagged on every peer card.
+    cards = [r["dwelling"]["households"][0] for r in merged]
+    assert all(c["record_id"] == "27-0005-02" for c in cards)
+    assert all("duplicate_record_id" in c["flags"] for c in cards)

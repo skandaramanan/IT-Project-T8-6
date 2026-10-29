@@ -10,8 +10,16 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import review_support
 from fastapi.testclient import TestClient
-from review_support import git, setup_review, synthetic_record, write_record
+from review_support import (
+    git,
+    per_card,
+    prepare_shape,
+    setup_review,
+    synthetic_record,
+    write_record,
+)
 
 from dual_extract import pair_cards
 from survey import cli
@@ -23,6 +31,7 @@ from survey.extraction.record import FIELD_MAP, build_record
 from survey.records import current_fields, field_pointer
 from survey.review.api import create_app
 
+pytestmark = pytest.mark.usefixtures("shape")
 BASE = "http://127.0.0.1:8765"
 MODELS = {"a": "gemini-3.5-flash-lite", "b": "qwen2.5-vl"}
 
@@ -45,7 +54,6 @@ def scored_record(scored, page=1):
         key, group = FIELD_MAP[name]
         at(record, field_pointer(key, group, 0))["confidence"] = field["confidence"]
     household = record["dwelling"]["households"][0]
-    household["municipality"] = deepcopy(record["dwelling"]["municipality"])
     household["cards"][0]["confidence"] = card_confidence(
         field["confidence"] for field in scored.values()
     )
@@ -62,7 +70,7 @@ def generate(settings, capsys, target=None):
 
 def prepare(tmp_path, capsys, record):
     _, settings = setup_review(tmp_path, with_git=True)
-    write_record(settings.data_checkout / "results/demo.jsonl", record)
+    write_record(settings.data_checkout / "results/demo.jsonl", prepare_shape(record))
     git(settings.data_checkout, "add", "results/demo.jsonl")
     git(settings.data_checkout, "commit", "--allow-empty", "-m", "Seed scored cards")
     git(settings.data_checkout, "push", "origin", "review-data")
@@ -93,13 +101,19 @@ def assignment(tmp_path, capsys):
     for key in ("cards", "address", "handwritten", "notes"):
         record["dwelling"][key] = deepcopy(context[key])
     other_first = first | {"Number of Household": "2", "Age of Head": "50"}
-    other_second = other_first | {"Weekly Rent": "12", "Municipality": "28"}
+    # Card 2's own garden reading is disputed too; 0.6.0 drops it (shared).
+    other_second = other_first | {
+        "Weekly Rent": "12",
+        "Municipality": "28",
+        "Garden": "2",
+    }
     other = scored_record(
         score_fields(compare_fields(other_first, other_second), MODELS), page=2
     )
     record["dwelling"]["households"].append(other["dwelling"]["households"][0])
     settings, flags = prepare(tmp_path, capsys, record)
-    assert len(flags) == 7
+    # 0.7.0: card 2 owns its own garden, so it is flagged too.
+    assert len(flags) == 7 + review_support.PREPARED
     return settings, flags
 
 
@@ -147,9 +161,12 @@ def test_generated_assignment_navigation_decisions_restart_undo_and_share(
             "Municipality",
             "Weekly Rent",
             "Sex of Head",
+            *(["Garden"] * review_support.PREPARED),
         ]
-        # Shared building fields have one owner; later municipality has its own.
-        assert sum(i["label"] == "Garden" for i in items["items"]) == 1
+        # 0.6.0: shared building fields have one owner; 0.7.0: one per card.
+        assert sum(i["label"] == "Garden" for i in items["items"]) == (
+            1 + review_support.PREPARED
+        )
         assert (
             next(i for i in items["items"] if i["label"] == "Municipality")[
                 "field_path"
@@ -246,15 +263,20 @@ def test_valid_empty_generated_assignment_is_ready(tmp_path, capsys):
             assert not queue["complete"] and not queue["diagnostics"]
 
 
-def test_generated_identity_warnings_with_nullable_display_id(tmp_path, capsys):
+def test_generated_identity_warnings_with_nullable_display_id(tmp_path, capsys, shape):
+    if shape == "0.7.0":
+        pytest.skip(
+            "prepare_records derives record_id from municipality/dwelling/household, "
+            "so a null display id cannot occur in prepared data"
+        )
     fields = {spec.name: "1" for spec in FIELD_SCHEMA}
     record = scored_record(score_fields(compare_fields(fields, fields), MODELS))
     record["dwelling"]["flags"] = ["identity_reread"]
     record["dwelling"]["households"][0]["record_id"] = None
     settings, flags = prepare(tmp_path, capsys, record)
     assert {flag["field_path"] for flag in flags} == {
-        "/dwelling/municipality",
-        "/dwelling/dwelling_no",
+        per_card("/dwelling/municipality"),
+        per_card("/dwelling/dwelling_no"),
         "/dwelling/households/0/household_no",
     }
     with TestClient(create_app(settings), base_url=BASE) as client:
@@ -334,6 +356,10 @@ def test_cached_real_dual_readings_generate_actionable_assignment(tmp_path, caps
     assert all(
         "confidence" in field
         for _, field in current_fields(
-            json.loads((settings.data_checkout / "results/demo.jsonl").read_text())
+            json.loads(
+                (settings.data_checkout / "results/demo.jsonl").read_text(
+                    encoding="utf-8"
+                )
+            )
         )
     )

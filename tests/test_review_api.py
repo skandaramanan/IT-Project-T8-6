@@ -2,12 +2,13 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from review_support import git, setup_review
+from review_support import git, per_card, setup_review
 
 from survey import cli, records
 from survey.review.api import create_app
 from survey.review.launch import open_when_ready
 
+pytestmark = pytest.mark.usefixtures("shape")
 BASE = "http://127.0.0.1:8765"
 
 pytestmark = pytest.mark.integration
@@ -341,7 +342,7 @@ def test_missing_region_and_malformed_flags_remain_browsable(tmp_path):
         "region": "missing",
         "pdf": "missing.pdf",
         "page": 1,
-        "field_path": "/dwelling/municipality",
+        "field_path": per_card("/dwelling/municipality"),
     }
     invalid = {**extra, "region": "../bad"}
     with settings.flags.open("a") as stream:

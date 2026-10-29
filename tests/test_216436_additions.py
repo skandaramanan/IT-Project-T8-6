@@ -181,7 +181,7 @@ def test_coding_corrections_keep_identity_aliases_and_missing_machine_values():
     additions.annotate_corrections(record, {("coding", 585): original}, index)
     dwelling = record["dwelling"]
     assert dwelling["households"][0]["record_id"] == "14-0233-01"
-    for field in [dwelling["municipality"], dwelling["households"][0]["municipality"]]:
+    for field in [dwelling["households"][0]["municipality"]]:
         assert (field["value"], field["original_value"], field["origin"]) == (
             "14",
             "21",
@@ -244,7 +244,9 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
         (sandbox / relative).mkdir(parents=True, exist_ok=True)
     for name in ("216436-source-corrections.json", "216436-gemini-additions.json"):
         shutil.copy2(ROOT / "docs/runs" / name, sandbox / "docs/runs" / name)
-    (sandbox / "results/216436.jsonl").write_text("\n".join(baseline) + "\n")
+    (sandbox / "results/216436.jsonl").write_text(
+        "\n".join(baseline) + "\n", encoding="utf-8"
+    )
     pdf = sandbox / "data/Wilfred_Prest_Survey_Data/216436" / additions.PDF_NAME
     pdf.parent.mkdir(parents=True)
     shutil.copy2(additions.PDF, pdf)
@@ -273,8 +275,10 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
         hashlib.sha256(p.read_bytes()).hexdigest() == digest
         for p, digest in raw_before.items()
     )
-    assert set(baseline) <= set(output.read_text().splitlines())
-    records = [json.loads(line) for line in output.read_text().splitlines()]
+    assert set(baseline) <= set(output.read_text(encoding="utf-8").splitlines())
+    records = [
+        json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()
+    ]
     assert len(records) == 146
     report = json.loads(
         (sandbox / "docs/runs/216436-gemini-additions.json").read_text()
@@ -303,12 +307,12 @@ def test_existing_review_and_manual_correction_payloads_cannot_be_overwritten():
         image=additions.PDF_NAME,
         page=551,
     )
-    old["dwelling"]["dwelling_no"].update(
+    old["dwelling"]["households"][0]["dwelling_no"].update(
         origin="corrected", original_value="209522", review={"state": "accepted"}
     )
     additions.protect_published_corrections([old], [deepcopy(old)])
     changed = deepcopy(old)
-    changed["dwelling"]["dwelling_no"].pop("review")
+    changed["dwelling"]["households"][0]["dwelling_no"].pop("review")
     with pytest.raises(ValueError, match="overwrite a published correction or review"):
         additions.protect_published_corrections([old], [changed])
     with pytest.raises(ValueError, match="overwrite a published correction or review"):

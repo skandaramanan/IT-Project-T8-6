@@ -234,6 +234,7 @@ def test_nonqueued_and_diagnostic_cards_are_not_marked_reviewed(tmp_path):
     assert cards[1]["total"] == 0
 
 
+@pytest.mark.usefixtures("published")
 def test_selected_dwelling_printed_order_and_readonly_card_context(tmp_path):
     service, _ = setup_review(tmp_path)
     identity = service.dwellings("demo")["dwellings"][0]["id"]
@@ -366,6 +367,7 @@ def test_legacy_notes_are_visible_and_block_summary_completion(tmp_path):
     assert queue["unresolved"] == len(refs())
 
 
+@pytest.mark.usefixtures("published")
 def test_reindex_retains_stale_flags_as_diagnostics_and_recovers(tmp_path):
     service, _ = setup_review(tmp_path)
     record = service.store.regions["demo"][0][0]
@@ -437,6 +439,7 @@ def test_decision_and_undo_return_current_card_navigation(tmp_path):
     assert undone["item"]["cards"] == service.item(refs()[2].item_id)["cards"]
 
 
+@pytest.mark.usefixtures("published")
 def test_locator_and_unqueued_household_context_do_not_create_actions(tmp_path):
     service, _ = setup_review(tmp_path)
     service.replace_queue([refs()[0]], [])

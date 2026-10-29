@@ -1,11 +1,18 @@
 from copy import deepcopy
 
 import pytest
+import review_support
 from review_support import decide, refs, setup_review, synthetic_record, write_record
 
 from survey.extraction.record import SCHEMA_VERSION
 from survey.pipeline import MergeRefused, _corrected_fields, _merge
 from survey.records import validate_records
+
+
+@pytest.fixture(autouse=True)
+def prepared(monkeypatch):
+    """A rerun merges onto per-card 0.7.0 results only (the pipeline's rule)."""
+    monkeypatch.setattr(review_support, "PREPARED", True)
 
 
 @pytest.mark.parametrize("action", ["accept", "correct", "no_data", "illegible"])
@@ -31,7 +38,6 @@ def test_pending_undo_history_survives_but_new_reading_can_change(tmp_path):
     )
     old = service.store.regions["demo"][0][0]
     rebuilt = synthetic_record()
-    rebuilt["schema_version"] = "0.2.0"
     rebuilt["dwelling"]["households"][1]["coding"]["weekly_rent"]["value"] = "25"
     [merged] = _merge([old], [rebuilt])
     field = merged["dwelling"]["households"][1]["coding"]["weekly_rent"]
@@ -78,7 +84,7 @@ def test_acceptance_of_identity_preserves_display_identity(tmp_path):
     decide(service, refs()[3], action="accept")
     old = service.store.regions["demo"][0][0]
     rebuilt = synthetic_record()
-    rebuilt["dwelling"]["municipality"]["value"] = "29"
+    rebuilt["dwelling"]["households"][0]["municipality"]["value"] = "29"
     [merged] = _merge([old], [rebuilt])
     assert all(
         h["record_id"].startswith("27-") for h in merged["dwelling"]["households"]

@@ -10,6 +10,7 @@ from review_support import decide, refs, setup_review, synthetic_pdf, write_reco
 from survey.records import ReviewError
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("edit_shared", [True, False])
 def test_municipality_correction_cannot_bypass_negated_mirror(tmp_path, edit_shared):
     service, _ = setup_review(tmp_path)
@@ -33,6 +34,7 @@ def test_municipality_correction_cannot_bypass_negated_mirror(tmp_path, edit_sha
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("legacy_event", [False, True])
 def test_undo_can_restore_preexisting_duplicate_identity_after_restart(
     tmp_path, legacy_event
@@ -86,6 +88,7 @@ def test_undo_can_restore_preexisting_duplicate_identity_after_restart(
     ]
 
 
+@pytest.mark.usefixtures("published")
 def test_duplicate_repair_undo_rejects_later_replacement_collision_owner(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -120,6 +123,7 @@ def test_duplicate_repair_undo_rejects_later_replacement_collision_owner(tmp_pat
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_collision_guard_includes_other_records_stored_ids(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])

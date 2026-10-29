@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 
 from survey.extraction.card_fields import (
     FIELD_SCHEMA,
@@ -61,7 +62,14 @@ class Descriptor:
         return isinstance(value, str) and bool(re.fullmatch(r"[0-9]{1,64}", value))
 
 
+@lru_cache(maxsize=4096)
 def descriptor(pointer: str) -> Descriptor | None:
+    for label, path, group in field_pointers(review=True):
+        if (
+            re.sub(r"/households/[0-9]+/", "/households/*/", pointer) == path
+            and group != "front"
+        ):
+            return Descriptor(FIELD_SCHEMA_BY_NAME[label], group, "coding-front")
     if re.fullmatch(r"/dwelling/households/[0-9]+/municipality", pointer):
         return Descriptor(
             FIELD_SCHEMA_BY_NAME["Municipality"], "household", "coding-front"
@@ -87,11 +95,19 @@ def descriptor(pointer: str) -> Descriptor | None:
     return None
 
 
-def field_pointers(index="*", *, household_municipality=False, include_shared=True):
+def field_pointers(
+    index="*", *, household_municipality=False, include_shared=True, review=False
+):
     """Yield labels, pointers and groups for descriptors and review context."""
     for spec in FIELD_SCHEMA:
         label = spec.name
         key, group = FIELD_MAP[label]
+        if review and group in {"dwelling", "house"}:
+            path = f"/dwelling/households/{index}/" + (
+                f"house/{key}" if group == "house" else key
+            )
+            yield label, path, "house" if group == "house" else "household"
+            continue
         if label == "Municipality" and household_municipality:
             group = "household"
         if group in {"dwelling", "house"} and not include_shared:

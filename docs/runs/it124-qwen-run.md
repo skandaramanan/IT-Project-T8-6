@@ -8,8 +8,9 @@ run's configuration in `extractor.json` beside it.
 
 ## Totals
 
-- **5,422 dwelling records**, every file valid at schema 0.6.0. 216461 has
-  none, as in the Gemini run, so it has no file.
+- **5,422 dwelling records**, every file valid at schema 0.6.0 (converted to
+  0.7.0 under IT-153; see `docs/review-relinking.md`). 216461 has none, as in
+  the Gemini run, so it has no file.
 - **5,283 coding cards shared with the Gemini run** outside 216436, out of
   its 5,284, paired by PDF and page (D026). No card is in this run alone.
   216436 was read again from a complete scan (below). Gemini's rerun on the

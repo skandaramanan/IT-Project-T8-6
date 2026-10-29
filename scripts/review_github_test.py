@@ -120,10 +120,12 @@ def prepare(args):
         runpy.run_path(str(CODE / "scripts/review_demo.py"))["create_demo"](
             root / "demo"
         )
-    template = json.loads((root / "demo/data checkout/results/demo.jsonl").read_text())
+    template = json.loads(
+        (root / "demo/data checkout/results/demo.jsonl").read_text(encoding="utf-8")
+    )
     flags = [
         json.loads(line)
-        for line in (root / "demo/flags.jsonl").read_text().splitlines()
+        for line in (root / "demo/flags.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     seed = root / "provision"
     command("git", "clone", "--no-hardlinks", CODE, seed)
