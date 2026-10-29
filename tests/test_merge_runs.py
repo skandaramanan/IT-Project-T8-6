@@ -356,6 +356,24 @@ def test_qwen_cache_guard_compares_household_owned_fields_only(tmp_path):
     assert record == snapshot
 
 
+def test_qwen_targets_follow_the_0_6_export_shared_fields():
+    from pathlib import Path
+
+    from survey.merge_runs import QWEN, coding_targets
+
+    path = Path(__file__).parents[1] / "results" / QWEN / "216463.jsonl"
+    records = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    record = next(r for r in records if len(r["dwelling"]["households"]) > 1)
+    assert record["schema_version"] == "0.6.0"
+    d = record["dwelling"]
+    first, later = dict(coding_targets(record, 0)), dict(coding_targets(record, 1))
+    assert first["Garden"] is d["house"]["garden"]
+    assert "Garden" not in later
+    assert later["Municipality"] is d["households"][1]["municipality"]
+
+
 def test_reviewed_qwen_discrepancy_refuses_without_overwriting_human_decision(tmp_path):
     from survey.merge_runs import merge_dataset
 

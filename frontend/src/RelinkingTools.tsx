@@ -65,7 +65,8 @@ export default function RelinkingTools({ item, savedItem, disabled, onFix, onSub
   savedItem?: Item;
   disabled: boolean;
   onFix: (id: string) => void;
-  onSubmit: (path: string, body: object) => Promise<boolean>;
+  /** Resolves to the reason the save was refused, or '' when it saved or awaits retry. */
+  onSubmit: (path: string, body: object) => Promise<string>;
 }) {
   const [compareIds, setCompareIds] = useState<string[] | null>(null);
   const [candidates, setCandidates] = useState<LinkCandidates | null>(null);
@@ -73,6 +74,7 @@ export default function RelinkingTools({ item, savedItem, disabled, onFix, onSub
   const [target, setTarget] = useState('');
   const [retain, setRetain] = useState(false);
   const [error, setError] = useState('');
+  const [linkError, setLinkError] = useState('');
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState('');
   if (!item.prepared_review || item.source.role !== 'coding-front') return null;
@@ -82,7 +84,7 @@ export default function RelinkingTools({ item, savedItem, disabled, onFix, onSub
     setLoading(true); setError('');
     try {
       const fresh = await api<LinkCandidates>(`/api/cards/${item.source.card_id}/link-candidates`);
-      setCandidates(fresh); setTarget(''); setRetain(false);
+      setCandidates(fresh); setTarget(''); setRetain(false); setLinkError('');
     } catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
   }
@@ -136,14 +138,18 @@ export default function RelinkingTools({ item, savedItem, disabled, onFix, onSub
       {candidates.requires_retention && <div className="retention-choice"><p>The last coding card would leave survey evidence behind. Keep that evidence separately; it will not become evidence for the destination.</p>
         <label><input type="checkbox" checked={retain} disabled={disabled} onChange={(e) => setRetain(e.target.checked)} /> Retain all former fronts, notes, address and person rows outside the review queue</label>
       </div>}
+      {linkError && <p role="alert">{linkError}</p>}
       <div className="dfoot">
         <button className="btn" disabled={disabled} onClick={() => setCandidates(null)}>Go back</button>
         <button className="btn primary" disabled={disabled || !target || (candidates.requires_retention && !retain)} onClick={async () => {
-          await onSubmit(`/api/cards/${item.source.card_id}/link`, { target_card_id: target === 'provisional' ? null : target,
+          setLinkError('');
+          const refused = await onSubmit(`/api/cards/${item.source.card_id}/link`, { target_card_id: target === 'provisional' ? null : target,
             expected_version: candidates.version, request_id: crypto.randomUUID(), retain_supplements: retain });
-          // An uncertain save is retried with the exact body by the app-level
-          // retry control. Close the native modal so that control is reachable.
-          setCandidates(null);
+          // A refused choice can be changed here. An uncertain save is retried
+          // with the exact body by the app-level retry control, and a stale one
+          // needs a reload; close the native modal so those controls are reachable.
+          if (refused) setLinkError(refused);
+          else setCandidates(null);
         }}>Save link</button>
       </div>
     </Dialog>}

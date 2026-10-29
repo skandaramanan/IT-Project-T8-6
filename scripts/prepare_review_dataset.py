@@ -16,6 +16,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cache", type=Path)
     parser.add_argument(
+        "--cache-name",
+        help="Extractor folder under each region's cache (default: the Gemini one); "
+        "the Qwen export needs qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k",
+    )
+    parser.add_argument(
         "--field-evidence",
         type=Path,
         help="Existing source/field-specific measured confidence JSON; never recomputed",
@@ -23,7 +28,11 @@ def main():
     args = parser.parse_args()
     try:
         report = prepare_dataset(
-            args.previous, args.output, args.cache, args.field_evidence
+            args.previous,
+            args.output,
+            args.cache,
+            args.field_evidence,
+            args.cache_name,
         )
     except (ValueError, OSError) as error:
         parser.error(str(error))

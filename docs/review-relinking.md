@@ -34,6 +34,12 @@ The tool does not extract, call models, rebuild associations or rescore fields.
 It preserves published confidence, card scores and protected payloads. Omit
 `--cache` for a conservative inspection: missing later-card readings become
 omitted/null-confidence fields with a visible issue, never copies of another card.
+The cache folder defaults to Gemini's. The Qwen export
+(`results/qwen2.5-vl-server-2000000px/`, which carries its own `extractor.json`) is
+prepared only from its own readings:
+`--cache-name qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k`. Its maintenance
+scripts (`patch_qwen_results.py`, `read_qwen_card.py`) read 0.7.0 only, so they
+need that conversion first. The IT-125 merge reads the export in either schema.
 
 Optional `--field-evidence /path/to/evidence.json` accepts a JSON array of existing
 measurements: each row has `region`, `pdf`, `page`, and `fields` mapping printed
@@ -50,9 +56,10 @@ workspaces for newer decisions. Reconcile reviewed work rather than replacing it
 with a fresh seed. Preserve the old seed in normal Git history and deploy matching
 code, data and regenerated flags together. Keep extraction/rerun tools away from
 review data. If a rerun does meet reviewed records, it refuses when a corrected or
-relinked record would be regrouped, and otherwise copies each household's `relink`,
-`link_history` and `retained_supplements`. Production adoption remains a separate
-operator decision.
+relinked record would be regrouped (including regaining a front held in a retained
+bundle), and otherwise copies each household's `relink` (except the derived "no
+survey front" label), `link_history` and `retained_supplements`. Production
+adoption remains a separate operator decision.
 
 Build React before distribution (`npm run build` in `frontend/`). The source-only
 integration page does not provide the new confirmation/link UI.
@@ -145,9 +152,9 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,061 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,063 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
-- React suite: 100 passed; TypeScript and production build passed.
+- React suite: 101 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,
   including confirmation before a duplicate save, unqueued peer repair, retained
   scans/notes, and link Undo preserving a later building correction.

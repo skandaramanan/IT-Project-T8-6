@@ -1049,7 +1049,19 @@ export default function App() {
             )}
             <RelinkingTools item={item} savedItem={lastSaved?.item} disabled={!canNavigate || needsReload || stopped}
               onFix={(id) => void run(async () => { await openItem(id, false, true); setCorrecting(true); })}
-              onSubmit={(path, body) => run(() => submit({ path, body }))} />
+              onSubmit={async (path, body) => {
+                let refused = '';
+                await run(async () => {
+                  try {
+                    await submit({ path, body });
+                  } catch (e) {
+                    // 422: the server refused this choice; another may be accepted.
+                    if (e instanceof ApiError && e.status === 422) refused = e.message;
+                    throw e;
+                  }
+                });
+                return refused;
+              }} />
             {!!item.review_issues?.length && (
               <div className="review-issues household-context small" role="status">
                 <strong>Needs attention: </strong>

@@ -1637,6 +1637,29 @@ describe('prepared per-card review', () => {
     await screen.findByRole('button', { name: 'Retained evidence (1)' });
     expect(server.mutations[0].body).toMatchObject({ target_card_id: 'target', retain_supplements: true });
   });
+
+  it('keeps the link form open with its choice when the server refuses it', async () => {
+    const server = backend([prepared()]);
+    const real = server.fetch.getMockImplementation()!;
+    server.fetch.mockImplementation(async (input, options) => {
+      if (String(input).endsWith('/link-candidates')) return response({ version: 'v1', outcome: 'manual', requires_retention: false,
+        candidates: [{ card_id: 'target', current: false, clear: true, coding_pages: [334], front_pages: [332], address: 'Destination address', reason: 'Compatible readings' }] });
+      if (String(input).endsWith('/link')) {
+        server.mutations.push({ path: String(input), body: JSON.parse(String(options?.body)) });
+        return response({ error: { code: 'invalid_destination', message: 'Choose a current compatible destination in this region and PDF' } }, 422);
+      }
+      return real(input, options);
+    });
+    const user = await start('Review', 'Dwelling number');
+    await user.click(screen.getByRole('button', { name: 'Link to dwelling' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Link coding card to dwelling' });
+    await user.click(within(dialog).getByLabelText(/Destination address/));
+    await user.click(within(dialog).getByRole('button', { name: 'Save link' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Choose a current compatible destination');
+    expect(within(dialog).getByLabelText(/Destination address/)).toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Save link' })).toBeEnabled();
+    expect(server.mutations).toHaveLength(1);
+  });
 });
 
 describe('high-confidence context disclosure', () => {

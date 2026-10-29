@@ -20,7 +20,12 @@ from survey.extraction.json_extraction import (
     parse_confidence_bands,
     with_canonical_labels,
 )
-from survey.extraction.record import FIELD_MAP, build_field, build_omitted_field
+from survey.extraction.record import (
+    FIELD_MAP,
+    SCHEMA_VERSION,
+    build_field,
+    build_omitted_field,
+)
 from survey.records import (
     current_fields,
     digest,
@@ -91,10 +96,24 @@ def cache_reading(path):
 
 
 def coding_targets(record, index):
-    h = record["dwelling"]["households"][index]
+    d = record["dwelling"]
+    h = d["households"][index]
+    if record["schema_version"] == SCHEMA_VERSION:
+        for label, (key, group) in FIELD_MAP.items():
+            fields = h if group in {"household", "dwelling"} else h[group]
+            yield label, fields[key]
+        return
+    # The Qwen export is still 0.6.0: the dwelling's shared fields came from
+    # its first card, and each household carries a municipality alias.
     for label, (key, group) in FIELD_MAP.items():
-        fields = h if group in {"household", "dwelling"} else h[group]
+        if group in {"dwelling", "house"}:
+            if index:
+                continue
+            fields = d if group == "dwelling" else d["house"]
+        else:
+            fields = h if group == "household" else h[group]
         yield label, fields[key]
+    yield "Municipality", h["municipality"]
 
 
 def validate_secondary_cache(dataset, cache_root, manifest):

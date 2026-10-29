@@ -25,6 +25,8 @@ from survey.records import (
 from survey.review import relinking as model
 from survey.review.flags import build_flags
 
+GEMINI = "gemini-3.5-flash-lite"
+
 
 def all_cards(record):
     d = record["dwelling"]
@@ -253,8 +255,14 @@ def prepare_dataset(
     output: Path,
     cache: Path | None = None,
     evidence_path: Path | None = None,
+    cache_name: str | None = None,
 ):
-    """Write only to a fresh staging directory outside the published input tree."""
+    """Write only to a fresh staging directory outside the published input tree.
+
+    ``cache_name`` is the extractor's folder under each region's cache, as the
+    pipeline caches it; a results folder with its own ``extractor.json`` (the
+    Qwen export) must name a folder of that extractor.
+    """
     previous, output = previous.resolve(), output.resolve()
     if (
         output == previous
@@ -265,10 +273,20 @@ def prepare_dataset(
     if output.exists() and any(output.iterdir()):
         raise ValueError("Choose a new or empty staging directory")
     regions = read_dataset(sorted(previous.glob("*.jsonl")))
+    manifest = previous / "extractor.json"
+    manifest_bytes = manifest.read_bytes() if manifest.exists() else None
+    extractor = json.loads(manifest_bytes)["extractor"] if manifest_bytes else GEMINI
+    cache_name = cache_name or GEMINI
+    # Another extractor's readings must never fill this export's cards.
+    if cache is not None and cache_name.split("/")[0] != extractor:
+        raise ValueError(
+            f"{previous} holds {extractor} results; name its cache folder, "
+            f"not {cache_name}"
+        )
     readings, artifact_hashes, evidence = {}, {}, {}
     if cache is not None:
         for region in sorted(regions):
-            folder = cache / region / "gemini-3.5-flash-lite"
+            folder = cache / region / cache_name
             for path in sorted(folder.glob("*.json")):
                 if path.name.startswith("._"):
                     continue
@@ -344,6 +362,8 @@ def prepare_dataset(
             output / f"{region}.jsonl",
             "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
         )
+    if manifest_bytes is not None:
+        write_atomic(output / "extractor.json", manifest_bytes.decode())
     write_atomic(
         output / "preparation-report.json",
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",

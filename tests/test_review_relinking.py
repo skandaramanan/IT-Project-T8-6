@@ -807,6 +807,35 @@ def test_staging_is_deterministic_pins_evidence_and_preserves_inputs(tmp_path):
         prepare_dataset(source, a)
 
 
+def test_a_qwen_export_prepares_only_from_its_own_cache(tmp_path):
+    from survey.review.prepare import prepare_dataset
+
+    record = raw_record(1, rooms="6")
+    record["dwelling"]["households"].append(
+        raw_record(2, rooms="7")["dwelling"]["households"][0]
+    )
+    source = tmp_path / "qwen"
+    source.mkdir()
+    (source / "demo.jsonl").write_text(json.dumps(legacy(record)) + "\n")
+    manifest = json.dumps({"extractor": "qwen2.5-vl-server-2000000px"})
+    (source / "extractor.json").write_text(manifest)
+    name = "qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k"
+    for folder, rooms in ((name, "8"), ("gemini-3.5-flash-lite", "9")):
+        cache = tmp_path / "cache" / "demo" / folder
+        cache.mkdir(parents=True)
+        (cache / "synthetic_p0002.json").write_text(
+            json.dumps({"fields": {"Total Number of Rooms": rooms}})
+        )
+
+    with pytest.raises(ValueError, match="qwen2.5-vl-server-2000000px results"):
+        prepare_dataset(source, tmp_path / "wrong", tmp_path / "cache")
+    out = tmp_path / "stage"
+    prepare_dataset(source, out, tmp_path / "cache", cache_name=name)
+    later = RecordStore(out).regions["demo"][0][0]["dwelling"]["households"][1]
+    assert later["house"]["total_number_of_rooms"]["value"] == "8"
+    assert (out / "extractor.json").read_text() == manifest
+
+
 def test_every_published_corrected_field_survived_preparation():
     from pathlib import Path
 
