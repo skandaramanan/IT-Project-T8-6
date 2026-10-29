@@ -56,10 +56,10 @@ workspaces for newer decisions. Reconcile reviewed work rather than replacing it
 with a fresh seed. Preserve the old seed in normal Git history and deploy matching
 code, data and regenerated flags together. Keep extraction/rerun tools away from
 review data. If a rerun does meet reviewed records, it refuses when a corrected or
-relinked record would be regrouped (including regaining a front held in a retained
-bundle), and otherwise copies each household's `relink` (except the derived "no
-survey front" label), `link_history` and `retained_supplements`. Production
-adoption remains a separate operator decision.
+relinked record would be regrouped, or when any record would regain a source held
+in a retained bundle, and otherwise copies each household's `relink` (except the
+derived "no survey front" label), `link_history` and `retained_supplements`.
+Production adoption remains a separate operator decision.
 
 Build React before distribution (`npm run build` in `frontend/`). The source-only
 integration page does not provide the new confirmation/link UI.
@@ -152,7 +152,7 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,063 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,064 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 102 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,
@@ -176,8 +176,9 @@ a mixed published/prepared dataset is refused at startup.
   which remain in Git history.
   Flagged records rose from 351 to 492 by design: D007 flags every peer sharing
   an identity.
-- A corpus regression checks all 30 distinct corrected fields survived
-  conversion with identical values (0.6.0 counted 34: four corrected
+- All 30 distinct corrected fields survived conversion with identical values:
+  preparation refuses any changed published payload, and a corpus regression
+  checks the 30 are still marked corrected (0.6.0 counted 34: four corrected
   municipalities sat on both the dwelling alias and household 0). Synthetic
   regressions cover independent per-card readings, ambiguous-plus-duplicate
   outcomes, a pending link clearing when a correction is reverted, the reread

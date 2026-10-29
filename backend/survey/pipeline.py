@@ -823,6 +823,27 @@ def _merge(
             _keep_corrections(old, new)
         else:
             merged.append(old)
+    # Retained evidence must stay out of every active record: a rebuild may
+    # have attached a retained front to any card, its own or another's.
+    retained = {
+        source
+        for record in merged
+        for household in record["dwelling"]["households"]
+        for bundle in household.get("retained_supplements", [])
+        for source in _sources(bundle["payload"].get("cards", []))
+    }
+    active = {
+        source
+        for record in merged
+        for cards in (
+            record["dwelling"].get("cards", []),
+            *(h["cards"] for h in record["dwelling"]["households"]),
+        )
+        for source in _sources(cards)
+    }
+    if regained := sorted(retained & active):
+        image, page = regained[0]
+        raise MergeRefused(f"{image} p{page}: retained evidence was regrouped")
     # Kept notes and a corrected identity both outdate household_id; a note
     # still linked to its card (not regrouped) keeps that link, which
     # settlement follows.
@@ -952,13 +973,7 @@ def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
     if not corrections and not _relinked(old):
         return
     image, page = min(_coding_cards(old))
-    # A retained bundle holds former evidence, so its record mustn't regain
-    # any of it as a front either: that source would appear twice.
-    retains = any(h.get("retained_supplements") for h in old["dwelling"]["households"])
-    if _household_cards(new) != _household_cards(old) or (
-        retains
-        and _sources(_fronts(old["dwelling"])) != _sources(_fronts(new["dwelling"]))
-    ):
+    if _household_cards(new) != _household_cards(old):
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
     # Same grouping, so households pair by position; finish_records leaves a
     # relink already present alone.

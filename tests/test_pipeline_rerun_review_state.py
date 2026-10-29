@@ -108,6 +108,22 @@ def test_rerun_refuses_to_regain_a_retained_front(tmp_path):
         _merge(old, finish_records(deepcopy(initial)))
 
 
+def test_rerun_refuses_to_give_a_retained_front_to_another_card(tmp_path):
+    initial = [
+        with_front(raw_record(1, "6"), 2, "6"),
+        with_front(raw_record(3, "7"), 4, "7"),
+    ]
+    service = start(tmp_path, deepcopy(initial))
+    card = owner("demo", current(service, 1)[3])
+    version = service.store.regions["demo"][1]
+    link(service, card, None, True, "Reviewer", version, "link-1")
+
+    old = deepcopy(service.store.regions["demo"][0])
+    rebuilt = [raw_record(1, "6"), with_front(raw_record(3, "7"), 2, "6")]
+    with pytest.raises(MergeRefused, match="p2: retained evidence was regrouped"):
+        _merge(old, finish_records(rebuilt))
+
+
 def test_rerun_drops_the_unfronted_label_once_a_front_is_found():
     old = finish_records([raw_record(1)])
     household = old[0]["dwelling"]["households"][0]
