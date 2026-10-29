@@ -34,6 +34,7 @@ def test_sample_preserves_originals_and_uses_only_local_remote(tmp_path):
     assert len(records[0]["dwelling"]["households"]) == 2
 
 
+@pytest.mark.usefixtures("published")
 def test_selecting_second_card_retains_indexes_and_excludes_shared_fields():
     records, flags, count = SAMPLE["select_sample"](
         [synthetic_record()], "demo", ["Weekly Rent", "Garden"], 1, pages=[2]

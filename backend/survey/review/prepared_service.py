@@ -10,10 +10,16 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 from survey.records import Reference, ReviewError, physical_card_id, resolve_field
 from survey.review import relinking as model
 from survey.review.fields import field_pointers
+from survey.review.service import (
+    active_decisions,
+    credentials,
+    field_after,
+    snapshot,
+    state,
+)
 
 
 def rebind_reference(service, ref):
@@ -297,7 +303,7 @@ def item_details(service, ref, resolved):
         )
     if h.get("relink", {}).get("state") in {"pending", "provisional"}:
         issues.append({"code": "relink_pending", "message": h["relink"]["reason"]})
-    active = active_links(h)
+    active = model.active_links(h)
     return {
         "prepared_review": True,
         "assigned": ref.item_id in service.references,
@@ -310,58 +316,7 @@ def item_details(service, ref, resolved):
     }
 
 
-def active_links(h):
-    active = []
-    for e in h.get("link_history", []):
-        if e["action"] == "undo":
-            active.pop()
-        else:
-            active.append(e)
-    return active
-
-
-def credentials(reviewer, request_id):
-    name = reviewer.strip()
-    if not name or len(name) > 100:
-        raise ReviewError(
-            "invalid_reviewer", "Enter a reviewer name (1–100 characters)"
-        )
-    if not request_id or len(request_id) > 128:
-        raise ReviewError(
-            "invalid_request_id", "Supply a request ID (1–128 characters)"
-        )
-    return name
-
-
-def field_after(field, spec, action, value):
-    from survey.review.service import snapshot
-
-    after = snapshot(field)
-    if action == "correct":
-        if not spec.valid_correction(value):
-            raise ReviewError(
-                "invalid_value", "Enter a value matching this field's printed format"
-            )
-        category = spec.spec.code_book_category
-        coded = category in CLOSED_CATEGORIES or category in SENTINEL_CODES
-        after.update(
-            value=value,
-            status="ok",
-            code=value if coded else None,
-            label=decode(category, value) if coded else None,
-        )
-    elif action in {"no_data", "illegible"}:
-        after.update(value=None, status=action, code=None, label=None)
-    elif action != "accept":
-        raise ReviewError("unsupported_action", "Unsupported field action")
-    if action != "accept":
-        after.setdefault("original_value", field.get("original_value", field["value"]))
-        after["origin"] = "corrected"
-    return after
-
-
-def check_action(service, item_id, action, value):
-    item = service.item(item_id, context=False)
+def check_action(item, action, value):
     if item["diagnostics"] or action not in item["allowed_actions"]:
         raise ReviewError(
             "unsupported_action", "Resolve scan or source diagnostics before reviewing"
@@ -381,7 +336,7 @@ def preview(service, item_id, action, value, expected_version):
                 "review_preparation_required",
                 "Prepare per-card review data before relinking",
             )
-        check_action(service, item_id, action, value)
+        check_action(service.item(item_id, context=False), action, value)
         records = deepcopy(service.store.regions[ref.region][0])
         candidate = resolve_field(records, ref)
         after = field_after(candidate.field, candidate.descriptor, action, value)
@@ -395,7 +350,8 @@ def analyze_candidate(
     service, ref, records, candidate, action, value, expected_version
 ):
     """Evaluate one copied candidate; committing does not copy it a second time."""
-    before_conflict = model.conflicts(service.store.regions[ref.region][0], ref.card_id)
+    published_inv, published_duplicates = indexes(service, ref.region)
+    before_conflict = model.conflicts(None, ref.card_id, published_duplicates)
     after_conflict = model.conflicts(records, ref.card_id)
     confirmation = None
     if after_conflict and after_conflict != before_conflict:
@@ -410,13 +366,15 @@ def analyze_candidate(
         )
     # Only a changed dwelling identity re-plans membership: re-saving the same
     # value must not move the card.
-    published = model.inventory(service.store.regions[ref.region][0])[ref.card_id][3]
+    published = published_inv[ref.card_id][3]
+    changed = (
+        action == "correct"
+        and candidate.descriptor.identity_kind in {"municipality", "dwelling"}
+        and model.dwelling_key(candidate.household) != model.dwelling_key(published)
+    )
     membership = (
         model.plan_membership(records, ref.card_id)
-        if action == "correct"
-        and candidate.descriptor.identity_kind in {"municipality", "dwelling"}
-        and model.dwelling_key(model.inventory(records)[ref.card_id][3])
-        != model.dwelling_key(published)
+        if changed
         else {"outcome": "unchanged", "target_card_id": None, "candidates": []}
     )
     return {
@@ -477,8 +435,6 @@ def apply_decision(
     undo_target=None,
     duplicate_confirmation=None,
 ):
-    from survey.review.service import active_decisions, snapshot, state
-
     reviewer = credentials(reviewer, request_id)
     request = {
         "action": action,
@@ -553,11 +509,11 @@ def apply_decision(
                         "The card's link state changed; undo that dependency first",
                         409,
                     )
-                restore_relink(h, target.get("relink_before"))
+                model.restore_relink(h, target.get("relink_before"))
             after, after_state = deepcopy(target["before"]), target["before_state"]
             event["undo_target"] = undo_target
         else:
-            check_action(service, item_id, action, value)
+            check_action(item, action, value)
             after = field_after(field, resolved.descriptor, action, value)
             after_state = "accepted" if action == "accept" else "corrected"
             if after == before and after_state == before_state:
@@ -613,29 +569,27 @@ def apply_decision(
                 event.update(
                     relink_before=prior_link, relink_after=deepcopy(h.get("relink"))
                 )
-        model.refresh_identities(records)
         if (
             action == "correct"
             and resolved.descriptor.identity_kind in {"municipality", "dwelling"}
             and "structure" not in event
         ):
+            # The frame holds no derived IDs or flags, so it precedes refresh.
             current = model.inventory(records)[ref.card_id]
             event["identity_guard"] = {
                 "key": model.dwelling_key(h),
                 "link_id": model.latest_link_id(h),
                 "frame": model.frame(current[2]),
             }
-        model.assert_conservation(service.store.regions[ref.region][0], records)
-        service.store.save(ref.region, expected_version, records)
-        service.reindex_history({ref.region})
-        return result(service, event, membership=membership)
+        return commit(service, ref.region, expected_version, records, event, membership)
 
 
-def restore_relink(h, value):
-    if value is None:
-        h.pop("relink", None)
-    else:
-        h["relink"] = deepcopy(value)
+def commit(service, region, expected_version, records, event, membership=None):
+    model.refresh_identities(records)
+    model.assert_conservation(service.store.regions[region][0], records)
+    service.store.save(region, expected_version, records)
+    service.reindex_history({region})
+    return result(service, event, membership=membership)
 
 
 def reversed_effect(records, original):
@@ -658,8 +612,8 @@ def link_candidates(service, card_id):
     with service.store.lock:
         context = card_context(service, card_id)
         records = service.store.regions[context["region"]][0]
-        plan = model.plan_membership(records, card_id)
         inv, _ = indexes(service, context["region"])
+        plan = model.plan_membership(records, card_id, inv)
         return {
             **plan,
             "version": context["version"],
@@ -697,10 +651,10 @@ def link(
         item_id = card_item_id(service, card_id)
         if prior := replay(service, request_id, reviewer, request, item_id):
             return prior
-        context = card_context(service, card_id)
-        region = context["region"]
+        candidates = link_candidates(service, card_id)  # validates the card
+        source = service.card_registry[card_id]
+        region = source["region"]
         service.store.check_version(region, expected_version)
-        candidates = link_candidates(service, card_id)
         if target_card_id is not None and target_card_id not in {
             c["card_id"] for c in candidates["candidates"] if not c["current"]
         }:
@@ -713,11 +667,11 @@ def link(
                 "incomplete_identity",
                 "Complete municipality and dwelling number before linking",
             )
-        service.scans.get_scan(Reference(region, context["pdf"], context["page"], "/"))
+        service.scans.get_scan(Reference(region, source["image"], source["page"], "/"))
         if target_card_id:
-            target = card_context(service, target_card_id)
+            target = service.card_registry[target_card_id]
             service.scans.get_scan(
-                Reference(region, target["pdf"], target["page"], "/")
+                Reference(region, target["image"], target["page"], "/")
             )
         records = deepcopy(service.store.regions[region][0])
         event = {
@@ -741,11 +695,7 @@ def link(
             else "Reviewer selected coding-only provisional dwelling",
         }
         h.setdefault("link_history", []).append(event)
-        model.refresh_identities(records)
-        model.assert_conservation(service.store.regions[region][0], records)
-        service.store.save(region, expected_version, records)
-        service.reindex_history({region})
-        return result(service, event)
+        return commit(service, region, expected_version, records, event)
 
 
 def undo_link(service, target, reviewer, expected_version, request_id):
@@ -766,7 +716,7 @@ def undo_link(service, target, reviewer, expected_version, request_id):
         service.store.check_version(region, expected_version)
         records = deepcopy(service.store.regions[region][0])
         h = model.inventory(records)[card_id][3]
-        active = active_links(h)
+        active = model.active_links(h)
         if not active or active[-1]["id"] != target["id"]:
             raise ReviewError(
                 "undo_conflict", "Undo the later link operation first", 409
@@ -786,8 +736,4 @@ def undo_link(service, target, reviewer, expected_version, request_id):
             "structure": reversed_effect(records, target["structure"]),
         }
         h.setdefault("link_history", []).append(event)
-        model.refresh_identities(records)
-        model.assert_conservation(service.store.regions[region][0], records)
-        service.store.save(region, expected_version, records)
-        service.reindex_history({region})
-        return result(service, event)
+        return commit(service, region, expected_version, records, event)

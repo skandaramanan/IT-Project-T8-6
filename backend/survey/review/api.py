@@ -22,7 +22,7 @@ from survey.review.fields import MAX_TEXT_CORRECTION_LENGTH
 from survey.review.queue import load_queue
 from survey.review.scans import LocalScanSource
 from survey.review.service import ReviewService
-from survey.review.sync import GitSync
+from survey.review.sync import GitSync, check_one_schema
 
 FRONTEND_DIST = Path(__file__).parents[3] / "frontend" / "dist"
 
@@ -129,18 +129,7 @@ def create_app(settings: Settings) -> FastAPI:
             sync = GitSync(settings.data_checkout, store, settings.data_branch)
             sync.writer_lock.acquire()
             store.reload()
-            # One ownership model per dataset: published 0.6.0 data keeps the
-            # shared first-card reviewer until a prepared 0.7.0 seed is adopted.
-            prepared = {
-                r["schema_version"] == "0.7.0"
-                for records, _ in store.regions.values()
-                for r in records
-            }
-            if len(prepared) > 1:
-                raise ReviewError(
-                    "review_preparation_required",
-                    "The review dataset mixes prepared schema 0.7.0 and published records; adopt one prepared seed for every region",
-                )
+            check_one_schema(store.regions)
             refs, diagnostics = load_queue(settings.flags)
             service = ReviewService(
                 store,

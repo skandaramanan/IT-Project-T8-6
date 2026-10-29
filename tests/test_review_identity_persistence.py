@@ -30,6 +30,7 @@ def restart(service, settings, ref):
     )
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize(
     "pointer,value",
     [
@@ -57,6 +58,7 @@ def test_legacy_identity_edits_retain_other_card_municipality(tmp_path, pointer,
     assert second["record_id"].startswith("28-")
 
 
+@pytest.mark.usefixtures("published")
 def test_legacy_ambiguous_missing_municipality_cannot_be_guessed(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -73,6 +75,7 @@ def test_legacy_ambiguous_missing_municipality_cannot_be_guessed(tmp_path):
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_missing_legacy_id_can_inherit_unambiguous_shared_reading(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -177,6 +180,7 @@ def test_identity_undo_refuses_changed_note_topology_after_rerun(
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_single_household_identity_repair_links_null_notes_and_undo_restores_null(
     tmp_path,
 ):

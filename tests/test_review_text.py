@@ -108,6 +108,7 @@ def add_second_front(record):
     d["notes"].append(other)
 
 
+@pytest.mark.usefixtures("published")
 def test_note_reorder_stable_identity_and_stale_pointer_never_redirects(tmp_path):
     service, _ = text_service(tmp_path, add_second_front)
     ref = note_ref(service)
@@ -234,6 +235,7 @@ def test_rerun_review_protection_and_front_ownership_guard(tmp_path):
         _keep_corrections(old, new)
 
 
+@pytest.mark.usefixtures("published")
 def test_schema_05_contract_and_review_preserves_version(tmp_path):
     def corpus(record):
         record["schema_version"] = "0.5.0"

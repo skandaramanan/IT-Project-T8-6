@@ -49,7 +49,10 @@ preservation receipts, and inspect the live data branch and actual reviewer
 workspaces for newer decisions. Reconcile reviewed work rather than replacing it
 with a fresh seed. Preserve the old seed in normal Git history and deploy matching
 code, data and regenerated flags together. Keep extraction/rerun tools away from
-review data. Production adoption remains a separate operator decision.
+review data. If a rerun does meet reviewed records, it refuses when a corrected or
+relinked record would be regrouped, and otherwise copies each household's `relink`,
+`link_history` and `retained_supplements`. Production adoption remains a separate
+operator decision.
 
 Build React before distribution (`npm run build` in `frontend/`). The source-only
 integration page does not provide the new confirmation/link UI.

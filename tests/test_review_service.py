@@ -74,6 +74,7 @@ def test_reviewer_digits_are_not_ocr_normalized(tmp_path, value):
     assert service.item(refs()[1].item_id)["review_state"] == "pending"
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("action", ["correct", "no_data", "illegible"])
 def test_negated_fields_are_accept_only(tmp_path, action):
     service, _ = setup_review(tmp_path)
@@ -87,6 +88,7 @@ def test_negated_fields_are_accept_only(tmp_path, action):
     assert decide(service, action="accept")["item"]["review_state"] == "accepted"
 
 
+@pytest.mark.usefixtures("published")
 def test_both_municipality_copies_are_editable_with_safe_undo(tmp_path):
     service, settings = setup_review(tmp_path)
     shared = refs()[3]
@@ -131,6 +133,7 @@ def test_both_municipality_copies_are_editable_with_safe_undo(tmp_path):
     assert record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("edit_alias", [False, True])
 def test_shared_municipality_preserves_later_legacy_card_evidence(tmp_path, edit_alias):
     service, settings = setup_review(tmp_path)
@@ -172,6 +175,7 @@ def test_shared_municipality_preserves_later_legacy_card_evidence(tmp_path, edit
     assert "municipality" not in restored["dwelling"]["households"][1]
 
 
+@pytest.mark.usefixtures("published")
 def test_municipality_mirror_preserves_each_machine_reading(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -189,6 +193,7 @@ def test_municipality_mirror_preserves_each_machine_reading(tmp_path):
     assert corrected["item"]["field"]["original_value"] == "27"
 
 
+@pytest.mark.usefixtures("published")
 def test_municipality_alias_history_is_not_overwritten(tmp_path):
     service, _ = setup_review(tmp_path)
     shared = refs()[3]
@@ -221,6 +226,7 @@ def test_municipality_alias_history_is_not_overwritten(tmp_path):
     assert len(service.item(alias.item_id)["field"]["review"]["history"]) == 2
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize(
     ("pointer", "value", "expected"),
     [
@@ -252,6 +258,7 @@ def test_identity_corrections_rebuild_ids_and_undo(tmp_path, pointer, value, exp
     ] == ["27-0006-01", "27-0006-02"]
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize(
     ("pointer", "value"),
     [
@@ -272,6 +279,7 @@ def test_identity_validation_rejects_invalid_input_atomically(tmp_path, pointer,
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_identity_collision_rejected_atomically(tmp_path):
     service, _ = setup_review(tmp_path)
     ref = replace(refs()[3], field_path="/dwelling/households/0/household_no")
@@ -282,6 +290,7 @@ def test_identity_collision_rejected_atomically(tmp_path):
     assert (service.store.directory / "demo.jsonl").read_bytes() == before
 
 
+@pytest.mark.usefixtures("published")
 def test_identity_note_links_and_null_ids_restore_after_restart(tmp_path):
     service, settings = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -311,6 +320,7 @@ def test_identity_note_links_and_null_ids_restore_after_restart(tmp_path):
     assert restored["dwelling"]["notes"][0]["household_id"] == "27-0006-02"
 
 
+@pytest.mark.usefixtures("published")
 def test_identity_undo_preserves_later_other_field_corrections(tmp_path):
     service, _ = setup_review(tmp_path)
     dwelling = replace(refs()[3], field_path="/dwelling/dwelling_no")
@@ -334,6 +344,7 @@ def test_identity_undo_preserves_later_other_field_corrections(tmp_path):
     assert record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
 
 
+@pytest.mark.usefixtures("published")
 def test_survey_front_identity_edits_do_not_change_coding_identity(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -363,6 +374,7 @@ def test_survey_front_identity_edits_do_not_change_coding_identity(tmp_path):
     ]
 
 
+@pytest.mark.usefixtures("published")
 def test_live_identity_issues_leave_historical_flags_unchanged(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -392,6 +404,7 @@ def test_live_identity_issues_leave_historical_flags_unchanged(tmp_path):
     )
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("action", ["no_data", "illegible"])
 def test_coding_identity_requires_an_explicit_corrected_value(tmp_path, action):
     service, _ = setup_review(tmp_path)
@@ -399,6 +412,7 @@ def test_coding_identity_requires_an_explicit_corrected_value(tmp_path, action):
         decide(service, refs()[3], action=action)
 
 
+@pytest.mark.usefixtures("published")
 def test_identity_conflicts_include_sibling_with_withheld_id(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -411,6 +425,7 @@ def test_identity_conflicts_include_sibling_with_withheld_id(tmp_path):
         decide(service, ref, value="2")
 
 
+@pytest.mark.usefixtures("published")
 def test_undo_null_identity_dependency_blocks_later_id_creation(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -436,6 +451,7 @@ def test_undo_null_identity_dependency_blocks_later_id_creation(tmp_path):
         )
 
 
+@pytest.mark.usefixtures("published")
 def test_identity_counts_cache_invalidates_after_correction(tmp_path, monkeypatch):
     service, _ = setup_review(tmp_path)
     from survey.review import service as review_module
@@ -521,7 +537,7 @@ def test_repeated_correction_original_value_and_latest_undo(tmp_path):
     first = decide(service)
     second = decide(service, value="002", request_id="second")
     assert second["item"]["field"]["original_value"] == "12"
-    with pytest.raises(ReviewError, match="latest"):
+    with pytest.raises(ReviewError, match="latest|later decision"):
         service.undo_latest(
             first["decision"]["id"], "Reviewer", second["item"]["version"], "undo-old"
         )
@@ -619,6 +635,7 @@ def test_schema_rejects_nested_and_malformed_audit(tmp_path):
     assert len(list(current_fields(field))) == 1
 
 
+@pytest.mark.usefixtures("published")
 def test_queue_refresh_preserves_progress_and_stale_collisions(tmp_path):
     service, _ = setup_review(tmp_path)
     result = decide(service)

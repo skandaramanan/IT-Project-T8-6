@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
+from survey.extraction.record import SCHEMA_VERSION
 from survey.records import (
     REGION,
     PreparedRegions,
@@ -18,6 +19,21 @@ from survey.records import (
     prepare_regions,
     read_records,
 )
+
+
+def check_one_schema(regions):
+    """One ownership model per dataset: published 0.6.0 data keeps the shared
+    first-card reviewer until a prepared 0.7.0 seed is adopted."""
+    prepared = {
+        r["schema_version"] == SCHEMA_VERSION
+        for records, _ in regions.values()
+        for r in records
+    }
+    if len(prepared) > 1:
+        raise ReviewError(
+            "review_preparation_required",
+            "The review dataset mixes prepared schema 0.7.0 and published records; adopt one prepared seed for every region",
+        )
 
 
 class WriterLock:
@@ -406,6 +422,7 @@ class GitSync:
                         "External region changed during validation",
                         409,
                     )
+            check_one_schema({**self.store.regions, **candidate.regions})
             self.store.check_audits(candidate)
             if changes:
                 if not self.git("config", "user.name", check=False) or not self.git(

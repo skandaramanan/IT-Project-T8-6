@@ -95,7 +95,6 @@ def coding_targets(record, index):
     for label, (key, group) in FIELD_MAP.items():
         fields = h if group in {"household", "dwelling"} else h[group]
         yield label, fields[key]
-    yield "Municipality", h["municipality"]
 
 
 def validate_secondary_cache(dataset, cache_root, manifest):

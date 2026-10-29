@@ -92,15 +92,22 @@ def synthetic_record():
     return prepare_shape(card_record())
 
 
-# Module-level switch flipped by the `shape` fixture: False = published 0.6.0
-# (shared first-card ownership), True = prepared 0.7.0 (per-card ownership).
-PREPARED = False
+# Module-level switch: True (default) = 0.7.0 per-card ownership, which the
+# pipeline writes; False = legacy 0.6.0 shared first-card ownership. The `shape`
+# fixture parametrizes both; legacy-only tests monkeypatch this to False.
+PREPARED = True
 
 
 @pytest.fixture(params=["0.6.0", "0.7.0"])
 def shape(request, monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], "PREPARED", request.param == "0.7.0")
     return request.param
+
+
+@pytest.fixture
+def published(monkeypatch):
+    """Pin a test to published 0.6.0 data (legacy shared-ownership behaviour)."""
+    monkeypatch.setattr(sys.modules[__name__], "PREPARED", False)
 
 
 def per_card(pointer, index=0):

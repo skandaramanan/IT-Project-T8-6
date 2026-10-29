@@ -16,7 +16,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from survey.extraction.record import FIELD_MAP
+from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
 from survey.review.fields import descriptor
 
 SCHEMA_PATH = Path(__file__).parents[2] / "schema" / "record-envelope.schema.json"
@@ -92,9 +92,9 @@ def validate_records(
                 if key in seen and not allow_duplicate_cards:
                     raise ReviewError("ambiguous_card", f"duplicate coding card {key}")
                 seen.add(key)
-        if record["schema_version"] == "0.7.0":
+        if record["schema_version"] == SCHEMA_VERSION:
             validate_prepared_record(record)
-    if records and all(r["schema_version"] == "0.7.0" for r in records):
+    if records and all(r["schema_version"] == SCHEMA_VERSION for r in records):
         from survey.review.relinking import duplicate_index, identity, owner
 
         duplicates = {
@@ -557,7 +557,7 @@ def resolve_field(records: list[dict], ref: Reference, locations=None) -> Resolv
             "unsupported_source",
             "Only the household's first coding card owns its stored fields",
         )
-    if record["schema_version"] == "0.7.0":
+    if record["schema_version"] == SCHEMA_VERSION:
         if spec is None or spec.role != "coding-front":
             raise ReviewError("unsupported_field", "Unknown coding-card field")
         label = spec.spec.name

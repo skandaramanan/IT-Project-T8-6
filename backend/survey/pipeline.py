@@ -71,7 +71,7 @@ from survey.extraction.record import (
 )
 from survey.extraction.survey_front import build_survey_front
 from survey.records import current_fields, safe_pdf, schema_errors, write_atomic
-from survey.review.relinking import finish_records
+from survey.review.relinking import UNFRONTED, finish_records
 from survey.segmentation.pdf_pages import extract_image
 from survey.segmentation.segmenter import (
     CardType,
@@ -824,7 +824,8 @@ def _merge(
         else:
             merged.append(old)
     # Kept notes and a corrected identity both outdate household_id; a note
-    # already linked to its card keeps that link, which settlement follows.
+    # still linked to its card (not regrouped) keeps that link, which
+    # settlement follows.
     for record in merged:
         for note in record["dwelling"].get("notes", []):
             if not note.get("household_card_id"):
@@ -892,6 +893,10 @@ def _keep_notes(old: dict[str, Any], new: dict[str, Any]) -> None:
     if "notes" not in before:
         return
     kept = {note["front_page"]: note for note in before["notes"]}
+    if _household_cards(old) != _household_cards(new):
+        # Its card may now share the dwelling: the note's household re-resolves.
+        for note in kept.values():
+            note.pop("household_card_id", None)
     fronts = {
         card["page"]: card for card in now.get("cards", []) if card["role"] == FRONT
     }
@@ -934,13 +939,35 @@ def _keep_back(
         add_back_card(dwelling, (front["image"], front["page"]), note["page"])
 
 
+# Any relink but finish_records' UNFRONTED is a reviewer's (or a
+# correction's), and a rebuild can't rederive it.
+_LINK_KEYS = ("relink", "link_history", "retained_supplements")
+
+
+def _relinked(record: dict[str, Any]) -> bool:
+    return any(
+        h.get("link_history")
+        or h.get("retained_supplements")
+        or h.get("relink") not in (None, UNFRONTED)
+        for h in record["dwelling"]["households"]
+    )
+
+
 def _keep_corrections(old: dict[str, Any], new: dict[str, Any]) -> None:
     corrections = list(_corrected_fields(old))
-    if not corrections:
+    if not corrections and not _relinked(old):
         return
     image, page = min(_coding_cards(old))
     if _household_cards(new) != _household_cards(old):
         raise MergeRefused(f"{image} p{page}: reviewed record was regrouped")
+    # Same grouping, so households pair by position; finish_records leaves a
+    # relink already present alone.
+    for before, now in zip(
+        old["dwelling"]["households"], new["dwelling"]["households"]
+    ):
+        for key in _LINK_KEYS:
+            if key in before:
+                now[key] = deepcopy(before[key])
     for path, field in corrections:
         try:
             if field.get("review") and field.get("source") == "survey-front":

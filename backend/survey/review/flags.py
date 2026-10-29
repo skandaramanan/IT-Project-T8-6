@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA
-from survey.extraction.record import FIELD_MAP, IDENTITY_LABELS
+from survey.extraction.record import FIELD_MAP, IDENTITY_LABELS, SCHEMA_VERSION
 from survey.records import card_index, field_pointer
 from survey.review.routing import needs_review
 from survey.review.service import state
@@ -89,7 +89,7 @@ def build_flags(
             )
             score = card.get("confidence")
             dwelling_flags = record["dwelling"].get("flags", [])
-            prepared = record["schema_version"] == "0.7.0"
+            prepared = record["schema_version"] == SCHEMA_VERSION
             if prepared:
                 dwelling_flags = sorted(
                     (

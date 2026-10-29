@@ -681,6 +681,7 @@ def test_http_duplicate_confirmation_unqueued_peer_edit_and_progress(prepared_ap
     assert queue["association_summary"]["duplicate_cards"] == 0
 
 
+@pytest.mark.usefixtures("published")
 def test_http_app_serves_published_data_and_refuses_a_mixed_dataset(tmp_path):
     from fastapi.testclient import TestClient
     from review_support import git, setup_review, synthetic_record

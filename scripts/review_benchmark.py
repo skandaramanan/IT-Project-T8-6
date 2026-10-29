@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from survey.extraction.record import SCHEMA_VERSION
 from survey.records import Reference
 from survey.review.api import Settings, create_app
 from survey.review.fields import field_pointers
@@ -65,7 +66,9 @@ def record_flags(record):
             continue
         card = cards[0]
         for _, pointer, group in field_pointers(
-            index, review=record["schema_version"] == "0.7.0", include_shared=index == 0
+            index,
+            review=record["schema_version"] == SCHEMA_VERSION,
+            include_shared=index == 0,
         ):
             if group == "front":
                 continue
@@ -101,7 +104,7 @@ def benchmark(source: Path, region: str, iterations: int) -> dict:
                 skipped.append(path.name)
                 continue
             rows = [json.loads(line) for line in lines]
-            if any(row["schema_version"] != "0.7.0" for row in rows):
+            if any(row["schema_version"] != SCHEMA_VERSION for row in rows):
                 rows, _ = prepare_records(rows)
             (results / path.name).write_text(
                 "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"

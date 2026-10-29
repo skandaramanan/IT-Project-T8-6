@@ -610,7 +610,7 @@ def test_same_region_different_fields_still_require_manual_reconciliation(tmp_pa
 def test_new_audit_collision_during_incoming_validation_is_rechecked(
     tmp_path, monkeypatch
 ):
-    from survey.review import service as module
+    from survey.review import prepared_service, service
 
     first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
     remote_decision = decide(first, value="11")["decision"]
@@ -619,7 +619,8 @@ def test_new_audit_collision_during_incoming_validation_is_rechecked(
 
     def raced(*args):
         candidate = original(*args)
-        monkeypatch.setattr(module, "uuid4", lambda: remote_decision["id"])
+        for module in (service, prepared_service):
+            monkeypatch.setattr(module, "uuid4", lambda: remote_decision["id"])
         decide(second, ref=second_ref, value="22", request_id="colliding-event")
         return candidate
 
@@ -684,3 +685,26 @@ def test_same_region_push_race_preserves_both_reviewers_commits(tmp_path, monkey
     assert git(first_sync.checkout, "rev-parse", "HEAD") != git(
         second_sync.checkout, "rev-parse", "HEAD"
     )
+
+
+def test_incoming_region_with_other_schema_is_refused_before_install(
+    tmp_path, monkeypatch
+):
+    import review_support
+    from review_support import card_record, legacy, write_record
+
+    monkeypatch.setattr(review_support, "PREPARED", True)
+    service, settings, sync = make_sync(tmp_path)
+    head = git(settings.data_checkout, "rev-parse", "HEAD")
+    before = dict(service.store.regions)
+    other = other_clone(tmp_path)
+    record = legacy(card_record())
+    record["region"] = "other"
+    write_record(other / "results/other.jsonl", record)
+    git(other, "add", "results/other.jsonl")
+    git(other, "commit", "-m", "Published-schema region")
+    git(other, "push", "origin", "review-data")
+    status = sync.sync(service.reindex_history)
+    assert status["error"]["code"] == "review_preparation_required"
+    assert git(settings.data_checkout, "rev-parse", "HEAD") == head
+    assert service.store.regions == before

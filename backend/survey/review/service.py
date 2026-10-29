@@ -13,7 +13,11 @@ from survey.extraction.card_fields import (
     SURVEY_FRONT_DWELLING_FIELDS,
 )
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
-from survey.extraction.record import build_record_id, review_schema_version
+from survey.extraction.record import (
+    SCHEMA_VERSION,
+    build_record_id,
+    review_schema_version,
+)
 from survey.records import (
     RecordStore,
     Reference,
@@ -44,6 +48,52 @@ def state(field: dict) -> str:
 
 def snapshot(field: dict) -> dict:
     return deepcopy({k: v for k, v in field.items() if k != "review"})
+
+
+def credentials(reviewer, request_id):
+    name = reviewer.strip()
+    if not name or len(name) > 100:
+        raise ReviewError(
+            "invalid_reviewer", "Enter a reviewer name (1–100 characters)"
+        )
+    if not request_id or len(request_id) > 128:
+        raise ReviewError(
+            "invalid_request_id", "Supply a request ID (1–128 characters)"
+        )
+    return name
+
+
+def field_after(field, spec, action, value):
+    """The field's values after one non-undo decision; history is the caller's."""
+    after = snapshot(field)
+    if action == "correct":
+        if not spec.valid_correction(value):
+            raise ReviewError(
+                "invalid_value",
+                "Enter 1–4 ASCII digits with an optional letter"
+                if spec.identity_kind == "dwelling" or spec.front_dwelling_number
+                else "Enter 1–2 ASCII digits; zeros are preserved"
+                if spec.identity_kind
+                else "Enter nonblank text exactly as written"
+                if spec.spec.kind == "text"
+                else "Enter 1–64 ASCII digits; zeros are preserved",
+            )
+        category = spec.spec.code_book_category
+        coded = category in CLOSED_CATEGORIES or category in SENTINEL_CODES
+        after.update(
+            value=value,
+            status="ok",
+            code=value if coded else None,
+            label=decode(category, value) if coded else None,
+        )
+    elif action in {"no_data", "illegible"}:
+        after.update(value=None, status=action, code=None, label=None)
+    elif action != "accept":
+        raise ReviewError("unsupported_action", "Unsupported field action")
+    if action != "accept":
+        after.setdefault("original_value", field.get("original_value", field["value"]))
+        after["origin"] = "corrected"
+    return after
 
 
 def active_decisions(history: list[dict]) -> list[dict]:
@@ -117,17 +167,6 @@ def identity_ids(record, municipality_overrides=None):
 
 def identity_issues(record, identity_counts):
     dwelling = record["dwelling"]
-    if record["schema_version"] == "0.7.0":
-        codes = {flag for h in dwelling["households"] for flag in h.get("flags", [])}
-        messages = {
-            "duplicate_record_id": "Other physical coding cards have the same identity. Compare their readings; each card is preserved.",
-            "incomplete_identity": "Some of this card's identity readings are missing or invalid.",
-            "missing_card_reading": "Some independent readings could not be recovered from retained artifacts.",
-        }
-        return [
-            {"code": c, "message": messages.get(c, c.replace("_", " "))}
-            for c in sorted(codes)
-        ]
     ids = identity_ids(record)
     issues = []
     if any(identity is None for identity in ids) or any(
@@ -237,6 +276,8 @@ class ReviewService:
     ):
         self.store, self.scans = store, scans
         self.identity_counts = {}
+        # Filled by build_card_registry at the end of replace_queue.
+        self.voluntary_references, self.voluntary_by_card = {}, {}
         self.region_titles = self.load_region_titles()
         self.replace_queue(references, diagnostics)
         self.requests, self.decisions = self.store.requests, self.store.decisions
@@ -295,7 +336,7 @@ class ReviewService:
     def reindex_history(self, regions=None):
         self.requests, self.decisions = self.store.requests, self.store.decisions
         if any(
-            r["schema_version"] == "0.7.0"
+            r["schema_version"] == SCHEMA_VERSION
             for records, _ in self.store.regions.values()
             for r in records
         ):
@@ -480,7 +521,10 @@ class ReviewService:
                 "field_path": ref.field_path,
                 "label": resolved.label,
                 "identity_kind": resolved.descriptor.identity_kind,
-                "review_issues": identity_issues(
+                # Prepared records take theirs from item_details below.
+                "review_issues": []
+                if resolved.record["schema_version"] == SCHEMA_VERSION
+                else identity_issues(
                     resolved.record, self.region_identity_counts(ref.region, version)
                 ),
                 "field": deepcopy(field),
@@ -509,7 +553,7 @@ class ReviewService:
             }
 
             item.update(self.item_context(ref, resolved, context))
-            if resolved.record["schema_version"] == "0.7.0":
+            if resolved.record["schema_version"] == SCHEMA_VERSION:
                 from survey.review.prepared_service import item_details
 
                 item.update(item_details(self, ref, resolved))
@@ -620,7 +664,7 @@ class ReviewService:
             (label, path)
             for label, path, _ in field_pointers(
                 index,
-                review=resolved.record["schema_version"] == "0.7.0",
+                review=resolved.record["schema_version"] == SCHEMA_VERSION,
                 household_municipality=(
                     "municipality" in resolved.household and not prefer_shared
                 ),
@@ -651,7 +695,7 @@ class ReviewService:
                 {
                     "id": field_ref.item_id
                     if field_ref.item_id in self.references
-                    or field_ref.item_id in getattr(self, "voluntary_references", {})
+                    or field_ref.item_id in self.voluntary_references
                     else None,
                     "label": label,
                     "column": printed_column(label)
@@ -716,7 +760,7 @@ class ReviewService:
                         else next(
                             (
                                 r.item_id
-                                for r in getattr(self, "voluntary_by_card", {}).get(
+                                for r in self.voluntary_by_card.get(
                                     physical_card_id(
                                         ref.region, card["image"], card.get("page")
                                     ),
@@ -905,30 +949,27 @@ class ReviewService:
                 )
                 for record, refs in groups.values()
             )
+            links = Counter()
+            for rg, (records, _) in self.store.regions.items():
+                if region is not None and rg != region:
+                    continue
+                for r in records:
+                    for h in r["dwelling"]["households"]:
+                        links["duplicate_cards"] += "duplicate_record_id" in h.get(
+                            "flags", []
+                        )
+                        links["pending_links"] += h.get("relink", {}).get("state") in {
+                            "pending",
+                            "provisional",
+                        }
+                        links["retained_bundles"] += len(
+                            h.get("retained_supplements", [])
+                        )
             return {
                 "dwellings": rows,
                 "association_summary": {
-                    "duplicate_cards": sum(
-                        "duplicate_record_id" in h.get("flags", [])
-                        for rg, (records, _) in self.store.regions.items()
-                        if region is None or rg == region
-                        for r in records
-                        for h in r["dwelling"]["households"]
-                    ),
-                    "pending_links": sum(
-                        h.get("relink", {}).get("state") in {"pending", "provisional"}
-                        for rg, (records, _) in self.store.regions.items()
-                        if region is None or rg == region
-                        for r in records
-                        for h in r["dwelling"]["households"]
-                    ),
-                    "retained_bundles": sum(
-                        len(h.get("retained_supplements", []))
-                        for rg, (records, _) in self.store.regions.items()
-                        if region is None or rg == region
-                        for r in records
-                        for h in r["dwelling"]["households"]
-                    ),
+                    key: links[key]
+                    for key in ("duplicate_cards", "pending_links", "retained_bundles")
                 },
                 "diagnostics": diagnostics,
                 "total": total,
@@ -946,7 +987,7 @@ class ReviewService:
             group = self.dwelling_groups(region).get(dwelling_id)
             if group is None:
                 if any(
-                    r["schema_version"] == "0.7.0"
+                    r["schema_version"] == SCHEMA_VERSION
                     and self.dwelling_id(rg, r) == dwelling_id
                     for rg, (records, _) in self.store.regions.items()
                     if region is None or rg == region
@@ -1094,7 +1135,11 @@ class ReviewService:
         if (
             (prior and "card_id" in prior)
             or (target and "card_id" in target)
-            or (ref and self.store.current(ref)[0].record["schema_version"] == "0.7.0")
+            or (
+                ref
+                and self.store.current(ref)[0].record["schema_version"]
+                == SCHEMA_VERSION
+            )
         ):
             from survey.review.prepared_service import apply_decision
 
@@ -1109,15 +1154,7 @@ class ReviewService:
                 undo_target,
                 duplicate_confirmation,
             )
-        reviewer = reviewer.strip()
-        if not reviewer or len(reviewer) > 100:
-            raise ReviewError(
-                "invalid_reviewer", "Enter a reviewer name (1–100 characters)"
-            )
-        if not request_id or len(request_id) > 128:
-            raise ReviewError(
-                "invalid_request_id", "Supply a request ID (1–128 characters)"
-            )
+        reviewer = credentials(reviewer, request_id)
         request = {
             "action": action,
             "value": value,
@@ -1192,36 +1229,8 @@ class ReviewService:
                     raise ReviewError(
                         "invalid_value", "Only correction accepts a value"
                     )
-                after = deepcopy(before)
+                after = field_after(field, resolved.descriptor, action, value)
                 after_state = "accepted" if action == "accept" else "corrected"
-                if action == "correct":
-                    if not resolved.descriptor.valid_correction(value):
-                        raise ReviewError(
-                            "invalid_value",
-                            "Enter 1–4 ASCII digits with an optional letter"
-                            if resolved.descriptor.identity_kind == "dwelling"
-                            or resolved.descriptor.front_dwelling_number
-                            else "Enter 1–2 ASCII digits; zeros are preserved"
-                            if resolved.descriptor.identity_kind
-                            else "Enter nonblank text exactly as written"
-                            if resolved.descriptor.spec.kind == "text"
-                            else "Enter 1–64 ASCII digits; zeros are preserved",
-                        )
-                    category = resolved.descriptor.spec.code_book_category
-                    coded = category in CLOSED_CATEGORIES or category in SENTINEL_CODES
-                    after.update(
-                        value=value,
-                        status="ok",
-                        code=value if coded else None,
-                        label=decode(category, value) if coded else None,
-                    )
-                elif action in {"no_data", "illegible"}:
-                    after.update(value=None, status=action, code=None, label=None)
-                if action != "accept":
-                    after.setdefault(
-                        "original_value", before.get("original_value", before["value"])
-                    )
-                    after["origin"] = "corrected"
                 if after == before and after_state == before_state:
                     raise ReviewError(
                         "no_op",

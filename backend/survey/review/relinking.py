@@ -8,10 +8,15 @@ import json
 from collections import Counter, defaultdict
 from copy import deepcopy
 
-from survey.extraction.record import build_record_id
+from survey.extraction.record import SCHEMA_VERSION, build_record_id
 from survey.records import ReviewError, digest, physical_card_id
 
-REVIEW_SCHEMA = "0.7.0"
+REVIEW_SCHEMA = SCHEMA_VERSION
+# What finish_records gives a card with no survey front.
+UNFRONTED = {
+    "state": "provisional",
+    "reason": "This card has no associated survey front",
+}
 IDENTITY_FLAGS = {
     "duplicate_record_id",
     "incomplete_identity",
@@ -36,7 +41,7 @@ def coding_source(household):
 
 def owner(region, household):
     c = coding_source(household)
-    return physical_card_id(region, c["image"], c["page"])
+    return physical_card_id(region, c["image"], c.get("page"))
 
 
 def identity(household):
@@ -82,11 +87,13 @@ def duplicate_index(records):
     return {key: sorted(members) for key, members in groups.items() if len(members) > 1}
 
 
-def conflicts(records, card_id):
+def conflicts(records, card_id, duplicates=None):
     return next(
         (
             {"identity": key[2], "card_ids": members}
-            for key, members in duplicate_index(records).items()
+            for key, members in (
+                duplicate_index(records) if duplicates is None else duplicates
+            ).items()
             if card_id in members
         ),
         None,
@@ -140,10 +147,7 @@ def finish_records(records):
         fronted = any(c["role"] == "survey-front" for c in d.get("cards", []))
         for h in d["households"]:
             if not fronted and "relink" not in h:
-                h["relink"] = {
-                    "state": "provisional",
-                    "reason": "This card has no associated survey front",
-                }
+                h["relink"] = deepcopy(UNFRONTED)
         for note in d.get("notes", []):
             if note.get("household_card_id") or note.get("household_id") is None:
                 continue
@@ -267,8 +271,8 @@ def partly_fits(record, h, key):
     )
 
 
-def plan_membership(records, card_id):
-    ri, _, record, h = inventory(records)[card_id]
+def plan_membership(records, card_id, inv=None):
+    ri, _, record, h = (inv or inventory(records))[card_id]
     key, pdf = dwelling_key(h), coding_source(h)["image"]
     candidates = []
     if key:
@@ -408,14 +412,26 @@ def move(records, card_id, target_id, operation_id, *, retain=False):
     return effect
 
 
-def latest_link_id(h):
+def active_links(h):
     active = []
     for event in h.get("link_history", []):
         if event["action"] == "undo":
             active.pop()
         else:
-            active.append(event["id"])
-    return active[-1] if active else None
+            active.append(event)
+    return active
+
+
+def latest_link_id(h):
+    active = active_links(h)
+    return active[-1]["id"] if active else None
+
+
+def restore_relink(h, value):
+    if value is None:
+        h.pop("relink", None)
+    else:
+        h["relink"] = deepcopy(value)
 
 
 def undo_move(records, effect):
@@ -518,10 +534,7 @@ def undo_move(records, effect):
         h["retained_supplements"].remove(bundle)
         if not h["retained_supplements"]:
             h.pop("retained_supplements")
-    if effect["previous_relink"] is None:
-        h.pop("relink", None)
-    else:
-        h["relink"] = deepcopy(effect["previous_relink"])
+    restore_relink(h, effect["previous_relink"])
     at = min(records.index(r) for r in affected)
     records[:] = [r for r in records if not any(r is a for a in affected)]
     records[at:at] = rebuilt

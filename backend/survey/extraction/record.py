@@ -54,7 +54,7 @@ def review_schema_version(version: str) -> str:
     0.7.0 is a different shape (per-card ownership), so a shared-field record
     is never relabelled 0.7.0 on save; it is converted by preparation.
     """
-    return version if version in {"0.5.0", "0.7.0"} else "0.6.0"
+    return version if version in {"0.5.0", SCHEMA_VERSION} else "0.6.0"
 
 
 # --- 1. where each field lives ----------------------------------------------

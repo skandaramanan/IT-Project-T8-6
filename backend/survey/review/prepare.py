@@ -26,6 +26,21 @@ from survey.review import relinking as model
 from survey.review.flags import build_flags
 
 
+def all_cards(record):
+    d = record["dwelling"]
+    return d.get("cards", []) + [c for h in d["households"] for c in h.get("cards", [])]
+
+
+def coding_inventory(records):
+    return Counter(
+        (r["region"], c["image"], c["page"])
+        for r in records
+        for h in r["dwelling"]["households"]
+        for c in h.get("cards", [])
+        if c["role"] == "coding-front"
+    )
+
+
 def prepare_records(records, readings=None, evidence=None):
     """Return new records and a reproducible source/payload preservation receipt.
 
@@ -175,13 +190,8 @@ def prepare_records(records, readings=None, evidence=None):
     # Note links resolve against the published IDs, before they are re-derived.
     model.finish_records(candidate)
     for old, new in zip(records, candidate):
-        old_cards = old["dwelling"].get("cards", []) + [
-            c for h in old["dwelling"]["households"] for c in h.get("cards", [])
-        ]
-        new_cards = new["dwelling"].get("cards", []) + [
-            c for h in new["dwelling"]["households"] for c in h.get("cards", [])
-        ]
-        if old_cards != new_cards:
+        old_cards = all_cards(old)
+        if old_cards != all_cards(new):
             raise ValueError(
                 "A published source card payload or score changed during preparation"
             )
@@ -222,20 +232,7 @@ def prepare_records(records, readings=None, evidence=None):
                 )
     for region in {r["region"] for r in candidate}:
         validate_records([r for r in candidate if r["region"] == region], region)
-    before = Counter(
-        (r["region"], c["image"], c["page"])
-        for r in records
-        for h in r["dwelling"]["households"]
-        for c in h.get("cards", [])
-        if c["role"] == "coding-front"
-    )
-    after = Counter(
-        (r["region"], c["image"], c["page"])
-        for r in candidate
-        for h in r["dwelling"]["households"]
-        for c in h.get("cards", [])
-        if c["role"] == "coding-front"
-    )
+    before, after = coding_inventory(records), coding_inventory(candidate)
     if before != after or any(v != 1 for v in after.values()):
         raise ValueError("Physical coding inventory was not preserved exactly once")
     report["duplicate_groups"] = len(model.duplicate_index(candidate))
