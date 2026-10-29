@@ -140,17 +140,27 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,021 passed, 19 skipped under existing test conditions. Model
+- Backend suite: 1,057 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 100 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,
   including confirmation before a duplicate save, unqueued peer repair, retained
   scans/notes, and link Undo preserving a later building correction.
-- Ruff lint/format and Git whitespace checks passed. Published `results/` and
-  the schema example have no changes.
-- Corpus regressions check pages 175/179's distinct seven/six-room readings and
-  preservation mappings for all 34 corrected occurrences. Synthetic regressions
-  cover ambiguous-plus-duplicate outcomes, failures/retries/restarts, stale writes,
+- Ruff lint/format and Git whitespace checks passed.
+- Published `results/*.jsonl` (44 files) were converted once from `0.6.0` to
+  `0.7.0` with `scripts/prepare_review_dataset.py`, from cached Gemini readings
+  of the 55 non-first household cards: 5,430 cards, 0 missing per-card fields,
+  79,865 queued fields, no `missing_card_reading`. The three cards once without
+  a cache (216428 p49, 216460 p378, 216463 p279) now have readings. The schema
+  example is now `0.7.0`. `results/qwen2.5-vl-server-2000000px/` stays `0.6.0`.
+  Flagged records rose from 351 to 492 by design: D007 flags every peer sharing
+  an identity.
+- A corpus regression checks all 30 distinct corrected fields survived
+  conversion with identical values (0.6.0 counted 34: four corrected
+  municipalities sat on both the dwelling alias and household 0). Synthetic
+  regressions cover independent per-card readings, ambiguous-plus-duplicate
+  outcomes, a pending link clearing when a correction is reverted, the reread
+  flag following a last-card move, failures/retries/restarts, stale writes,
   retained field history, changed ownership dependencies, and reinstated Undo.
 - A 20-run synthetic benchmark sized to the largest published region's 270
   dwellings measured the automatic-move dependency check plus inverse at
@@ -160,4 +170,6 @@ a mixed published/prepared dataset is refused at startup.
 
 Native Windows/operator acceptance and complete staged recovery/adoption remain
 separate. The Windows CI selection includes the new relinking regressions.
-No extraction, model calls, rescoring or production seed replacement was run.
+The conversion made no other model calls and ran no extraction or rescoring.
+The `review-data` seed takes the converted results only when `main` is merged
+into it after this lands.

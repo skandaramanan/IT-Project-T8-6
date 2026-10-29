@@ -409,6 +409,12 @@ def move(records, card_id, target_id, operation_id, *, retain=False):
     target["dwelling"]["households"].append(h)
     if not source["dwelling"]["households"]:
         records.remove(source)
+        # The reread warning would otherwise survive only in the audit frame.
+        flags = target["dwelling"].get("flags", [])
+        if "identity_reread" in source["dwelling"].get("flags", []) and (
+            "identity_reread" not in flags
+        ):
+            target["dwelling"]["flags"] = sorted([*flags, "identity_reread"])
     effect["after"] = ([frame(source)] if source in records else []) + [frame(target)]
     return effect
 
@@ -517,6 +523,11 @@ def undo_move(records, effect):
                     if k != "households"
                 }
             )
+            # Drop a flag this move carried in from the removed source.
+            if before["flags"]:
+                extras["flags"] = deepcopy(before["flags"])
+            else:
+                extras.pop("flags", None)
         elif bundle:
             extras = deepcopy(
                 {k: v for k, v in bundle["payload"].items() if k != "persons"}

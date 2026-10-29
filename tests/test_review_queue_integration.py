@@ -356,6 +356,10 @@ def test_cached_real_dual_readings_generate_actionable_assignment(tmp_path, caps
     assert all(
         "confidence" in field
         for _, field in current_fields(
-            json.loads((settings.data_checkout / "results/demo.jsonl").read_text())
+            json.loads(
+                (settings.data_checkout / "results/demo.jsonl").read_text(
+                    encoding="utf-8"
+                )
+            )
         )
     )

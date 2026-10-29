@@ -567,6 +567,15 @@ def apply_decision(
                         "provisional": "This card has no associated survey front",
                     }[outcome],
                 }
+            elif h.get("relink", {}).get("state") == "pending":
+                # The card fits its group again, so the earlier pending link no longer applies.
+                if any(
+                    c["role"] == "survey-front"
+                    for c in resolved.record["dwelling"].get("cards", [])
+                ):
+                    h.pop("relink")
+                else:
+                    h["relink"] = deepcopy(model.UNFRONTED)
             if h.get("relink") != prior_link and "structure" not in event:
                 event.update(
                     relink_before=prior_link, relink_after=deepcopy(h.get("relink"))

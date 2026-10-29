@@ -58,8 +58,9 @@ class ReviewFlag(StrEnum):
     MISSING_RECORD_ID = "missing_record_id"
     # Coding cards in one dwelling naming different municipalities.
     MUNICIPALITY_MISMATCH = "municipality_mismatch"
-    # A record_id another coding card in the batch also has: written null,
-    # unless only this card sits with a front.
+    # A record_id another coding card also has. Association keeps it; the
+    # review step (relinking.refresh_identities) flags every peer sharing the
+    # identity within the same region and PDF.
     DUPLICATE_RECORD_ID = "duplicate_record_id"
     # A coding card here has no reading (failed, or the run stopped first).
     UNREAD_CODING_CARD = "unread_coding_card"

@@ -243,7 +243,9 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
         (sandbox / relative).mkdir(parents=True, exist_ok=True)
     for name in ("216436-source-corrections.json", "216436-gemini-additions.json"):
         shutil.copy2(ROOT / "docs/runs" / name, sandbox / "docs/runs" / name)
-    (sandbox / "results/216436.jsonl").write_text("\n".join(baseline) + "\n")
+    (sandbox / "results/216436.jsonl").write_text(
+        "\n".join(baseline) + "\n", encoding="utf-8"
+    )
     pdf = sandbox / "data/Wilfred_Prest_Survey_Data/216436" / additions.PDF_NAME
     pdf.parent.mkdir(parents=True)
     shutil.copy2(additions.PDF, pdf)
@@ -272,8 +274,10 @@ def test_complete_local_rebuild_keeps_all_sources_and_resolves_verified_gaps(
         hashlib.sha256(p.read_bytes()).hexdigest() == digest
         for p, digest in raw_before.items()
     )
-    assert set(baseline) <= set(output.read_text().splitlines())
-    records = [json.loads(line) for line in output.read_text().splitlines()]
+    assert set(baseline) <= set(output.read_text(encoding="utf-8").splitlines())
+    records = [
+        json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()
+    ]
     assert len(records) == 146
     report = json.loads(
         (sandbox / "docs/runs/216436-gemini-additions.json").read_text()

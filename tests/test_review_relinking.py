@@ -300,6 +300,28 @@ def test_ambiguous_destination_saves_correction_and_duplicate_without_moving(tmp
     assert len(saved["item"]["duplicate_peers"]) == 2
 
 
+def test_correcting_back_to_the_current_group_clears_a_pending_link(tmp_path):
+    group = with_front(grouped(raw_record(1, "7"), raw_record(2, "7", "2")), 3, "7")
+    service = start(
+        tmp_path,
+        [
+            group,
+            with_front(raw_record(4, "9"), 5, "9"),
+            with_front(raw_record(6, "9"), 7, "9"),
+        ],
+    )
+    correct(service, 1, "dwelling_no", "9")
+    assert current(service, 1)[3]["relink"]["state"] == "pending"
+    saved = correct(service, 1, "dwelling_no", "7", "back")
+    assert saved["membership"]["outcome"] == "unchanged"
+    assert all(
+        "relink" not in h
+        for _, _, _, h in inventory(service.store.regions["demo"][0]).values()
+    )
+    undo(service, saved)
+    assert current(service, 1)[3]["relink"]["state"] == "pending"
+
+
 def test_last_card_retains_evidence_and_link_undo_keeps_number_correction(tmp_path):
     source = with_front(raw_record(1), 2, "6")
     source["dwelling"]["households"][0]["persons"] = [
@@ -344,6 +366,20 @@ def test_last_card_retains_evidence_and_link_undo_keeps_number_correction(tmp_pa
     assert current(service, 1)[3]["persons"][0]["relationship"]["value"] == "Head"
     assert current(service, 1)[2]["dwelling"]["cards"][0]["page"] == 2
     assert not current(service, 1)[3].get("retained_supplements")
+
+
+def test_last_card_carries_its_reread_flag_and_undo_restores_it(tmp_path):
+    source = raw_record(1)
+    source["dwelling"]["flags"] = ["identity_reread"]
+    target = with_front(raw_record(3, "7"), 4, "7")
+    service = start(tmp_path, [source, target])
+    saved = correct(service, 1, "dwelling_no", "7")
+    assert saved["structural_change"]
+    assert current(service, 1)[2]["dwelling"]["flags"] == ["identity_reread"]
+    undo(service, saved)
+    assert current(service, 1)[2]["dwelling"]["flags"] == ["identity_reread"]
+    assert "flags" not in current(service, 3)[2]["dwelling"]
+    assert current(service, 1)[2] is not current(service, 3)[2]
 
 
 def test_move_retry_after_restart_does_not_repeat_or_duplicate_history(tmp_path):
@@ -744,7 +780,7 @@ def test_every_published_corrected_field_survived_preparation():
     rows = [
         json.loads(line)
         for path in sorted((root / "results").glob("*.jsonl"))
-        for line in path.read_text().splitlines()
+        for line in path.read_text(encoding="utf-8").splitlines()
         if line
     ]
     assert {r["schema_version"] for r in rows} == {"0.7.0"}

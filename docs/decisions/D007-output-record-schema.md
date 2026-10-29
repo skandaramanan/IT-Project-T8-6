@@ -198,7 +198,9 @@ written, so a reviewer can fix it rather than lose it.
   coding card whose number fits no front, paired with the front at the
   batch's usual page offset), `unplaced` (a coding card that still fits no
   front, written as a dwelling of its own), `missing_record_id`,
-  `duplicate_record_id` or `municipality_mismatch`, along with the grouping
+  `duplicate_record_id`, `municipality_mismatch` or `dwelling_number_mismatch`
+  (the households' dwelling numbers differ, or the front's handwritten number
+  differs from a household's), along with the grouping
   flags association already raised, which were only logged before. Absent
   when there is nothing to check.
 - A dwelling number can end in a letter, which names another dwelling: 487A
@@ -247,10 +249,9 @@ merge scoring, published results and the reviewer. The pipeline runs
 `relinking.finish_records` on each region before writing (provisional relink for
 frontless cards, `household_card_id` on notes, identity flags) and refuses
 previous results that are not 0.7.0, telling the operator to run
-`scripts/prepare_review_dataset.py` first. Published results are still 0.6.0
-today; whoever holds the Gemini cache converts them once with that script (no
-model calls). Three cards have no cache (216428 p49, 216460 p378, 216463 p279)
-and stay `missing_card_reading`. Every card scores its own
+`scripts/prepare_review_dataset.py` first. Published results were converted
+once from 0.6.0 with that script, using cached Gemini readings of the 55
+non-first household cards (no other model calls). Every card scores its own
 dwelling/house/municipality confidence.
 
 Every household owns its `municipality`, `dwelling_no` and `house` fields,

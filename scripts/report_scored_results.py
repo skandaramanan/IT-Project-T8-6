@@ -46,7 +46,11 @@ def _cards(node):
 
 
 def _jsonl(path):
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _check_equal(label, actual, expected):

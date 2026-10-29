@@ -148,7 +148,9 @@ def main():
     report = []
     for path in sorted(args.previous.glob("*.jsonl")):
         previous = [
-            json.loads(line) for line in path.read_text().splitlines() if line.strip()
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
         ]
         verified = read_verified_coding(args.verified_coding, path.stem)
         records, added = rebuild_region(
