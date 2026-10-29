@@ -272,7 +272,8 @@ def _parse_object(text: str | None) -> dict | None:
 # Every one is a spelling seen in IT-124's Qwen readings (5,626 corpus cards
 # and the 30 benchmark ones): "Washhouse" in all of them, so every exported
 # Washouse was omitted. Exact strings only -- a near miss stays omitted, so
-# review sees it, rather than being guessed into a field.
+# review sees it, rather than being guessed into a field. Spacing and
+# punctuation are not a near miss: see _LABEL_BY_FORM.
 FIELD_ALIASES: dict[str, str] = {
     "Washhouse": "Washouse",
     "Pre-war Occupation": "Pre-War Occupation",
@@ -305,6 +306,16 @@ FIELD_ALIASES: dict[str, str] = {
 _NESTED = {"Children of H. or wife": ("Living", "Dead", "Total")}
 
 
+def _form(key: str) -> str:
+    return re.sub(r"[^0-9a-z]", "", key.lower())
+
+
+# A Gemini reply gave every label with its spaces and hyphens as underscores
+# ("Type_of_Dwelling", "Number_5_10"), and each field went missing. Letters and
+# digits alone still name one schema label each (test_parse_json_fields).
+_LABEL_BY_FORM = {_form(label): label for label in FIELD_SCHEMA_BY_NAME}
+
+
 def canonical_labels(parsed: dict) -> dict:
     """The schema's labels a reply gave under another name, with their values.
 
@@ -321,6 +332,8 @@ def canonical_labels(parsed: dict) -> dict:
             for part in _NESTED[key]:
                 if part in value:
                     found.setdefault(f"{key}: {part}", []).append(value[part])
+        elif _form(key) in _LABEL_BY_FORM:
+            found.setdefault(_LABEL_BY_FORM[_form(key)], []).append(value)
     return {
         label: values[0]
         for label, values in found.items()
@@ -391,7 +404,7 @@ def parse_struck_fields(text: str | None) -> dict[str, bool]:
 
 def with_canonical_labels(result: ExtractionResult) -> ExtractionResult:
     """``result`` with the fields its raw reply gave under a known other
-    label (:data:`FIELD_ALIASES`) put under the schema's.
+    label (:data:`FIELD_ALIASES`, or other spacing) put under the schema's.
 
     For a reading cached before the aliases existed: its ``fields`` were
     parsed then and lack them, but its ``raw_text`` still says what the model

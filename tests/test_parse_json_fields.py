@@ -130,3 +130,22 @@ def test_a_cached_reading_gains_its_misspelt_fields_and_keeps_its_own():
     assert result.fields["Number 5-10"] == ""
     assert result.struck is None  # still "nobody looked"
     assert with_canonical_labels(result) == result
+
+
+def test_labels_with_underscores_for_spaces_are_read_under_the_schemas():
+    from survey.extraction.json_extraction import _LABEL_BY_FORM
+
+    assert len(_LABEL_BY_FORM) == len(FIELD_SCHEMA_BY_NAME)  # no two collide
+    fields = parse_json_fields(
+        '{"Municipality": "04", "Number_of_Dwelling": "487", '
+        '"Number of Household": "01", "Number_of_Household": "02", '
+        '"Type_of_Dwelling": "2", "Number_5_10": "1", "No._of_Boarders": "0", '
+        '"Head\'s_Unearned_I.": "03", "Children_of_H._or_wife:_Living": "3"}'
+    )
+    assert fields["Number of Dwelling"] == "487"
+    assert fields["Type of Dwelling"] == "2"
+    assert fields["Number 5-10"] == "1"
+    assert fields["No. of Boarders"] == "0"
+    assert fields["Head's Unearned I."] == "03"
+    assert fields["Children of H. or wife: Living"] == "3"
+    assert fields["Number of Household"] == "01"  # explicit beats its twin
