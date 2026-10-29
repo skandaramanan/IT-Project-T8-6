@@ -124,6 +124,20 @@ def test_rerun_refuses_to_give_a_retained_front_to_another_card(tmp_path):
         _merge(old, finish_records(rebuilt))
 
 
+def test_excluding_a_linked_card_refuses_rather_than_drop_its_evidence(tmp_path):
+    from survey.pipeline import _exclude
+
+    service = start(tmp_path, [with_front(raw_record(1, "6"), 2, "6")])
+    card = owner("demo", current(service, 1)[3])
+    version = service.store.regions["demo"][1]
+    link(service, card, None, True, "Reviewer", version, "link-1")
+
+    old = deepcopy(service.store.regions["demo"][0])
+    assert old[0]["dwelling"]["households"][0]["retained_supplements"]
+    with pytest.raises(MergeRefused, match="p1: excluded.*links"):
+        _exclude(old, {("synthetic.pdf", 1)})
+
+
 def test_rerun_drops_the_unfronted_label_once_a_front_is_found():
     old = finish_records([raw_record(1)])
     household = old[0]["dwelling"]["households"][0]

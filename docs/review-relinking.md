@@ -57,8 +57,9 @@ with a fresh seed. Preserve the old seed in normal Git history and deploy matchi
 code, data and regenerated flags together. Keep extraction/rerun tools away from
 review data. If a rerun does meet reviewed records, it refuses when a corrected or
 relinked record would be regrouped, or when any record would regain a source held
-in a retained bundle, and otherwise copies each household's `relink` (except the
-derived "no survey front" label), `link_history` and `retained_supplements`.
+in a retained bundle (an excluded page whose record has corrections or links also
+refuses), and otherwise copies each household's `relink` (except the derived
+"no survey front" label), `link_history` and `retained_supplements`.
 Production adoption remains a separate operator decision.
 
 Build React before distribution (`npm run build` in `frontend/`). The source-only
@@ -152,7 +153,7 @@ a mixed published/prepared dataset is refused at startup.
 
 ## Implementation validation (29 October 2026)
 
-- Backend suite: 1,064 passed, 21 skipped under existing test conditions. Model
+- Backend suite: 1,065 passed, 21 skipped under existing test conditions. Model
   API credentials were removed from the test process.
 - React suite: 102 passed; TypeScript and production build passed.
 - Browser suite: 16 passed against disposable synthetic data and local remotes,

@@ -745,8 +745,9 @@ def _exclude(
 
     Applied to the previous file as well as the new run, or the merge keeps a
     record this run no longer builds. Only a whole record goes: one that also
-    holds a card kept would lose a household, and one with reviewed fields
-    would lose a reviewer's work, so both refuse instead.
+    holds a card kept would lose a household, and one with reviewed fields or
+    a reviewer's link (its retained evidence and Undo history) would lose a
+    reviewer's work, so both refuse instead.
     """
     excluded = frozenset(excluded)
     kept = []
@@ -762,9 +763,10 @@ def _exclude(
                 f"{', '.join(f'{i} p{p}' for i, p in sorted(cards - excluded))}; "
                 "move the results file aside and rebuild the region"
             )
-        if any(_corrected_fields(record)):
+        if any(_corrected_fields(record)) or _relinked(record):
             raise MergeRefused(
-                f"{image} p{page}: excluded, but its record has reviewed fields"
+                f"{image} p{page}: excluded, but its record has reviewed fields "
+                "or links"
             )
         if not quiet:
             log.warning("%s p%d: excluded source, previous record removed", image, page)

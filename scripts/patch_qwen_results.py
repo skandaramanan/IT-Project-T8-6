@@ -5,8 +5,8 @@ uv run python scripts/patch_qwen_results.py [results/qwen2.5-vl-server-2000000px
 Two fixes from review, applied without re-segmenting the scans:
 
 - A record read from an excluded source (``docs/runs/it124-excluded-sources.json``)
-  is removed. One that also holds a kept card, or has reviewed fields, stops
-  the script instead (``pipeline._exclude``).
+  is removed. One that also holds a kept card, or has reviewed fields or links,
+  stops the script instead (``pipeline._exclude``).
 - A field the reply gave under a misspelt label (``json_extraction.FIELD_ALIASES``,
   "Washhouse" in every reading) and the record has as ``omitted`` is filled in
   from the household's cached reading. A field the record already holds is
