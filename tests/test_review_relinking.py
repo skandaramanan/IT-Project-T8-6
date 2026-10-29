@@ -826,6 +826,7 @@ def test_a_qwen_export_prepares_only_from_its_own_cache(tmp_path):
         (cache / "synthetic_p0002.json").write_text(
             json.dumps({"fields": {"Total Number of Rooms": rooms}})
         )
+        (cache / "extractor.json").write_text(manifest)
 
     with pytest.raises(ValueError, match="qwen2.5-vl-server-2000000px results"):
         prepare_dataset(source, tmp_path / "wrong", tmp_path / "cache")

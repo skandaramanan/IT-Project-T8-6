@@ -1,6 +1,6 @@
 """Correct IT-124's committed Qwen results in place, from the cached readings.
 
-uv run python scripts/patch_qwen_results.py [results/qwen2.5-vl-server-2000000px]
+uv run python scripts/patch_qwen_results.py [results/qwen2.5-vl-server-2000000px] [--cache DIR]
 
 Two fixes from review, applied without re-segmenting the scans:
 
@@ -39,8 +39,8 @@ CACHE = "qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k"
 MODEL_ID = "qwen2.5-vl"
 
 
-def reading(region: str, image: str, page: int) -> ExtractionResult:
-    path = REPO / "data/runs" / region / CACHE / f"{Path(image).stem}_p{page:04d}.json"
+def reading(cache: Path, region: str, image: str, page: int) -> ExtractionResult:
+    path = cache / region / CACHE / f"{Path(image).stem}_p{page:04d}.json"
     return with_canonical_labels(ExtractionResult(**json.loads(path.read_text())))
 
 
@@ -64,7 +64,7 @@ def fill(groups: dict, result: ExtractionResult) -> int:
     return filled
 
 
-def patch(path: Path, excluded_path: Path) -> tuple[int, int, int]:
+def patch(path: Path, excluded_path: Path, cache: Path) -> tuple[int, int, int]:
     region = path.stem
     before = read_records(path, region)
     records = _exclude(before, read_excluded_sources(excluded_path, region), quiet=True)
@@ -74,7 +74,7 @@ def patch(path: Path, excluded_path: Path) -> tuple[int, int, int]:
         readings = {}
         for index, household in enumerate(dwelling["households"]):
             card = household["cards"][0]
-            result = reading(region, card["image"], card["page"])
+            result = reading(cache, region, card["image"], card["page"])
             readings[card["image"], card["page"]] = result
             groups = {
                 "household": household,
@@ -107,10 +107,13 @@ def main() -> None:
         type=Path,
         default=REPO / "docs/runs/it124-excluded-sources.json",
     )
+    parser.add_argument(
+        "--cache", type=Path, default=REPO / "data/runs", help="the run's readings"
+    )
     args = parser.parse_args()
     totals = [0, 0, 0]
     for path in sorted(args.results.glob("*.jsonl")):
-        counts = patch(path, args.excluded_sources)
+        counts = patch(path, args.excluded_sources, args.cache)
         totals = [a + b for a, b in zip(totals, counts)]
         print(
             f"{path.stem}: {counts[0]} -> {counts[1]} records, {counts[2]} fields filled"

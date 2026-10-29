@@ -356,22 +356,33 @@ def test_qwen_cache_guard_compares_household_owned_fields_only(tmp_path):
     assert record == snapshot
 
 
-def test_qwen_targets_follow_the_0_6_export_shared_fields():
-    from pathlib import Path
+def test_qwen_cache_guard_reads_a_0_6_export(tmp_path):
+    from survey.merge_runs import (
+        EXPECTED_QWEN,
+        QWEN,
+        QWEN_CACHE,
+        coding_targets,
+        validate_secondary_cache,
+    )
 
-    from survey.merge_runs import QWEN, coding_targets
-
-    path = Path(__file__).parents[1] / "results" / QWEN / "216463.jsonl"
-    records = [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-    ]
-    record = next(r for r in records if len(r["dwelling"]["households"]) > 1)
-    assert record["schema_version"] == "0.6.0"
+    first = reading()
+    second = reading(**{"Number of Household": "2", "Garden": "2"})
+    record = single(first)
+    household = single(second)["dwelling"]["households"][0]
+    household["cards"][0]["page"] = 2
+    record["dwelling"]["households"].append(household)
+    record = review_support.legacy(record)
     d = record["dwelling"]
-    first, later = dict(coding_targets(record, 0)), dict(coding_targets(record, 1))
-    assert first["Garden"] is d["house"]["garden"]
+    # 0.6.0: the shared fields are the first card's alone.
+    assert dict(coding_targets(record, 0))["Garden"] is d["house"]["garden"]
+    later = dict(coding_targets(record, 1))
     assert "Garden" not in later
     assert later["Municipality"] is d["households"][1]["municipality"]
+    folder = tmp_path / "demo" / QWEN / QWEN_CACHE
+    cached(folder, first)
+    cached(folder, second, page=2)
+    (folder / "extractor.json").write_text(json.dumps(EXPECTED_QWEN))
+    validate_secondary_cache({"demo": ([record], "unused")}, tmp_path, EXPECTED_QWEN)
 
 
 def test_reviewed_qwen_discrepancy_refuses_without_overwriting_human_decision(tmp_path):

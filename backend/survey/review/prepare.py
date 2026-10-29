@@ -288,7 +288,8 @@ def prepare_dataset(
         for region in sorted(regions):
             folder = cache / region / cache_name
             for path in sorted(folder.glob("*.json")):
-                if path.name.startswith("._"):
+                # The extractor's own folder also holds its extractor.json.
+                if path.name.startswith("._") or path.name == "extractor.json":
                     continue
                 pdf, page = path.stem.rsplit("_p", 1)
                 raw = path.read_bytes()

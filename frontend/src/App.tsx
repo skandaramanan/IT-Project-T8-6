@@ -1056,8 +1056,10 @@ export default function App() {
                     await submit({ path, body });
                   } catch (e) {
                     // 422: the server refused this choice; another may be accepted.
-                    if (e instanceof ApiError && e.status === 422) refused = e.message;
-                    throw e;
+                    // The form shows why, so the page needn't repeat it. A stop
+                    // still stops the session.
+                    if (e instanceof ApiError && e.status === 422 && !stopCodes.has(e.code)) refused = e.message;
+                    else throw e;
                   }
                 });
                 return refused;

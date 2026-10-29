@@ -1656,6 +1656,7 @@ describe('prepared per-card review', () => {
     await user.click(within(dialog).getByLabelText(/Destination address/));
     await user.click(within(dialog).getByRole('button', { name: 'Save link' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Choose a current compatible destination');
+    expect(screen.getAllByText(/Choose a current compatible destination/)).toHaveLength(1);
     expect(within(dialog).getByLabelText(/Destination address/)).toBeChecked();
     expect(within(dialog).getByRole('button', { name: 'Save link' })).toBeEnabled();
     expect(server.mutations).toHaveLength(1);

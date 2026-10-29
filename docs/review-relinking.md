@@ -37,9 +37,9 @@ omitted/null-confidence fields with a visible issue, never copies of another car
 The cache folder defaults to Gemini's. The Qwen export
 (`results/qwen2.5-vl-server-2000000px/`, which carries its own `extractor.json`) is
 prepared only from its own readings:
-`--cache-name qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k`. Its maintenance
-scripts (`patch_qwen_results.py`, `read_qwen_card.py`) read 0.7.0 only, so they
-need that conversion first. The IT-125 merge reads the export in either schema.
+`--cache-name qwen2.5-vl-server-2000000px/qwen-qwen2.5-vl-7b-q6_k`. The IT-125
+merge reads the export in either schema; its maintenance scripts
+(`patch_qwen_results.py`, `read_qwen_card.py`, both taking `--cache`) read 0.7.0.
 
 Optional `--field-evidence /path/to/evidence.json` accepts a JSON array of existing
 measurements: each row has `region`, `pdf`, `page`, and `fields` mapping printed
@@ -164,7 +164,14 @@ a mixed published/prepared dataset is refused at startup.
   of the 55 non-first household cards: 5,430 cards, 0 missing per-card fields,
   79,865 queued fields, no `missing_card_reading`. The three cards once without
   a cache (216428 p49, 216460 p378, 216463 p279) now have readings. The schema
-  example is now `0.7.0`. `results/qwen2.5-vl-server-2000000px/` stays `0.6.0`.
+  example is now `0.7.0`.
+- `results/qwen2.5-vl-server-2000000px/` (44 files) was converted the same way
+  from IT-124's own Qwen cache (the corpus handoff, with 216436 from its
+  complete-scan handoff, sha256 as pinned in `results/merge-manifest.json`):
+  5,429 cards, 0 missing per-card fields, record values unchanged. Every
+  published Qwen field still matches its raw reading (the merge's cache check).
+  The manifest's `secondary_files` hashes describe the 0.6.0 files IT-125 merged,
+  which remain in Git history.
   Flagged records rose from 351 to 492 by design: D007 flags every peer sharing
   an identity.
 - A corpus regression checks all 30 distinct corrected fields survived
