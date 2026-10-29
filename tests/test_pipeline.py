@@ -27,6 +27,8 @@ SCHEMA = json.loads(
 )
 ROLES = ["survey-front", "survey-back", "coding-front", "coding-back"]
 
+pytestmark = pytest.mark.integration
+
 
 class FakeExtractor:
     """Reads every coding card as municipality 27, dwelling 6, next household."""

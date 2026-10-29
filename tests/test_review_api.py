@@ -10,6 +10,8 @@ from survey.review.launch import open_when_ready
 
 BASE = "http://127.0.0.1:8765"
 
+pytestmark = pytest.mark.integration
+
 
 def setup_client(tmp_path):
     _, settings = setup_review(tmp_path, with_git=True)

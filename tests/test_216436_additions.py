@@ -198,6 +198,7 @@ def test_coding_corrections_keep_identity_aliases_and_missing_machine_values():
     assert not schema_errors(record)
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not additions.PDF.exists(), reason="needs the local replacement scan and raw caches"
 )
