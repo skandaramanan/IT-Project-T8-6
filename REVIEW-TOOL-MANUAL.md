@@ -5,7 +5,7 @@ and fix the ones it got wrong.
 
 | Section | Jump to |
 | --- | --- |
-| **[Setup](#setup)**<br>Once per computer, about 30 min | [Install](#1-install-git-and-uv) · [Code](#2-get-the-code) · [Data](#3-get-the-data) · [GitHub sign-in](#4-sign-in-to-github) · [Review list](#5-make-the-review-list) · [Settings](#6-fill-in-the-settings-file) · [Drive API key](#7-set-up-scan-downloads-optional) · [Shortcut](#8-make-a-desktop-shortcut) · [Updating](#updating) |
+| **[Setup](#setup)**<br>Once per computer, about 30 min | [Install](#1-install-git-uv-and-nodejs) · [Code](#2-get-the-code) · [Data](#3-get-the-data) · [GitHub sign-in](#4-sign-in-to-github) · [Review list](#5-make-the-review-list) · [Settings](#6-fill-in-the-settings-file) · [Drive API key](#7-set-up-scan-downloads-optional) · [Shortcut](#8-make-a-desktop-shortcut) · [Updating](#updating) |
 | **[Reviewing](#reviewing)**<br>Every session | [Start](#start-the-tool) · [Sign in](#sign-in) · [Pick a dwelling](#pick-a-dwelling) · [Scans](#getting-the-scans) · [Review screen](#the-review-screen) · [Decide](#make-a-decision) · [Dwelling numbers](#fixing-a-municipality-or-dwelling-number) · [Undo](#undo) · [Shortcuts](#keyboard-shortcuts) |
 | **[Saving and sharing](#saving-and-sharing)** | [Saving](#saving) · [Sharing](#sharing) · [Stopping](#stopping) |
 | **[Troubleshooting](#troubleshooting)** | Errors and what to do |
@@ -39,19 +39,20 @@ Once per computer. You will end up with four folders and one settings file:
 
 Keep the four folders separate. Don't put one inside another.
 
-### 1. Install Git and uv
+### 1. Install Git, uv and Node.js
 
 - **Git:** download it from [git-scm.com](https://git-scm.com/downloads) and
   accept the defaults.
-- **uv:** open Command Prompt and run
+- **uv and Node.js:** open Command Prompt and run
 
   ```bat
   winget install --id=astral-sh.uv
+  winget install --id=OpenJS.NodeJS.LTS
   ```
 
-  On a Mac, use `brew install uv` instead.
+  On a Mac, use `brew install uv node` instead.
 
-Close Command Prompt and open a new one so it picks up both.
+Close Command Prompt and open a new one so it picks up all three.
 
 ### 2. Get the code
 
@@ -59,13 +60,15 @@ Close Command Prompt and open a new one so it picks up both.
 git clone https://github.com/skandaramanan/IT-Project-T8-6.git "C:\Survey Review\survey-review"
 cd /d "C:\Survey Review\survey-review"
 uv sync --locked
+npm --prefix frontend ci
+npm --prefix frontend run build
 ```
 
-`uv sync` downloads Python and everything the tool needs. The first time takes
-a minute or two.
+`uv sync` downloads Python and everything the tool needs. The two `npm` lines
+build the review screens. The first time takes a few minutes.
 
 If the team gave you a ZIP of the tool, unzip it to the code folder instead of
-running `git clone`. Then run the last two lines.
+running `git clone`. Then run the other lines.
 
 ### 3. Get the data
 
@@ -178,6 +181,8 @@ git -C "C:\Survey Review\survey-review" pull
 git -C "C:\Survey Review Data" pull
 cd /d "C:\Survey Review\survey-review"
 uv sync --locked
+npm --prefix frontend ci
+npm --prefix frontend run build
 uv run survey flags "C:\Survey Review Data\results" > "C:\Survey Review\flags.jsonl"
 ```
 
@@ -388,6 +393,7 @@ Next time, sign in with the same name and choose **Continue**.
 | --- | --- |
 | The browser never opens | Read the console window. It names the missing folder or file. Fix the path in `.env` and start again. |
 | "Startup failed" in the console | Read the lines above it. A wrong path in `.env`, a GitHub sign-in problem, or the tool already running in another console window are the usual causes. Only one copy can run at a time. |
+| A plain page, not the screens pictured here | The review screens weren't built. Run the two `npm` lines from [step 2](#2-get-the-code). |
 | The scan won't load | The PDF isn't in the scans folder. See [Getting the scans](#getting-the-scans). |
 | "Try again" after saving | The save wasn't confirmed. Choose **Try again**. Your typed value is kept. |
 | "Reload the current card before continuing" | Your decision is saved. Refresh the browser page. |
