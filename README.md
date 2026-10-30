@@ -15,15 +15,16 @@ The project has two main parts:
 
 | What you want to do | Where to start |
 | --- | --- |
-| Review extracted records | Review tool user manual — pending merge (`REVIEW-TOOL-MANUAL.md`) |
-| Extract a new batch of scans | Extractor user manual — pending merge (`EXTRACTOR-MANUAL.md`) |
+| Review extracted records | [Review tool user manual](REVIEW-TOOL-MANUAL.md) |
+| Extract a new batch of scans | [Extractor user manual](EXTRACTOR-MANUAL.md) |
 | Build or maintain the application | [Developer setup](#developer-setup) and [technical documentation](#technical-documentation) |
 | Understand the output format | [Record schema guide](docs/decisions/D007-output-record-schema.md) |
 
 The review tool runs locally in your browser. Reviewing existing records
-does not require a Gemini API key. Until the manuals are merged, use the
-[review runbook](docs/review-backend.md) and
-[extraction instructions](#extracting-a-new-batch-of-scans) below.
+does not require a Gemini API key. Follow the relevant user manual for
+installation, everyday use and troubleshooting. Maintainers can find additional
+configuration and implementation details in the
+[technical documentation](#technical-documentation) below.
 
 ## How the workflow fits together
 
