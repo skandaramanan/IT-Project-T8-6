@@ -18,7 +18,7 @@ Turns a folder of scanned survey PDFs (one *region*) into one results file.
 
 | What | Example (Windows) |
 | --- | --- |
-| Code folder (results go in its `results` folder) | `C:\Survey Extract\survey-extract` |
+| Code folder (results go in its `results` folder, next to the published ones) | `C:\Survey Extract\survey-extract` |
 | Scans folder, one subfolder per region | `C:\Survey Scans` |
 | Settings file | `.env` in the code folder |
 
@@ -79,20 +79,25 @@ each survey front costs one more request, so a full run takes days.
 
 ```bat
 cd /d "C:\Survey Extract\survey-extract"
-uv run survey extract "C:\Survey Scans\216429"
+uv run survey extract "C:\Survey Scans\<region>"
 ```
 
 The region is named after the folder. Use one folder under one name only. Leave the
 window open until it finishes.
 
 The tool splits each PDF into pages, has Gemini read each card, groups the cards
-into dwellings, scores confidence, and writes `results\216429.jsonl`.
+into dwellings, scores confidence, and writes `results\<region>.jsonl`.
+
+`results` already holds the published regions, including reviewers' corrections.
+Only extract a region that isn't there yet. To try the tool, use the
+[practice run](#practice-run).
 
 ### Read the summary
 
 The last line counts: records written, pages skipped, cards unreadable, cards
-unplaced, cards failed, PDFs failed, records invalid. If any card, PDF or record
-failed, the run exits with an error. Fix the cause and rerun.
+unplaced, cards failed, PDFs failed, records invalid, notes with no record. If
+any card, PDF or record failed, the run exits with an error. Fix the cause and
+rerun.
 
 ### Options
 
@@ -167,9 +172,9 @@ afterwards ([merge report](docs/runs/it125-merge-report.md)).
 | --- | --- |
 | `GEMINI_API_KEY is not set` | Redo step 5. |
 | Run stops after 3 failures | Daily limit or outage. Wait or switch key, then rerun. |
-| One card fails every run | Failed readings are saved. Delete its file in `data\runs\<region>\` (`<pdf>_pNNNN.json`) or use `--fresh`. |
+| One card fails every run | Failed readings are saved. Delete its file, `data\runs\<region>\<extractor>\<pdf>_pNNNN.json` (e.g. `gemini-3.5-flash-lite`), and rerun. `--fresh` also works but rereads every card. |
 | "refuses a results file holding another region's records" | One folder, one name. |
-| Run stops naming a line or page, writes nothing | A damaged results file, or a reviewed record that no longer matches its scan. Fix it and rerun. |
+| Run stops naming a line or page, writes nothing | A damaged results file: fix the named line and rerun. If it says a reviewed record or retained evidence "was regrouped", stop and ask the team. |
 | Pages skipped | Not a recognised card, or the PDF wouldn't open. The rest carries on. |
 | Odd results on a new batch | The tool is built for coding cards C1 and C2. Other forms need new testing. |
 | `uv sync --locked` fails | Ask the team. |
@@ -185,5 +190,14 @@ set SURVEY_OUTPUT_DIR=C:\Survey Extract Practice
 uv run survey extract "C:\Survey Practice Scans" --region practice
 ```
 
-On a Mac, run `export SURVEY_OUTPUT_DIR=/path/to/practice` first. This spends a few
-of your daily requests. Delete the folder when done.
+This spends a few of your daily requests. When done, in the same window, switch
+output back to `results` and delete the practice files:
+
+```bat
+set SURVEY_OUTPUT_DIR=
+rmdir /s /q "C:\Survey Extract Practice" "data\runs\practice"
+```
+
+On a Mac, use `export SURVEY_OUTPUT_DIR=/path/to/practice` before and
+`unset SURVEY_OUTPUT_DIR` after. Or close the window: the setting only lasts
+until then.
