@@ -10,6 +10,7 @@ from survey.association.dwelling import associate
 from survey.association.records import build_dwelling_records, extract
 from survey.extraction.base import ExtractionResult
 from survey.extraction.card_fields import survey_front_label
+from survey.review.relinking import finish_records
 from survey.segmentation.segmenter import CardType, SegmentedCard, segment_scan
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -40,12 +41,21 @@ def _coding(
     return ExtractionResult(fields=fields, struck={})
 
 
-def _records(*cards: tuple[CardType, ExtractionResult | None]):
+def _records(*cards: tuple[CardType, ExtractionResult | None], **kwargs):
     extracted = [
         (SegmentedCard(kind, Path(f"{i}.jpg"), Path("b.pdf"), i), result)
         for i, (kind, result) in enumerate(cards)
     ]
-    return build_dwelling_records(extracted, region="williamstown", batch="b")
+    return build_dwelling_records(extracted, region="williamstown", batch="b", **kwargs)
+
+
+def _in_scan(card: SegmentedCard) -> tuple[str, int]:
+    """Every card a page of one scan, as the pipeline places them (D026)."""
+    return "b.pdf", card.page_index + 1
+
+
+def _household_flags(records: list[dict]) -> list[list[str]]:
+    return [h["flags"] for r in records for h in r["dwelling"]["households"]]
 
 
 def _people(household: dict) -> list:
@@ -226,7 +236,7 @@ def test_coding_cards_from_two_municipalities_are_written_flagged():
     jsonschema.validate(records[0], SCHEMA)
 
 
-def test_a_repeated_record_id_is_written_null_in_both_dwellings():
+def test_a_repeated_record_id_is_kept_and_flagged_on_both_cards():
     records, _, _ = _records(
         (F, _front("5")),
         (C, _coding("5")),
@@ -234,16 +244,23 @@ def test_a_repeated_record_id_is_written_null_in_both_dwellings():
         (C, _coding("8")),
         (F, _front("5")),
         (C, _coding("5")),
+        locate=_in_scan,
     )
+    finish_records(records)
     assert [r["dwelling"]["households"][0]["record_id"] for r in records] == [
-        None,
+        "27-0005-01",
         "27-0008-01",
-        None,
+        "27-0005-01",
     ]
     assert [r["dwelling"].get("flags") for r in records] == [
-        ["duplicate_dwelling_no", "duplicate_record_id"],
+        ["duplicate_dwelling_no"],
         None,
-        ["duplicate_dwelling_no", "duplicate_record_id"],
+        ["duplicate_dwelling_no"],
+    ]
+    assert _household_flags(records) == [
+        ["duplicate_record_id"],
+        [],
+        ["duplicate_record_id"],
     ]
     for record in records:
         jsonschema.validate(record, SCHEMA)
@@ -286,23 +303,26 @@ def test_a_card_no_number_fits_pairs_with_the_front_at_the_usual_offset():
         jsonschema.validate(record, SCHEMA)
 
 
-def test_a_card_with_its_front_keeps_a_record_id_a_lone_card_also_claims():
-    """Page 10 reads 5, far from dwelling 5, which has its card: the lone card
-    is the likelier misread, so only it loses the record_id."""
+def test_a_record_id_a_lone_card_also_claims_is_flagged_on_both_cards():
+    """Page 10 reads 5, far from dwelling 5, which has its card: both keep the
+    record_id, and each card is flagged for the reviewer to settle."""
     pages = []
     for n in ("5", "6", "7", "8", "9"):
         pages += [(F, _front(n)), (C, _coding(n))]
-    records, _, _ = _records(*pages, (C, _coding("5")))
+    records, _, _ = _records(*pages, (C, _coding("5")), locate=_in_scan)
+    finish_records(records)
     first, lone = records[0]["dwelling"], records[-1]["dwelling"]
     assert first["households"][0]["record_id"] == "27-0005-01"
     assert "flags" not in first
-    assert lone["households"][0]["record_id"] is None
-    assert lone["flags"] == ["duplicate_record_id", "unplaced"]
+    assert lone["households"][0]["record_id"] == "27-0005-01"
+    assert lone["flags"] == ["unplaced"]
+    for dwelling in (first, lone):
+        assert dwelling["households"][0]["flags"] == ["duplicate_record_id"]
 
 
-def test_a_card_read_whole_keeps_a_record_id_a_reread_card_also_claims():
+def test_a_record_id_a_reread_card_also_claims_is_flagged_on_both_cards():
     """Page 5's identity was filled by a second reading and now matches page
-    1's, read whole: the filled one is the likelier misread."""
+    1's, read whole: both keep it, flagged, and the filled one says so."""
     pages = [(F, "5"), (C, "5"), (F, "6"), (C, "6"), (F, "5"), (C, "5")]
     cards = [
         (
@@ -312,12 +332,19 @@ def test_a_card_read_whole_keeps_a_record_id_a_reread_card_also_claims():
         for i, (kind, n) in enumerate(pages)
     ]
     records, _, _ = build_dwelling_records(
-        cards, region="williamstown", batch="b", reread={cards[5][0]}
+        cards,
+        region="williamstown",
+        batch="b",
+        reread={cards[5][0]},
+        locate=_in_scan,
     )
+    finish_records(records)
     whole, filled = records[0]["dwelling"], records[2]["dwelling"]
     assert whole["households"][0]["record_id"] == "27-0005-01"
-    assert filled["households"][0]["record_id"] is None
-    assert {"duplicate_record_id", "identity_reread"} <= set(filled["flags"])
+    assert filled["households"][0]["record_id"] == "27-0005-01"
+    assert "identity_reread" in filled["flags"]
+    for dwelling in (whole, filled):
+        assert dwelling["households"][0]["flags"] == ["duplicate_record_id"]
 
 
 def test_a_lettered_dwelling_is_not_the_numbered_one():

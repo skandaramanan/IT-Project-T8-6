@@ -74,11 +74,10 @@ def test_reviewer_digits_are_not_ocr_normalized(tmp_path, value):
     assert service.item(refs()[1].item_id)["review_state"] == "pending"
 
 
+@pytest.mark.usefixtures("shape")
 @pytest.mark.parametrize("action", ["correct", "no_data", "illegible"])
-def test_identity_and_negated_fields_are_accept_only(tmp_path, action):
+def test_negated_fields_are_accept_only(tmp_path, action):
     service, _ = setup_review(tmp_path)
-    with pytest.raises(ReviewError, match="unsupported"):
-        decide(service, refs()[3], action=action)
     record = deepcopy(service.store.regions["demo"][0][0])
     record["dwelling"]["households"][1]["coding"]["weekly_rent"]["negated"] = True
     write_record(service.store.directory / "demo.jsonl", record)
@@ -89,37 +88,394 @@ def test_identity_and_negated_fields_are_accept_only(tmp_path, action):
     assert decide(service, action="accept")["item"]["review_state"] == "accepted"
 
 
-def test_both_municipality_copies_are_actionable_and_accept_only(tmp_path):
-    service, _ = setup_review(tmp_path)
-    record = deepcopy(service.store.regions["demo"][0][0])
-    record["dwelling"]["households"][0]["municipality"] = deepcopy(
-        record["dwelling"]["municipality"]
-    )
-    path = service.store.directory / "demo.jsonl"
-    write_record(path, record)
-    service.store.reload()
+@pytest.mark.usefixtures("published")
+def test_both_municipality_copies_are_editable_with_safe_undo(tmp_path):
+    service, settings = setup_review(tmp_path)
     shared = refs()[3]
     household = replace(shared, field_path="/dwelling/households/0/municipality")
     service.replace_queue([shared, household], [])
-    before = path.read_bytes()
-
     for ref in (shared, household):
         item = service.item(ref.item_id)
-        municipality = [
-            field for field in item["card_fields"] if field["label"] == "Municipality"
-        ]
-        assert len(municipality) == 2
-        assert {field["field_path"]: field["id"] for field in municipality} == {
-            shared.field_path: shared.item_id,
-            household.field_path: household.item_id,
-        }
-        assert shared.item_id != household.item_id
-        assert all(field["column"] == "Left column" for field in municipality)
-        assert item["allowed_actions"] == ["accept"]
-        for action in ("correct", "no_data", "illegible"):
-            with pytest.raises(ReviewError, match="unsupported"):
-                decide(service, ref, action=action, value="28")
-        assert path.read_bytes() == before
+        assert item["allowed_actions"] == ["accept", "correct"]
+        assert item["identity_kind"] == "municipality"
+        assert (
+            len(
+                [
+                    field
+                    for field in item["card_fields"]
+                    if field["label"] == "Municipality"
+                ]
+            )
+            == 2
+        )
+    corrected = decide(service, shared, value="28")
+    record = service.store.regions["demo"][0][0]
+    assert record["dwelling"]["municipality"]["value"] == "28"
+    assert record["dwelling"]["households"][0]["municipality"]["value"] == "28"
+    assert record["dwelling"]["households"][0]["record_id"] == "28-0006-01"
+    assert record["dwelling"]["households"][1]["record_id"] == "27-0006-02"
+    assert corrected["item"]["id"] == shared.item_id
+    service = ReviewService(
+        RecordStore(settings.data_checkout / "results"),
+        [shared, household],
+        [],
+        service.scans,
+    )
+    undone = service.undo_latest(
+        corrected["decision"]["id"],
+        "Reviewer",
+        service.item(shared.item_id)["version"],
+        "undo-municipality",
+    )
+    assert undone["item"]["field"]["value"] == "27"
+    record = service.store.regions["demo"][0][0]
+    assert record["dwelling"]["households"][0]["municipality"]["value"] == "27"
+    assert record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
+
+
+@pytest.mark.usefixtures("published")
+@pytest.mark.parametrize("edit_alias", [False, True])
+def test_shared_municipality_preserves_later_legacy_card_evidence(tmp_path, edit_alias):
+    service, settings = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["schema_version"] = "0.5.0"
+    for index, household in enumerate(record["dwelling"]["households"]):
+        if index != 0 or not edit_alias:
+            household.pop("municipality")
+    record["dwelling"]["notes"][0]["household_id"] = "27-0006-02"
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    ref = (
+        replace(refs()[3], field_path="/dwelling/households/0/municipality")
+        if edit_alias
+        else refs()[3]
+    )
+    service.replace_queue([ref], [])
+    result = decide(service, ref, value="28")
+    changed = service.store.regions["demo"][0][0]
+    assert [
+        household["record_id"] for household in changed["dwelling"]["households"]
+    ] == ["28-0006-01", "27-0006-02"]
+    assert changed["dwelling"]["notes"][0]["household_id"] == "27-0006-02"
+    assert len(result["decision"]["identity_ids"]) == 1
+    service = ReviewService(
+        RecordStore(settings.data_checkout / "results"), [ref], [], service.scans
+    )
+    service.undo_latest(
+        result["decision"]["id"],
+        "Reviewer",
+        service.item(ref.item_id)["version"],
+        "undo-legacy-municipality",
+    )
+    restored = service.store.regions["demo"][0][0]
+    assert [
+        household["record_id"] for household in restored["dwelling"]["households"]
+    ] == ["27-0006-01", "27-0006-02"]
+    assert restored["dwelling"]["notes"][0]["household_id"] == "27-0006-02"
+    assert "municipality" not in restored["dwelling"]["households"][1]
+
+
+@pytest.mark.usefixtures("published")
+def test_municipality_mirror_preserves_each_machine_reading(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["households"][0]["municipality"].update(
+        value="26", confidence=0.4
+    )
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    corrected = decide(service, refs()[3], value="28")
+    alias = service.store.regions["demo"][0][0]["dwelling"]["households"][0][
+        "municipality"
+    ]
+    assert alias["original_value"] == "26"
+    assert alias["confidence"] == 0.4
+    assert corrected["item"]["field"]["original_value"] == "27"
+
+
+@pytest.mark.usefixtures("published")
+def test_municipality_alias_history_is_not_overwritten(tmp_path):
+    service, _ = setup_review(tmp_path)
+    shared = refs()[3]
+    alias = replace(shared, field_path="/dwelling/households/0/municipality")
+    service.replace_queue([shared, alias], [])
+    corrected = decide(service, shared, value="28")
+    accepted = decide(service, alias, action="accept", request_id="accept-alias")
+    with pytest.raises(ReviewError, match="changed later"):
+        service.undo_latest(
+            corrected["decision"]["id"],
+            "Reviewer",
+            accepted["item"]["version"],
+            "undo-shared",
+        )
+    with pytest.raises(ReviewError, match="review history"):
+        decide(service, shared, value="29", request_id="correct-again")
+    service.undo_latest(
+        accepted["decision"]["id"],
+        "Reviewer",
+        accepted["item"]["version"],
+        "undo-alias",
+    )
+    restored = service.undo_latest(
+        corrected["decision"]["id"],
+        "Reviewer",
+        service.item(shared.item_id)["version"],
+        "undo-after-alias",
+    )
+    assert restored["item"]["field"]["value"] == "27"
+    assert len(service.item(alias.item_id)["field"]["review"]["history"]) == 2
+
+
+@pytest.mark.usefixtures("published")
+@pytest.mark.parametrize(
+    ("pointer", "value", "expected"),
+    [
+        ("/dwelling/dwelling_no", "7a", ["27-0007A-01", "27-0007A-02"]),
+        ("/dwelling/households/0/household_no", "03", ["27-0006-03", "27-0006-02"]),
+        ("/dwelling/households/1/municipality", "28", ["27-0006-01", "28-0006-02"]),
+    ],
+)
+def test_identity_corrections_rebuild_ids_and_undo(tmp_path, pointer, value, expected):
+    service, _ = setup_review(tmp_path)
+    original = deepcopy(service.store.regions["demo"][0][0])
+    page = 2 if "/1/" in pointer else 1
+    ref = replace(refs()[3], page=page, field_path=pointer)
+    service.replace_queue([ref], [])
+    corrected = decide(service, ref, value=value)
+    record = service.store.regions["demo"][0][0]
+    assert [h["record_id"] for h in record["dwelling"]["households"]] == expected
+    assert record["dwelling"]["cards"] == original["dwelling"]["cards"]
+    assert corrected["item"]["source"]["page"] == page
+    service.undo_latest(
+        corrected["decision"]["id"],
+        "Reviewer",
+        corrected["item"]["version"],
+        "undo-identity",
+    )
+    assert [
+        h["record_id"]
+        for h in service.store.regions["demo"][0][0]["dwelling"]["households"]
+    ] == ["27-0006-01", "27-0006-02"]
+
+
+@pytest.mark.usefixtures("published")
+@pytest.mark.parametrize(
+    ("pointer", "value"),
+    [
+        ("/dwelling/municipality", "123"),
+        ("/dwelling/municipality", "２"),
+        ("/dwelling/dwelling_no", "12345"),
+        ("/dwelling/dwelling_no", "1AB"),
+        ("/dwelling/households/0/household_no", "100"),
+    ],
+)
+def test_identity_validation_rejects_invalid_input_atomically(tmp_path, pointer, value):
+    service, _ = setup_review(tmp_path)
+    ref = replace(refs()[3], field_path=pointer)
+    service.replace_queue([ref], [])
+    before = (service.store.directory / "demo.jsonl").read_bytes()
+    with pytest.raises(ReviewError, match="ASCII"):
+        decide(service, ref, value=value)
+    assert (service.store.directory / "demo.jsonl").read_bytes() == before
+
+
+@pytest.mark.usefixtures("published")
+def test_identity_collision_rejected_atomically(tmp_path):
+    service, _ = setup_review(tmp_path)
+    ref = replace(refs()[3], field_path="/dwelling/households/0/household_no")
+    service.replace_queue([ref], [])
+    before = (service.store.directory / "demo.jsonl").read_bytes()
+    with pytest.raises(ReviewError, match="already belongs"):
+        decide(service, ref, value="2")
+    assert (service.store.directory / "demo.jsonl").read_bytes() == before
+
+
+@pytest.mark.usefixtures("published")
+def test_identity_note_links_and_null_ids_restore_after_restart(tmp_path):
+    service, settings = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    # Legacy data can have a valid-looking value but a deliberately withheld ID.
+    record["dwelling"]["households"][0]["record_id"] = None
+    record["dwelling"]["notes"][0]["household_id"] = "27-0006-02"
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    ref = replace(refs()[3], field_path="/dwelling/dwelling_no")
+    service.replace_queue([ref], [])
+    corrected = decide(service, ref, value="7A")
+    assert (
+        service.store.regions["demo"][0][0]["dwelling"]["notes"][0]["household_id"]
+        == "27-0007A-02"
+    )
+    service = ReviewService(
+        RecordStore(settings.data_checkout / "results"), [ref], [], service.scans
+    )
+    service.undo_latest(
+        corrected["decision"]["id"],
+        "Reviewer",
+        service.item(ref.item_id)["version"],
+        "undo-notes",
+    )
+    restored = service.store.regions["demo"][0][0]
+    assert restored["dwelling"]["households"][0]["record_id"] is None
+    assert restored["dwelling"]["notes"][0]["household_id"] == "27-0006-02"
+
+
+@pytest.mark.usefixtures("published")
+def test_identity_undo_preserves_later_other_field_corrections(tmp_path):
+    service, _ = setup_review(tmp_path)
+    dwelling = replace(refs()[3], field_path="/dwelling/dwelling_no")
+    household = replace(refs()[3], field_path="/dwelling/households/0/household_no")
+    service.replace_queue([dwelling, household, refs()[1]], [])
+    first = decide(service, dwelling, value="7")
+    later = decide(service, household, value="3", request_id="later-identity")
+    with pytest.raises(ReviewError, match="changed later"):
+        service.undo_latest(
+            first["decision"]["id"], "Reviewer", later["item"]["version"], "undo-first"
+        )
+    service.undo_latest(
+        later["decision"]["id"], "Reviewer", later["item"]["version"], "undo-later"
+    )
+    rent = decide(service, value="08", request_id="later-rent")
+    service.undo_latest(
+        first["decision"]["id"], "Reviewer", rent["item"]["version"], "undo-first-after"
+    )
+    record = service.store.regions["demo"][0][0]
+    assert record["dwelling"]["households"][1]["coding"]["weekly_rent"]["value"] == "08"
+    assert record["dwelling"]["households"][0]["record_id"] == "27-0006-01"
+
+
+@pytest.mark.usefixtures("published")
+def test_survey_front_identity_edits_do_not_change_coding_identity(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["handwritten"]["dwelling_no"] = {
+        "value": "6",
+        "status": "ok",
+        "confidence": None,
+        "source": "survey-front",
+    }
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    ref = replace(refs()[3], page=3, field_path="/dwelling/handwritten/dwelling_no")
+    service.replace_queue([ref], [])
+    before = (service.store.directory / "demo.jsonl").read_bytes()
+    for value in ["7A as written", "12 see back", "12345", " 7"]:
+        with pytest.raises(ReviewError, match="ASCII") as error:
+            decide(service, ref, value=value)
+        assert error.value.code == "invalid_value"
+    assert (service.store.directory / "demo.jsonl").read_bytes() == before
+    result = decide(service, ref, value="7A")
+    assert result["item"]["identity_kind"] is None
+    after = service.store.regions["demo"][0][0]
+    assert after["dwelling"]["dwelling_no"]["value"] == "6"
+    assert [h["record_id"] for h in after["dwelling"]["households"]] == [
+        "27-0006-01",
+        "27-0006-02",
+    ]
+
+
+@pytest.mark.usefixtures("published")
+def test_live_identity_issues_leave_historical_flags_unchanged(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["flags"] = [
+        "identity_reread",
+        "paired_by_position",
+        "persons_unassigned",
+        "fronts_disagree",
+    ]
+    record["dwelling"]["households"][1]["municipality"]["value"] = "28"
+    record["dwelling"]["households"][1]["record_id"] = "28-0006-02"
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    ref = replace(refs()[3], page=2, field_path="/dwelling/households/1/municipality")
+    service.replace_queue([ref], [])
+    before_codes = {
+        issue["code"] for issue in service.item(ref.item_id)["review_issues"]
+    }
+    assert before_codes == {"municipality_mismatch", "persons_unassigned"}
+    result = decide(service, ref, value="27")
+    assert [issue["code"] for issue in result["item"]["review_issues"]] == [
+        "persons_unassigned"
+    ]
+    assert (
+        service.store.regions["demo"][0][0]["dwelling"]["flags"]
+        == record["dwelling"]["flags"]
+    )
+
+
+@pytest.mark.usefixtures("shape")
+@pytest.mark.parametrize("action", ["no_data", "illegible"])
+def test_coding_identity_requires_an_explicit_corrected_value(tmp_path, action):
+    service, _ = setup_review(tmp_path)
+    with pytest.raises(ReviewError, match="unsupported"):
+        decide(service, refs()[3], action=action)
+
+
+@pytest.mark.usefixtures("published")
+def test_identity_conflicts_include_sibling_with_withheld_id(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["households"][1]["record_id"] = None
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    ref = replace(refs()[3], field_path="/dwelling/households/0/household_no")
+    service.replace_queue([ref], [])
+    with pytest.raises(ReviewError, match="already belongs"):
+        decide(service, ref, value="2")
+
+
+@pytest.mark.usefixtures("published")
+def test_undo_null_identity_dependency_blocks_later_id_creation(tmp_path):
+    service, _ = setup_review(tmp_path)
+    record = deepcopy(service.store.regions["demo"][0][0])
+    record["dwelling"]["dwelling_no"].update(value=None, status="omitted")
+    for household in record["dwelling"]["households"]:
+        household["record_id"] = None
+    write_record(service.store.directory / "demo.jsonl", record)
+    service.store.reload()
+    municipality = refs()[3]
+    dwelling = replace(municipality, field_path="/dwelling/dwelling_no")
+    service.replace_queue([municipality, dwelling], [])
+    first = decide(service, municipality, value="28")
+    assert first["decision"]["identity_ids"] == [
+        {"index": 0, "before": None, "after": None}
+    ]
+    second = decide(service, dwelling, value="7", request_id="repair-dwelling")
+    with pytest.raises(ReviewError, match="changed later"):
+        service.undo_latest(
+            first["decision"]["id"],
+            "Reviewer",
+            second["item"]["version"],
+            "undo-earlier",
+        )
+
+
+@pytest.mark.usefixtures("published")
+def test_identity_counts_cache_invalidates_after_correction(tmp_path, monkeypatch):
+    service, _ = setup_review(tmp_path)
+    from survey.review import service as review_module
+
+    original = review_module.identity_ids
+    calls = []
+
+    def count(record, *args):
+        calls.append(record)
+        return original(record, *args)
+
+    monkeypatch.setattr(review_module, "identity_ids", count)
+    service.item(refs()[3].item_id)
+    first_count = len(calls)
+    service.item(refs()[3].item_id)
+    # One local check remains; the region's duplicate-ID index is reused.
+    assert len(calls) == first_count + 1
+    decide(service, refs()[3], value="28")
+    assert (
+        service.region_identity_counts(
+            "demo", service.item(refs()[3].item_id)["version"]
+        )["28-0006-01"]
+        == 1
+    )
 
 
 def test_accepting_illegible_resolves_without_recovering_value(tmp_path):
@@ -181,7 +537,7 @@ def test_repeated_correction_original_value_and_latest_undo(tmp_path):
     first = decide(service)
     second = decide(service, value="002", request_id="second")
     assert second["item"]["field"]["original_value"] == "12"
-    with pytest.raises(ReviewError, match="latest"):
+    with pytest.raises(ReviewError, match="latest|later decision"):
         service.undo_latest(
             first["decision"]["id"], "Reviewer", second["item"]["version"], "undo-old"
         )
@@ -279,6 +635,7 @@ def test_schema_rejects_nested_and_malformed_audit(tmp_path):
     assert len(list(current_fields(field))) == 1
 
 
+@pytest.mark.usefixtures("published")
 def test_queue_refresh_preserves_progress_and_stale_collisions(tmp_path):
     service, _ = setup_review(tmp_path)
     result = decide(service)

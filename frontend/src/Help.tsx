@@ -21,7 +21,7 @@ export const HELP_KEY = 'review-help-seen';
 const tips = [
   [
     'The cards',
-    'Each dwelling has one coding card per household. The tabs above the scan also open supplied survey-front fields and interview notes. Nothing is highlighted, so find the field yourself; focus the scan and press M for a magnifier.',
+    'Each dwelling has one coding card per household. Use Card to review above the scan to choose a coding card, survey front or interview notes. Open survey front takes you straight to the front. Nothing is highlighted, so find the field yourself; focus the scan and press M for a magnifier.',
   ],
   [
     "Why it's asking",
@@ -29,12 +29,12 @@ const tips = [
   ],
   ['Accept', 'If the card shows the same value, choose Accept or press A.'],
   [
-    'Correct',
-    'Choose Correct or press E and copy the value on the card. Numeric fields keep leading zeros; text fields keep line breaks and Unicode. Enter saves numeric corrections; use Save correction for text. Esc cancels.',
+    'Fix',
+    'Choose Fix or press E and copy the value on the card. Numeric fields keep leading zeros; dwelling numbers can include a final letter; text fields keep line breaks and Unicode. Enter saves numeric corrections; use Save correction for text. Esc cancels.',
   ],
   [
     "Blank or can't read it",
-    'Use the link under the buttons. Identity and crossed-out fields can only be accepted; leave them pending and ask the team if they are wrong.',
+    'Use the link under the buttons. Identity fields can be fixed using their printed format. Crossed-out fields can only be accepted; leave them pending and ask the team if they are wrong.',
   ],
   [
     'Saving',
@@ -86,8 +86,8 @@ export default function Help({
             <section>
               <h3>The queue</h3>
               <p>
-                Each row is a dwelling, in the supplied queue's lowest-confidence order.
-                Choose a region to work through one at a time. Review summary (.csv)
+                Each row is a dwelling. Pending dwellings stay in lowest-confidence order; reviewed dwellings move to the bottom.
+                Choose a region to work through one at a time. Open Review details and scans for progress, averages and scan controls. Review summary (.csv)
                 downloads one row per queued dwelling, showing progress; the JSONL results
                 contain the corrected dataset.
               </p>
@@ -131,7 +131,7 @@ export default function Help({
             Enter and Esc still work while correcting.
           </p>
           <p>
-            A · Accept　 E · Correct　 U · Undo　 M · Magnifier (scan focus)　 ← / → ·
+            A · Accept　 E · Fix　 U · Undo　 M · Magnifier (scan focus)　 ← / → ·
             Previous / next field (panel focus)
           </p>
         </section>

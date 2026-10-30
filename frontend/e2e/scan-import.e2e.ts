@@ -57,6 +57,7 @@ uvicorn.run(create_app(settings), host="127.0.0.1", port=port)
     await page.goto(url);
     await page.getByLabel('Your name').fill('Import reviewer');
     await page.getByRole('button', { name: 'Start reviewing', exact: true }).click();
+    await page.getByText('Review details and scans', { exact: true }).click();
     await expect(page.getByRole('button', { name: 'Download scans', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Import downloaded PDF', exact: true })).toBeEnabled();
     for (const file of [original, replacement]) {

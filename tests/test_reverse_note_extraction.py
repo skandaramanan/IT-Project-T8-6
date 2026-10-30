@@ -37,6 +37,7 @@ def _words(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(not os.environ.get("GEMINI_API_KEY"), reason="needs GEMINI_API_KEY")
 @pytest.mark.parametrize(
     "back", CARDS, ids=lambda b: f"p{b['source']['page']}-{b['case']}"

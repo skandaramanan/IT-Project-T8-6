@@ -123,8 +123,8 @@ reviewer behaviour; this is a judgement, marked provisional.
 ## IT-125 application (17 October 2026)
 
 `survey.merge_runs` applies the same lowest-quarter rule to all 62 fields of
-**each physical coding card's own raw reading**, including fields that its
-processed dwelling envelope only stores from the first household. An unreturned
+**each physical coding card's own raw reading**, including fields that the 0.6.0
+dwelling envelope only stored from the first household (0.7.0 stores them per card). An unreturned
 field contributes zero; an explicit blank receives its applicable D016 score.
 Human-reviewed payloads and their historical confidence remain unchanged; the
 card summarizes machine evidence and is not a posterior score on corrections.

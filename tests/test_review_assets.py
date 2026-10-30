@@ -1,9 +1,12 @@
 """Serve the built reviewer when present, retaining the source-only test page."""
 
+import pytest
 from fastapi.testclient import TestClient
 from review_support import setup_review
 
 from survey.review import api
+
+pytestmark = pytest.mark.integration
 
 
 def test_no_build_serves_existing_test_page(tmp_path, monkeypatch):

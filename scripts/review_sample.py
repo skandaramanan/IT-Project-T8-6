@@ -11,8 +11,11 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from survey.extraction.record import FIELD_MAP
+from survey.extraction.record import FIELD_MAP, SCHEMA_VERSION
 from survey.records import REGION, Reference, ReviewError, read_records, resolve_field
+from survey.review.fields import field_pointers
+from survey.review.prepare import prepare_records
+from survey.review.relinking import refresh_identities
 
 
 def select_sample(records, region, labels, limit, pdf=None, pages=None):
@@ -33,7 +36,13 @@ def select_sample(records, region, labels, limit, pdf=None, pages=None):
             household_flags = []
             for label in dict.fromkeys(labels):
                 key, group = FIELD_MAP[label]
-                if group in {"dwelling", "house"}:
+                if record["schema_version"] == SCHEMA_VERSION:
+                    pointer = next(
+                        path
+                        for name, path, kind in field_pointers(index, review=True)
+                        if name == label and kind != "front"
+                    )
+                elif group in {"dwelling", "house"}:
                     if index != 0:
                         continue
                     pointer = (
@@ -111,7 +120,10 @@ def prepare_sample(
             "Regional JSONL filename must be a plain lowercase region name"
         )
     records, _ = read_records(source, region)
+    if any(record["schema_version"] != SCHEMA_VERSION for record in records):
+        records, _ = prepare_records(records)
     selected, flags, count = select_sample(records, region, labels, limit, pdf, pages)
+    refresh_identities(selected)
     for entry in flags:
         scan = scans / region / entry["pdf"]
         if not scan.resolve().is_relative_to(scans) or not scan.is_file():

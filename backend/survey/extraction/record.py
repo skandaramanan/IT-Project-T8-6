@@ -40,18 +40,21 @@ Deliberately not done here:
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA_BY_NAME, FieldSpec
 from survey.extraction.code_book import CLOSED_CATEGORIES, SENTINEL_CODES, decode
 
-SCHEMA_VERSION = "0.6.0"
+SCHEMA_VERSION = "0.7.0"
 
 
 def review_schema_version(version: str) -> str:
-    """Preserve the legacy corpus envelope; upgrade other reviewed records."""
-    return "0.5.0" if version == "0.5.0" else SCHEMA_VERSION
+    """Preserve 0.5.0 and per-card 0.7.0; upgrade other shared-field records.
+
+    0.7.0 is a different shape (per-card ownership), so a shared-field record
+    is never relabelled 0.7.0 on save; it is converted by preparation.
+    """
+    return version if version in {"0.5.0", SCHEMA_VERSION} else "0.6.0"
 
 
 # --- 1. where each field lives ----------------------------------------------
@@ -414,7 +417,10 @@ def build_record(
 
     household: dict[str, Any] = {
         "record_id": record_id,
-        "municipality": deepcopy(groups["dwelling"]["municipality"]),
+        # Schema 0.7.0: each coding card owns its identity and building readings.
+        "municipality": groups["dwelling"]["municipality"],
+        "dwelling_no": groups["dwelling"]["dwelling_no"],
+        "house": groups["house"],
         "household_no": groups["household"]["household_no"],
         "head": groups["head"],
         "counts": groups["counts"],
@@ -435,10 +441,5 @@ def build_record(
         "schema_version": SCHEMA_VERSION,
         "region": region,
         "batch": batch,
-        "dwelling": {
-            "municipality": groups["dwelling"]["municipality"],
-            "dwelling_no": groups["dwelling"]["dwelling_no"],
-            "house": groups["house"],
-            "households": [household],
-        },
+        "dwelling": {"households": [household]},
     }

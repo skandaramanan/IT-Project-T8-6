@@ -6,7 +6,6 @@ import pytest
 from review_support import decide, refs, setup_review, synthetic_record, write_record
 
 from survey import records
-from survey.extraction.record import SCHEMA_VERSION
 from survey.records import (
     Reference,
     ReviewError,
@@ -19,6 +18,7 @@ from survey.records import (
 from survey.review.queue import load_queue
 
 
+@pytest.mark.usefixtures("published")
 def test_old_and_new_schema_records_are_readable(tmp_path):
     record = synthetic_record()
     record["schema_version"] = "0.2.0"
@@ -30,6 +30,7 @@ def test_old_and_new_schema_records_are_readable(tmp_path):
     assert not schema_errors(record)
 
 
+@pytest.mark.usefixtures("published")
 def test_physical_identity_and_shared_ownership():
     record = synthetic_record()
     resolved = resolve_field([record], refs()[1])
@@ -272,6 +273,7 @@ def test_dataset_duplicate_is_rejected_by_cli_reload_and_save(
     )
 
 
+@pytest.mark.usefixtures("published")
 def test_decision_validates_only_changed_dwelling_and_does_not_copy_others(
     tmp_path, monkeypatch
 ):
@@ -317,6 +319,7 @@ def test_legacy_versions_reject_review_metadata_in_python(tmp_path, version):
         validate_records([record], "demo")
 
 
+@pytest.mark.usefixtures("published")
 def test_it89_notes_and_review_metadata_coexist(tmp_path):
     service, _ = setup_review(tmp_path)
     record = deepcopy(service.store.regions["demo"][0][0])
@@ -337,7 +340,7 @@ def test_it89_notes_and_review_metadata_coexist(tmp_path):
     validate_records([record], "demo")
     service.store.save("demo", service.store.regions["demo"][1], [record])
     decide(service)
-    assert service.store.regions["demo"][0][0]["schema_version"] == SCHEMA_VERSION
+    assert service.store.regions["demo"][0][0]["schema_version"] == "0.6.0"
     assert (
         service.store.regions["demo"][0][0]["dwelling"]["notes"]
         == record["dwelling"]["notes"]
@@ -345,6 +348,7 @@ def test_it89_notes_and_review_metadata_coexist(tmp_path):
     validate_records(service.store.regions["demo"][0], "demo")
 
 
+@pytest.mark.usefixtures("published")
 @pytest.mark.parametrize("version", ["0.1.0", "0.2.0"])
 def test_legacy_household_notes_remain_readable_but_require_migration_before_review(
     tmp_path, version

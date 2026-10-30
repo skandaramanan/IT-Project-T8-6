@@ -2,13 +2,16 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from review_support import git, setup_review
+from review_support import git, per_card, setup_review
 
 from survey import cli, records
 from survey.review.api import create_app
 from survey.review.launch import open_when_ready
 
+pytestmark = pytest.mark.usefixtures("shape")
 BASE = "http://127.0.0.1:8765"
+
+pytestmark = pytest.mark.integration
 
 
 def setup_client(tmp_path):
@@ -241,6 +244,32 @@ def test_launch_reports_configuration_failure_without_opening_browser(monkeypatc
     assert open_when_ready(8765) == 1
 
 
+def test_launch_waits_for_production_validation_and_remains_bounded(monkeypatch):
+    from io import BytesIO
+
+    from survey.review import launch
+
+    elapsed, opened = [0.0], []
+
+    def health(*args, **kwargs):
+        if elapsed[0] < 34:
+            raise OSError("Production validation still running")
+        return BytesIO(b'{"ready":true}')
+
+    monkeypatch.setattr(launch.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(
+        launch.time, "sleep", lambda delay: elapsed.__setitem__(0, elapsed[0] + delay)
+    )
+    monkeypatch.setattr(launch.urllib.request, "urlopen", health)
+    monkeypatch.setattr(launch.webbrowser, "open", opened.append)
+    assert open_when_ready(8765) == 0
+    assert elapsed[0] == 34 and opened == ["http://127.0.0.1:8765"]
+    elapsed[0] = 0
+    opened.clear()
+    assert open_when_ready(8765, timeout=2) == 1
+    assert elapsed[0] == 2 and opened == []
+
+
 def test_periodic_worker_calls_sync_with_history_refresh(tmp_path, monkeypatch):
     from threading import Event
 
@@ -313,7 +342,7 @@ def test_missing_region_and_malformed_flags_remain_browsable(tmp_path):
         "region": "missing",
         "pdf": "missing.pdf",
         "page": 1,
-        "field_path": "/dwelling/municipality",
+        "field_path": per_card("/dwelling/municipality"),
     }
     invalid = {**extra, "region": "../bad"}
     with settings.flags.open("a") as stream:

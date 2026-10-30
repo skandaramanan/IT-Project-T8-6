@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import replace
+from shutil import copyfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -132,6 +133,108 @@ def test_completed_dwelling_is_reopenable_but_diagnostic_blocks_completion(tmp_p
     assert service.dwelling_items(row["id"], "demo")["diagnostics"]
 
 
+def test_completed_dwelling_moves_last_and_undo_restores_priority(tmp_path):
+    service, _ = setup_review(tmp_path)
+    records, _ = service.store.regions["demo"]
+    other = deepcopy(records[0])
+    for household in other["dwelling"]["households"]:
+        for card in household["cards"]:
+            card["image"] = "other.pdf"
+    for card in other["dwelling"]["cards"]:
+        card["image"] = "other.pdf"
+    copyfile(
+        service.scans.root / "demo" / "synthetic.pdf",
+        service.scans.root / "demo" / "other.pdf",
+    )
+    records.append(other)
+    service.store.cards["demo"] = card_index(records)
+    first = refs()[0]
+    second = replace(first, pdf="other.pdf")
+    service.replace_queue([first, second], [])
+    initial = service.dwellings("demo")["dwellings"]
+    first_id, second_id = [row["id"] for row in initial]
+    saved = decide(service, first, action="accept")
+    rows = service.dwellings("demo")["dwellings"]
+    assert [row["id"] for row in rows] == [second_id, first_id]
+    assert rows[-1]["status"] == "complete"
+    assert rows[-1]["first_item_id"] == first.item_id
+    service.apply_decision(
+        first.item_id,
+        "undo",
+        "Test Reviewer",
+        service.item(first.item_id)["version"],
+        "undo-completion",
+        undo_target=saved["decision"]["id"],
+    )
+    assert [row["id"] for row in service.dwellings("demo")["dwellings"]] == [
+        first_id,
+        second_id,
+    ]
+
+
+def test_card_review_status_orders_completed_last_without_changing_machine_score(
+    tmp_path,
+):
+    service, settings = setup_review(tmp_path)
+    selected = refs()[:2]
+    record = service.store.regions["demo"][0][0]
+    record["dwelling"]["households"][0]["cards"][0]["confidence"] = 0.75
+    service.replace_queue(selected, [])
+    saved = decide(service, selected[0], action="accept")
+    cards = saved["item"]["cards"]
+    assert [card["page"] for card in cards] == [2, 1]
+    assert cards[0]["reviewed"] is False
+    assert cards[1]["reviewed"] is True
+    assert (cards[1]["total"], cards[1]["resolved"], cards[1]["unresolved"]) == (
+        1,
+        1,
+        0,
+    )
+    assert cards[1]["score"] == 0.75
+    assert saved["item"]["card_score"] == 0.75
+    restarted = ReviewService(
+        service.store.__class__(settings.data_checkout / "results"),
+        selected,
+        [],
+        service.scans,
+    )
+    assert restarted.item(selected[0].item_id)["cards"] == cards
+    undone = restarted.apply_decision(
+        selected[0].item_id,
+        "undo",
+        "Test Reviewer",
+        restarted.item(selected[0].item_id)["version"],
+        "undo-card-completion",
+        undo_target=saved["decision"]["id"],
+    )
+    assert [card["page"] for card in undone["item"]["cards"]] == [1, 2]
+    assert not any(card["reviewed"] for card in undone["item"]["cards"])
+
+
+def test_nonqueued_and_diagnostic_cards_are_not_marked_reviewed(tmp_path):
+    service, _ = setup_review(tmp_path)
+    first = refs()[0]
+    service.replace_queue([first], [])
+    decide(service, first, action="accept")
+    service.replace_queue(
+        [first],
+        [
+            {
+                "region": "demo",
+                "batch": "synthetic.pdf",
+                "page": 1,
+                "code": "invalid_reference",
+                "message": "Unsupported queued field",
+            }
+        ],
+    )
+    cards = service.item(first.item_id)["cards"]
+    assert [card["page"] for card in cards] == [1, 2]
+    assert not any(card["reviewed"] for card in cards)
+    assert cards[1]["total"] == 0
+
+
+@pytest.mark.usefixtures("published")
 def test_selected_dwelling_printed_order_and_readonly_card_context(tmp_path):
     service, _ = setup_review(tmp_path)
     identity = service.dwellings("demo")["dwellings"][0]["id"]
@@ -161,6 +264,7 @@ def test_selected_dwelling_printed_order_and_readonly_card_context(tmp_path):
         service.dwelling_items(identity, "other")
 
 
+@pytest.mark.integration
 def test_metadata_bom_titles_and_http_routes(tmp_path):
     service, settings = setup_review(tmp_path, with_git=True)
     (settings.scan_root / "metadata.csv").write_text(
@@ -200,7 +304,7 @@ def test_household_municipality_flags_have_actionable_card_context(tmp_path, ind
     field = next(field for field in item["card_fields"] if field["id"] == ref.item_id)
     assert field["field_path"] == ref.field_path
     assert field["label"] == "Municipality"
-    assert item["allowed_actions"] == ["accept"]
+    assert item["allowed_actions"] == ["accept", "correct"]
     saved = decide(service, ref, action="accept")
     assert saved["item"]["resolved"]
     assert any(
@@ -263,6 +367,7 @@ def test_legacy_notes_are_visible_and_block_summary_completion(tmp_path):
     assert queue["unresolved"] == len(refs())
 
 
+@pytest.mark.usefixtures("published")
 def test_reindex_retains_stale_flags_as_diagnostics_and_recovers(tmp_path):
     service, _ = setup_review(tmp_path)
     record = service.store.regions["demo"][0][0]
@@ -334,6 +439,7 @@ def test_decision_and_undo_return_current_card_navigation(tmp_path):
     assert undone["item"]["cards"] == service.item(refs()[2].item_id)["cards"]
 
 
+@pytest.mark.usefixtures("published")
 def test_locator_and_unqueued_household_context_do_not_create_actions(tmp_path):
     service, _ = setup_review(tmp_path)
     service.replace_queue([refs()[0]], [])

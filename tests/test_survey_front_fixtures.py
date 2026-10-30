@@ -44,6 +44,7 @@ def _matches(field: dict, expected) -> bool:
     return field["status"] == "ok" and _norm(field["value"]) == _norm(expected)
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(not os.environ.get("GEMINI_API_KEY"), reason="needs GEMINI_API_KEY")
 @CARDS
 def test_extraction_matches_ground_truth(card):

@@ -27,6 +27,13 @@ export interface Diagnostic {
   region?: string;
 }
 export interface Item {
+  prepared_review?: boolean;
+  assigned?: boolean;
+  duplicate_peers?: DuplicatePeer[];
+  relink?: { state: 'pending' | 'provisional' | 'auto_linked' | 'manual_linked'; reason: string } | null;
+  retained_bundle_count?: number;
+  undo_link_id?: string | null;
+  link_history_count?: number;
   id: string;
   region: string;
   batch: string;
@@ -36,6 +43,8 @@ export interface Item {
   region_title: string | null;
   card_score: number | null;
   field_kind: string;
+  identity_kind?: 'municipality' | 'dwelling' | 'household' | null;
+  review_issues?: Diagnostic[];
   column?: string;
   household_count?: number;
   dwelling_flags?: string[];
@@ -65,6 +74,10 @@ export interface CardField {
   review_state: ReviewState;
 }
 export interface Card {
+  reviewed?: boolean;
+  total?: number;
+  resolved?: number;
+  unresolved?: number;
   score?: number | null;
   card_id: string;
   household_index: number | null;
@@ -101,6 +114,7 @@ export interface Summary {
   unscored_cards: number;
 }
 export interface DwellingQueue {
+  association_summary?: { duplicate_cards: number; pending_links: number; retained_bundles: number };
   dwellings: Dwelling[];
   diagnostics: Diagnostic[];
   total: number;
@@ -134,8 +148,73 @@ export interface Sync {
 export interface Saved {
   saved_locally: boolean;
   item: Item;
-  decision: Decision;
+  decision: Decision | { id: string; action: 'link' | 'undo'; reviewer: string; timestamp: string };
   sync: Sync;
+  structural_change?: boolean;
+  membership?: { outcome: string } | null;
+}
+
+export interface DuplicatePeer {
+  card_id: string;
+  page: number;
+  pdf: string;
+  identity: string;
+  address: string | null;
+  scan_url: string;
+}
+export interface DecisionPreview {
+  version: string;
+  duplicate_confirmation: string | null;
+  duplicate: { identity: string; card_ids: string[] } | null;
+  membership: { outcome: string };
+}
+export interface EvidenceScan {
+  card_id: string;
+  role: string;
+  image: string;
+  page: number | null;
+  scan_url: string;
+}
+export interface RetainedBundle {
+  id: string;
+  scans: EvidenceScan[];
+  payload: {
+    address?: Field;
+    families_in_dwelling?: Field;
+    handwritten?: Record<string, Field>;
+    notes?: { text: Field; front_page: number; page: number | null }[];
+    persons?: Record<string, Field>[];
+    flags?: string[];
+  };
+}
+export interface CardContext {
+  link_history?: { id: string; action: 'link' | 'undo'; reviewer: string; timestamp: string;
+    source_pages: (number | null)[][]; destination_pages: (number | null)[][] }[];
+  card_id: string;
+  region: string;
+  pdf: string;
+  page: number;
+  identity: string | null;
+  address: string | null;
+  fields: { id: string | null; label: string; field_path: string; field: Field }[];
+  scan_url: string;
+  fronts: EvidenceScan[];
+  retained_supplements: RetainedBundle[];
+  version: string;
+}
+export interface LinkCandidates {
+  version: string;
+  outcome: string;
+  requires_retention: boolean;
+  candidates: {
+    card_id: string;
+    current: boolean;
+    clear: boolean;
+    front_pages: number[];
+    coding_pages: number[];
+    address: string | null;
+    reason: string;
+  }[];
 }
 export class ApiError extends Error {
   constructor(

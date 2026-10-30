@@ -6,7 +6,6 @@ supported coding fields for a load test, not a production review-routing rule.
 
 import argparse
 import json
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -16,9 +15,11 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from survey.extraction.record import FIELD_MAP
+from survey.extraction.record import SCHEMA_VERSION
 from survey.records import Reference
 from survey.review.api import Settings, create_app
+from survey.review.fields import field_pointers
+from survey.review.prepare import prepare_records
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -64,17 +65,13 @@ def record_flags(record):
         if not cards:
             continue
         card = cards[0]
-        for key, group in FIELD_MAP.values():
-            if group in {"dwelling", "house"} and index:
+        for _, pointer, group in field_pointers(
+            index,
+            review=record["schema_version"] == SCHEMA_VERSION,
+            include_shared=index == 0,
+        ):
+            if group == "front":
                 continue
-            if group == "dwelling":
-                pointer = f"/dwelling/{key}"
-            elif group == "house":
-                pointer = f"/dwelling/house/{key}"
-            elif group == "household":
-                pointer = f"/dwelling/households/{index}/{key}"
-            else:
-                pointer = f"/dwelling/households/{index}/{group}/{key}"
             node = record
             try:
                 for part in pointer.split("/")[1:]:
@@ -106,9 +103,14 @@ def benchmark(source: Path, region: str, iterations: int) -> dict:
             if not lines:
                 skipped.append(path.name)
                 continue
-            shutil.copyfile(path, results / path.name)
-            for line in lines:
-                refs.extend(record_flags(json.loads(line)))
+            rows = [json.loads(line) for line in lines]
+            if any(row["schema_version"] != SCHEMA_VERSION for row in rows):
+                rows, _ = prepare_records(rows)
+            (results / path.name).write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            for row in rows:
+                refs.extend(record_flags(row))
                 dwellings += 1
         measurements.update(
             regions=len(list(results.glob("*.jsonl"))),

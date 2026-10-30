@@ -31,7 +31,7 @@ def test_example_record_validates():
 def test_bare_values_are_rejected():
     """FR-10: a field without a confidence score must not validate."""
     record = json.loads(json.dumps(EXAMPLE))
-    record["dwelling"]["house"]["structural_material"] = "1"
+    record["dwelling"]["households"][0]["house"]["structural_material"] = "1"
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)
@@ -41,7 +41,9 @@ def test_correction_must_keep_the_machine_value():
     """NFR-05: a corrected field is indistinguishable from an extracted one
     unless it carries what it replaced."""
     record = json.loads(json.dumps(EXAMPLE))
-    del record["dwelling"]["house"]["number_of_sleepouts"]["original_value"]
+    del record["dwelling"]["households"][0]["house"]["number_of_sleepouts"][
+        "original_value"
+    ]
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)
@@ -64,14 +66,18 @@ def test_python_status_vocabulary_matches_schema_enum():
 @pytest.mark.parametrize("status", get_args(FieldStatus))
 def test_schema_accepts_each_valid_field_status(status):
     record = json.loads(json.dumps(EXAMPLE))
-    record["dwelling"]["house"]["structural_material"]["status"] = status
+    record["dwelling"]["households"][0]["house"]["structural_material"]["status"] = (
+        status
+    )
 
     jsonschema.validate(record, SCHEMA)
 
 
 def test_unknown_status_is_rejected():
     record = json.loads(json.dumps(EXAMPLE))
-    record["dwelling"]["house"]["structural_material"]["status"] = "unreadable"
+    record["dwelling"]["households"][0]["house"]["structural_material"]["status"] = (
+        "unreadable"
+    )
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)
@@ -79,7 +85,7 @@ def test_unknown_status_is_rejected():
 
 def test_field_without_status_is_rejected():
     record = json.loads(json.dumps(EXAMPLE))
-    del record["dwelling"]["house"]["structural_material"]["status"]
+    del record["dwelling"]["households"][0]["house"]["structural_material"]["status"]
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(record, SCHEMA)

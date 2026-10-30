@@ -3,11 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import ScanViewer from './ScanViewer';
 import ScanBatch from './ScanBatch';
 import Dialog from './Dialog';
+import RelinkingTools, { CardComparison } from './RelinkingTools';
 import Help, { readPreference, savePreference, SHORTCUTS_KEY, HELP_KEY } from './Help';
 import History from './History';
-import { api, ApiError, dwellingKey, reviewSummaryCsv } from './api';
+import { api, ApiError, reviewSummaryCsv } from './api';
 import type {
   Action,
+  CardField,
+  DecisionPreview,
   Dwelling,
   DwellingQueue,
   Item,
@@ -36,7 +39,8 @@ const stopCodes = new Set([
 ]);
 const PAGE_SIZE = 12;
 
-function Confidence({ score }: { score: number | null }) {
+function Confidence({ score, reviewed = false }: { score: number | null; reviewed?: boolean }) {
+  if (reviewed) return <span className="badge high">✓ High · reviewed</span>;
   const band = score === null ? 'none' : score >= 0.97 ? 'high' : score < 0.6 ? 'low' : 'med';
   const label = { none: 'Not scored', high: 'High', low: 'Low', med: 'Medium' }[band];
   return (
@@ -52,6 +56,38 @@ function Confidence({ score }: { score: number | null }) {
 function Value({ item }: { item: Item }) {
   return <>{item.field.value ?? statuses[item.field.status]}</>;
 }
+function isOptionalHighConfidenceField(row: Pick<CardField, 'id' | 'field' | 'review_state'>): boolean {
+  return !row.id && row.review_state === 'pending' && row.field.status === 'ok' &&
+    row.field.confidence !== null && row.field.confidence >= 0.98;
+}
+// Reruns regroup cards by the survey front's dwelling number, so it follows the coding card's rule.
+function isDwellingNumber(item: Item): boolean {
+  return item.identity_kind === 'dwelling' || item.field_path === '/dwelling/handwritten/dwelling_no';
+}
+function isValidCorrection(item: Item, value: string): boolean {
+  if (isDwellingNumber(item)) return /^[0-9]{1,4}[A-Za-z]?$/.test(value);
+  if (item.identity_kind) return /^[0-9]{1,2}$/.test(value);
+  return item.field_kind === 'text'
+    ? !!value.trim() && value.length <= 10_000 && !value.includes('\0')
+    : /^[0-9]{1,64}$/.test(value);
+}
+const sourceNoteLabels: Record<string, string> = {
+  identity_reread: 'The identity block was read a second time.',
+  identity_unreadable: 'An identity could not be read during extraction.',
+  missing_record_id: 'An identity could not be built during extraction.',
+  municipality_mismatch: 'Coding cards originally named different municipalities.',
+  duplicate_record_id: 'The original readings contained a duplicate household ID.',
+  paired_by_position: 'The front and coding cards were paired by scan position.',
+  persons_unassigned: 'People were not assigned to a household.',
+  unplaced: 'The coding card could not be paired with a survey front.',
+  missing_dwelling_no: 'A dwelling number was missing in the original reading.',
+  duplicate_dwelling_no: 'The original grouping contained repeated dwelling numbers.',
+  out_of_order: 'The scan order needed checking.',
+  no_coding_card: 'No coding card was found for this dwelling.',
+  unread_coding_card: 'A coding card could not be read during extraction.',
+  unread_front: 'A survey front could not be read during extraction.',
+  fronts_disagree: 'Survey fronts originally disagreed on a shared value.',
+};
 interface Pending {
   path: string;
   body: object;
@@ -85,19 +121,30 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [alternatives, setAlternatives] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [duplicateDialog, setDuplicateDialog] = useState<{
+    request: Pending; preview: DecisionPreview; cardIds: string[];
+  } | null>(null);
+  const [showDuplicateComparison, setShowDuplicateComparison] = useState(false);
   const [lastSaved, setLastSaved] = useState<{
     item: Item;
     decisionId: string;
     text: string;
   } | null>(null);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const activeFieldRef = useRef<HTMLElement>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [moreHelp, setMoreHelp] = useState(false);
   const [shortcuts, setShortcuts] = useState(() => readPreference(SHORTCUTS_KEY, true));
   const [showHistory, setShowHistory] = useState(false);
-  const [expandedColumns, setExpandedColumns] = useState<string[]>([]);
+  const [completedCard, setCompletedCard] = useState<string | null>(null);
   const [finishError, setFinishError] = useState('');
   const [exited, setExited] = useState(false);
+
+  useEffect(() => { setFeedbackDismissed(false); }, [lastSaved, notice]);
+  function dismissFeedback() {
+    setFeedbackDismissed(true);
+    activeFieldRef.current?.focus({ preventScroll: true });
+  }
 
   useEffect(() => {
     activeFieldRef.current?.scrollIntoView?.({ block: 'nearest' });
@@ -191,7 +238,7 @@ export default function App() {
         ? error
         : new ApiError(error instanceof Error ? error.message : 'Request failed.');
     if (failure.code === 'no_op')
-      setNotice('Already saved. To amend the value, choose Correct.');
+      setNotice('Already saved. To amend the value, choose Fix.');
     else setError(failure.message);
     if (stopCodes.has(failure.code)) setStopped(true);
     if (failure.status === 409) setNeedsReload(true);
@@ -199,15 +246,17 @@ export default function App() {
     return failure;
   }
   async function run(work: () => Promise<void>) {
-    if (busyRef.current) return;
+    if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       await work();
+      return true;
     } catch (e) {
       handleFailure(e);
+      return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -226,12 +275,12 @@ export default function App() {
     );
     setQueue(data);
   }
-  async function openItem(id: string, retainDraft = false) {
+  async function openItem(id: string, retainDraft = false, loadDwelling = false) {
     // Remove old evidence before the request; late image events cannot enable it.
     setScanLoaded('');
     setScanFailed(false);
     const next = await api<Item>(`/api/review-items/${id}`);
-    if (retainDraft) {
+    if (retainDraft || loadDwelling) {
       setDwellingItems(
         await api<Queue>(
           `/api/dwellings/${next.dwelling_id}/items?${new URLSearchParams({ region: next.region })}`,
@@ -243,7 +292,7 @@ export default function App() {
     setNeedsReload(false);
     setAlternatives(false);
     setShowHistory(false);
-    setExpandedColumns([]);
+    setCompletedCard(null);
     if (!retainDraft) {
       setCorrecting(false);
       setDraft(next.field.value ?? '');
@@ -305,6 +354,21 @@ export default function App() {
       };
     });
   }
+  async function advanceWithinCard(saved: Item, items: Item[]) {
+    const next = items.find((field) =>
+      field.id !== saved.id && !field.resolved && field.source.card_id === saved.source.card_id,
+    );
+    if (next) {
+      try {
+        await openItem(next.id);
+      } catch {
+        setItem(saved);
+        setNotice('Saved on this computer. The next field could not open; return to the queue to continue.');
+      }
+    } else if (saved.resolved) {
+      setCompletedCard(saved.source.card_id);
+    }
+  }
   async function submit(request: Pending) {
     setPending(request);
     let result: Saved;
@@ -313,6 +377,28 @@ export default function App() {
     } catch (e) {
       // A lost response may already have saved. Retry its exact original body.
       if (e instanceof ApiError && e.status >= 400 && e.status < 500) setPending(null);
+      if (e instanceof ApiError && e.code === 'no_op' &&
+        'action' in request.body && request.body.action === 'accept') {
+        // Reaccepting a reviewed value adds no history. Refresh both the value and
+        // its queue before navigating so another reviewer's changes are respected.
+        const current = await api<Item>(request.path.replace(/\/decisions$/, ''));
+        const fresh = await api<Queue>(
+          `/api/dwellings/${current.dwelling_id}/items?${new URLSearchParams({ region: current.region })}`,
+        );
+        setDwellingItems(fresh);
+        const refreshed = fresh.items.find((field) => field.id === current.id);
+        if (!refreshed || refreshed.version !== current.version ||
+          !refreshed.resolved || refreshed.review_state !== 'accepted') {
+          await openItem(current.id);
+          setNotice('This field changed. Check it against the scan before deciding.');
+          return;
+        }
+        setItem(current);
+        setDraft(current.field.value ?? '');
+        setNotice('Already accepted. No additional decision was recorded.');
+        await advanceWithinCard(current, fresh.items);
+        return;
+      }
       throw e;
     }
     if (!result.saved_locally)
@@ -323,43 +409,61 @@ export default function App() {
     setCorrecting(false);
     setDraft(result.item.field.value ?? '');
     const undone = result.decision.action === 'undo';
+    // Clear the old evidence gate before asynchronous refreshes. A cached scan
+    // may finish loading during them, and its new load must remain authoritative.
+    if (undone) { setScanLoaded(''); setScanFailed(false); }
     setLastSaved(
       undone
         ? null
         : {
             item: result.item,
             decisionId: result.decision.id,
-            text: `${result.item.review_state === 'accepted' ? 'Accepted' : 'Saved'}: ${result.item.label} ${result.item.field.value ?? statuses[result.item.field.status]}`,
+            text: result.decision.action === 'link'
+              ? `Linked coding card on page ${result.item.source.page}`
+              : `${result.item.review_state === 'accepted' ? 'Accepted' : 'Saved'}: ${result.item.label} ${result.item.field.value ?? statuses[result.item.field.status]}`,
           },
     );
     setItem(result.item);
+    let freshItems = dwellingItems?.items ?? [];
+    if (result.item.prepared_review) {
+      try {
+        const fresh = await api<Queue>(`/api/dwellings/${result.item.dwelling_id}/items?${new URLSearchParams({ region: result.item.region })}`);
+        setDwellingItems(fresh);
+        freshItems = fresh.items;
+        await refreshQueue();
+      } catch {
+        setNeedsReload(true);
+        setNotice('Saved on this computer. Reload the current card before continuing; refreshed grouping could not be loaded.');
+        return;
+      }
+    }
     if (undone) {
-      setScanLoaded('');
-      setScanFailed(false);
+      setCompletedCard(null);
       setNotice(
         'Undo saved on this computer. The original decision stays in the history.',
       );
     } else {
-      const next = dwellingItems?.items.find(
-        (i) =>
-          i.id !== result.item.id && !i.resolved && dwellingKey(i) === dwellingKey(result.item),
-      );
-      if (next) {
-        try {
-          await openItem(next.id);
-        } catch {
-          setItem(result.item);
-          setNotice(
-            'Saved on this computer. The next field could not open; return to the queue to continue.',
-          );
-        }
-      }
+      await advanceWithinCard(result.item, freshItems);
     }
+  }
+  async function nextCard() {
+    const next = dwellingItems?.items.find((field) =>
+      field.source.card_id !== item?.source.card_id && !field.resolved &&
+      !field.diagnostics.length && field.allowed_actions.length);
+    if (next) return openItem(next.id);
+    const fresh = await api<DwellingQueue>(`/api/dwellings?${new URLSearchParams({ region })}`);
+    setQueue(fresh);
+    const nextDwelling = fresh.dwellings.find((row) => row.id !== item?.dwelling_id &&
+      row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
+    if (nextDwelling) return openDwelling(nextDwelling);
+    setItem(null);
+    setScanLoaded('');
+    setNotice(fresh.unresolved ? 'Remaining fields need the team’s attention.' : 'All queued cards in this region are reviewed.');
   }
   async function decide(action: Action) {
     if (!item || !canDecide || !item.allowed_actions.includes(action)) return;
-    if (action === 'correct' && !(item.field_kind === 'text' ? !!draft.trim() : /^[0-9]{1,64}$/.test(draft))) return;
-    await submit({
+    if (action === 'correct' && !isValidCorrection(item, draft)) return;
+    const request: Pending = {
       path: `/api/review-items/${item.id}/decisions`,
       body: {
         action,
@@ -367,7 +471,18 @@ export default function App() {
         expected_version: item.version,
         request_id: crypto.randomUUID(),
       },
-    });
+    };
+    if (action === 'correct' && item.prepared_review && item.identity_kind) {
+      const analysis = await api<DecisionPreview>(`/api/review-items/${item.id}/preview`, {
+        action, value: draft, expected_version: item.version,
+      });
+      if (analysis.duplicate_confirmation) {
+        setShowDuplicateComparison(false);
+        setDuplicateDialog({ request, preview: analysis, cardIds: analysis.duplicate!.card_ids });
+        return;
+      }
+    }
+    await submit(request);
   }
   async function undo(id: string, decisionId: string) {
     const target = await api<Item>(`/api/review-items/${id}`);
@@ -417,15 +532,30 @@ export default function App() {
     ? dwelling.filter((i) => i.source.card_id === item.source.card_id)
     : [];
   const cardFields = item?.card_fields ?? cardItems;
-  const cards = item?.cards ?? [];
+  const visibleCardFields = cardFields.filter((row) => !isOptionalHighConfidenceField(row));
+  const optionalCardFields = cardFields.filter(isOptionalHighConfidenceField);
+  const isCardReviewed = (id: string) => {
+    const metadata = item?.cards?.find((card) => card.card_id === id);
+    if (metadata?.reviewed !== undefined) return metadata.reviewed;
+    const fields = dwelling.filter((field) => field.source.card_id === id);
+    return fields.length > 0 && fields.every((field) => field.resolved && !field.diagnostics.length);
+  };
+  const cards = (item?.cards ?? []).filter((card) => card.first_item_id)
+    .sort((a, b) => Number(isCardReviewed(a.card_id)) - Number(isCardReviewed(b.card_id)));
+  const cardReviewed = !!item && isCardReviewed(item.source.card_id);
+  const fieldIndex = cardItems.findIndex((field) => field.id === item?.id);
+  const hasNextCard = dwelling.some((field) => field.source.card_id !== item?.source.card_id && !field.resolved && !field.diagnostics.length && field.allowed_actions.length) ||
+    groups.some((row) => row.id !== item?.dwelling_id && row.status !== 'blocked' && row.unresolved > 0 && row.next_item_id);
+  const saving = busy && !!pending;
   const scanKey = item ? `${item.id}:${item.version}:${scanAttempt}` : '';
-  const canNavigate = !busy && !pending && !correcting && !showHelp && !exited;
+  const canNavigate = !busy && !pending && !correcting && !duplicateDialog && !showHelp && !exited;
   const canDecide =
     !!reviewer &&
     !busy &&
     !pending &&
     !stopped &&
     !needsReload &&
+    !duplicateDialog &&
     !showHelp &&
     !exited &&
     !!item &&
@@ -433,7 +563,14 @@ export default function App() {
     !scanFailed &&
     !item.diagnostics.length;
   const textField = item?.field_kind === 'text';
-  const validCorrection = textField ? !!draft.trim() && draft.length <= 10_000 && !draft.includes('\0') : /^[0-9]{1,64}$/.test(draft);
+  const validCorrection = !!item && isValidCorrection(item, draft);
+  const correctionHelp = item && isDwellingNumber(item)
+    ? 'Enter 1–4 digits, optionally followed by a letter, such as 487A. Leading zeros are kept.'
+    : item?.identity_kind
+      ? 'Enter 1–2 digits exactly as written. Leading zeros are kept.'
+      : textField
+        ? 'Copy the text as written. Line breaks and Unicode are kept. Use Nothing on the card for a blank source.'
+        : 'Digits only. Type exactly what the card shows. Leading zeros are kept.';
   const syncText = syncUnknown
     ? 'Sharing status unavailable'
     : !sync
@@ -471,7 +608,7 @@ export default function App() {
             </button>
             <strong className="rid">{item.source.role === 'survey-back' ? 'Dwelling interview notes' : item.source.role === 'survey-front' ? 'Dwelling survey front' : item.record_id ?? 'Number not identified'}</strong>
             <span className="cardscore">
-              This card <Confidence score={item.card_score} />
+              This card <Confidence score={item.card_score} reviewed={cardReviewed} />
             </span>
             <span className="meta">
               {item.address ?? 'Address not available'} · {item.region}
@@ -546,21 +683,6 @@ export default function App() {
           )}
         </div>
       )}
-      {pending && (
-        <div className={busy ? 'banner' : 'warnbox'} role="status">
-          {busy ? (
-            'Saving on this computer…'
-          ) : (
-            <>
-              Saving has not been confirmed. Try again before moving on; your correction is
-              still here.{' '}
-              <button className="btn" onClick={() => void run(() => submit(pending))}>
-                Try again
-              </button>
-            </>
-          )}
-        </div>
-      )}
       {stopped && (
         <div className="errbox" role="alert">
           Stop reviewing and ask the team to reconcile this region. Local decisions are
@@ -573,11 +695,36 @@ export default function App() {
           {sync.error?.message} We'll try again every few minutes. You can keep reviewing.
         </div>
       )}
-      {notice && (
-        <div className="banner" role="status">
-          {notice}
-        </div>
-      )}
+      <div className="review-feedback">
+        {pending && !busy && (
+          <div className="warnbox" role="status">
+            Saving has not been confirmed. Try again before moving on; your correction is
+            still here.{' '}
+            <button className="btn" onClick={() => void run(() => submit(pending))}>
+              Try again
+            </button>
+          </div>
+        )}
+        {!feedbackDismissed && notice && (
+          <div className="banner feedback-notice" role="status">
+            <span>{notice}</span>
+            <button className="btn ghost sm" aria-label="Dismiss notification" onClick={dismissFeedback}>×</button>
+          </div>
+        )}
+        {!feedbackDismissed && item && lastSaved && (
+          <div className="saved" role="status">
+            <span title={lastSaved.text}>✓ {lastSaved.text} · saved here</span>
+            <button
+              className="btn sm"
+              disabled={busy || !!pending || stopped || correcting}
+              onClick={() => void run(() => undo(lastSaved.item.id, lastSaved.decisionId))}
+            >
+              Undo
+            </button>
+            <button className="btn ghost sm" aria-label="Dismiss saved confirmation" onClick={dismissFeedback}>×</button>
+          </div>
+        )}
+      </div>
       {!ready ? (
         <main className="signin">
           <div className="sicol">
@@ -630,12 +777,7 @@ export default function App() {
       ) : !item ? (
         <main className="qbody">
           <h1>Review queue</h1>
-          <ScanBatch key={region} region={region} onReady={async () => {
-            await loadRegion(region);
-            const data = await api<{ regions: Region[] }>('/api/regions');
-            setRegions(data.regions);
-          }} />
-          <div className="strip">
+          <div className="strip queue-toolbar">
             <label className="regsel">
               Region{' '}
               <select
@@ -657,46 +799,28 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <div className="prog">
-              <b>
-                {queue
-                  ? `${region}: ${queue.summary.completed_dwellings} of ${queue.summary.queued_dwellings} queued dwellings`
-                  : 'Loading dwellings…'}
-              </b>
-              {queue && (
-                <>
-                  <span>
-                    All regions {queue.all_regions.completed_dwellings} of{' '}
-                    {queue.all_regions.queued_dwellings} queued dwellings
-                  </span>
-                  <progress
-                    aria-label="Region progress"
-                    value={queue.summary.completed_dwellings}
-                    max={Math.max(1, queue.summary.queued_dwellings)}
-                  />
-                </>
-              )}
-            </div>
-            {queue && (
-              <div className="averages small">
-                <span>{queue.unresolved.toLocaleString()} fields to review</span>
-                <span>
-                  Average <Confidence score={queue.summary.average_card_score} /> · all so
-                  far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
-                </span>
-                <span className="muted">
-                  {queue.summary.scored_cards} scored coding cards ·{' '}
-                  {queue.summary.unscored_cards} not scored
-                </span>
-              </div>
-            )}
-            <span className="sp" />
             <button
               className="btn ghost sm"
               disabled={busy || !!pending}
               onClick={() => void run(refreshQueue)}
             >
               Refresh queue
+            </button>
+            {continueDwelling && (
+              <button
+                className="btn primary"
+                disabled={!canNavigate}
+                onClick={() => void run(() => openDwelling(continueDwelling!))}
+              >
+                Continue {continueDwelling.record_id ?? 'review'} →
+              </button>
+            )}
+            <button
+              className="btn"
+              disabled={busy || !!pending || stopped}
+              onClick={() => void finish()}
+            >
+              Save and Exit
             </button>
             <button
               className="btn"
@@ -717,28 +841,61 @@ export default function App() {
             >
               Review summary (.csv)
             </button>
-            {continueDwelling && (
-              <button
-                className="btn primary"
-                disabled={!canNavigate}
-                onClick={() => void run(() => openDwelling(continueDwelling!))}
-              >
-                Continue {continueDwelling.record_id ?? 'review'} →
-              </button>
-            )}
-            <button
-              className="btn"
-              disabled={busy || !!pending || stopped}
-              onClick={() => void finish()}
-            >
-              Save and Exit
-            </button>
           </div>
-          <p className="queue-scope small muted">
-            Progress covers supplied supported flags only. Rows keep the queue's
-            lowest-confidence order. Averages cover available coding-card scores, including
-            cards outside this queue.
-          </p>
+          <details className="queue-details">
+            <summary>Review details and scans</summary>
+            <div className="queue-details-content">
+              {queue?.association_summary && <p>
+                {queue.association_summary.duplicate_cards} cards with duplicate identities · {queue.association_summary.pending_links} pending or provisional links · {queue.association_summary.retained_bundles} retained evidence bundles.
+                Transcription completion does not mean these associations are resolved.
+              </p>}
+              <div className="queue-stats">
+                <div className="prog">
+                  <b>
+                    {queue
+                      ? `${queue.summary.completed_dwellings} of ${queue.summary.queued_dwellings} dwellings reviewed in this region`
+                      : 'Loading dwellings…'}
+                  </b>
+                  {queue && (
+                    <>
+                      <span>
+                        All regions: {queue.all_regions.completed_dwellings} of{' '}
+                        {queue.all_regions.queued_dwellings} dwellings reviewed
+                      </span>
+                      <progress
+                        aria-label="Region progress"
+                        value={queue.summary.completed_dwellings}
+                        max={Math.max(1, queue.summary.queued_dwellings)}
+                      />
+                    </>
+                  )}
+                </div>
+                {queue && (
+                  <div className="averages small">
+                    <span>{queue.unresolved.toLocaleString()} fields to review</span>
+                    <span>
+                      Machine average <Confidence score={queue.summary.average_card_score} /> · all so
+                      far {queue.all_regions.average_card_score?.toFixed(2) ?? 'Not scored'}
+                    </span>
+                    <span className="muted">
+                      {queue.summary.scored_cards} scored coding cards ·{' '}
+                      {queue.summary.unscored_cards} not scored
+                    </span>
+                  </div>
+                )}
+              </div>
+              <ScanBatch key={region} region={region} onReady={async () => {
+                await loadRegion(region);
+                const data = await api<{ regions: Region[] }>('/api/regions');
+                setRegions(data.regions);
+              }} />
+              <p className="queue-scope small muted">
+                A dwelling is reviewed when all its queued fields are decided. Progress covers supplied supported flags only. Reviewed dwellings move to the bottom. Pending rows keep the queue's
+                lowest-confidence order. Averages cover original machine scores, including
+                cards outside this queue.
+              </p>
+            </div>
+          </details>
           {queue?.diagnostics.length ? (
             <div className="warnbox">
               <strong>Some fields need the team's attention.</strong>
@@ -789,7 +946,7 @@ export default function App() {
                         {row.card_count} coding {row.card_count === 1 ? 'card' : 'cards'}
                       </td>
                       <td>
-                        <Confidence score={row.score} />
+                        <Confidence score={row.score} reviewed={row.status === 'complete'} />
                       </td>
                       <td>
                         {row.total} fields · {row.resolved} decided
@@ -858,64 +1015,69 @@ export default function App() {
       ) : (
         <main className="rv">
           <div className="stagecol">
-            <nav className="tabs" aria-label="Cards in this dwelling">
-              {cards.map((c) => (
-                <button
-                  key={`${c.household_index}:${c.card_id}`}
-                  className={`tab ${c.card_id === item.source.card_id ? 'on' : ''}`}
-                  aria-current={c.card_id === item.source.card_id ? 'page' : undefined}
-                  disabled={!canNavigate || !c.first_item_id}
-                  onClick={() => void run(() => openItem((c.next_item_id ?? c.first_item_id)!))}
-                >
-                  {c.role === 'survey-front' ? 'Survey front' : c.role === 'survey-back' ? 'Interview notes' : `Coding card · household ${c.household_no ?? 'not identified'}`}
-                  {c.record_id && <span className="pg">{c.record_id}</span>}
-                  {c.score !== undefined && <Confidence score={c.score} />}
-                  {c.page && <span className="pg">p.{c.page}</span>}
-                  <span className="ct">
-                    {!c.first_item_id ? (
-                      'Not queued'
-                    ) : (
-                      <>
-                        {
-                          dwelling.filter(
-                            (i) => i.source.card_id === c.card_id && !i.resolved,
-                          ).length
-                        }{' '}
-                        to review
-                      </>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </nav>
+            <div className="card-picker">
+              <label htmlFor="card-to-review">Card to review</label>
+              <select id="card-to-review" value={item.source.card_id} disabled={!canNavigate}
+                onChange={(event) => {
+                  const card = cards.find((card) => card.card_id === event.target.value);
+                  if (card) void run(() => openItem((card.next_item_id ?? card.first_item_id)!));
+                }}>
+                {(['survey', 'coding', 'reviewed'] as const).map((group) => (
+                  <optgroup key={group} label={group === 'survey' ? 'Survey and notes' : group === 'coding' ? 'Coding cards' : 'Reviewed cards'}>
+                    {cards.filter((card) => group === 'reviewed' ? isCardReviewed(card.card_id) : !isCardReviewed(card.card_id) && (group === 'survey' ? card.role === 'survey-front' || card.role === 'survey-back' : card.role !== 'survey-front' && card.role !== 'survey-back')).map((card) => (
+                      <option key={card.card_id} value={card.card_id}>
+                        {card.role === 'survey-front' ? 'Survey front' : card.role === 'survey-back' ? 'Interview notes' : `Coding card · household ${card.household_no ?? 'not identified'}`}
+                        {card.page ? ` · p.${card.page}` : ''}{isCardReviewed(card.card_id) ? ' · Reviewed' : ` · ${dwelling.filter((field) => field.source.card_id === card.card_id && !field.resolved).length} to review`}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {cards.some((card) => card.role === 'survey-front') && item.source.role !== 'survey-front' && (
+                <button className="btn sm" disabled={!canNavigate} onClick={() => {
+                  const front = cards.find((card) => card.role === 'survey-front')!;
+                  void run(() => openItem((front.next_item_id ?? front.first_item_id)!));
+                }}>Open survey front</button>
+              )}
+            </div>
             {(item.household_count ?? cards.length) > 1 && (
               <p className="household-context small">
-                {item.household_count ?? cards.length} households in this dwelling. Shared
-                building fields are reviewed on the first coding card only. A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
+                {item.household_count ?? cards.length} households in this dwelling. {item.prepared_review
+                  ? 'Each coding card keeps its own dwelling and building readings.'
+                  : 'Shared building fields are reviewed on the first coding card only.'} A single verified survey front and its interview notes can be reviewed. Person columns and ambiguous source ownership need the team’s attention.
               </p>
             )}
-            {!!item.dwelling_flags?.length && (
-              <div className="warnbox household-context">
-                This dwelling needs the team’s attention:{' '}
-                {item.dwelling_flags
-                  .map(
-                    (flag) =>
-                      ({
-                        persons_unassigned:
-                          'People have not been assigned to a household',
-                        unplaced: 'The household could not be placed with a survey front',
-                        duplicate_record_id:
-                          'More than one card has this household number',
-                        paired_by_position:
-                          'The cards were grouped by their scan positions',
-                        identity_reread: 'The identity block was read again',
-                        identity_unreadable: 'The household number could not be read',
-                      })[flag] ?? 'The card grouping or identity needs checking',
-                  )
-                  .join('. ')}
-                . Identity fields can only be accepted; leave incorrect identities
-                pending.
+            <RelinkingTools item={item} savedItem={lastSaved?.item} disabled={!canNavigate || needsReload || stopped}
+              onFix={(id) => void run(async () => { await openItem(id, false, true); setCorrecting(true); })}
+              onSubmit={async (path, body) => {
+                let refused = '';
+                await run(async () => {
+                  try {
+                    await submit({ path, body });
+                  } catch (e) {
+                    // 422: the server refused this choice; another may be accepted.
+                    // The form shows why, so the page needn't repeat it. A stop
+                    // still stops the session.
+                    if (e instanceof ApiError && e.status === 422 && !stopCodes.has(e.code)) refused = e.message;
+                    else throw e;
+                  }
+                });
+                return refused;
+              }} />
+            {!!item.review_issues?.length && (
+              <div className="review-issues household-context small" role="status">
+                <strong>Needs attention: </strong>
+                {item.review_issues.map((issue) => issue.message).join(' ')}
               </div>
+            )}
+            {!!item.dwelling_flags?.length && (
+              <details className="source-notes household-context small">
+                <summary>Source notes ({item.dwelling_flags.length})</summary>
+                <p>{item.prepared_review ? 'Original extraction and association notes. Current identity and linking notices are shown separately.' : 'Original extraction and association notes. Correcting values does not regroup cards or people.'}</p>
+                <ul>
+                  {item.dwelling_flags.map((flag) => <li key={flag}>{sourceNoteLabels[flag] ?? flag.replaceAll('_', ' ')}</li>)}
+                </ul>
+              </details>
             )}
             {scanFailed && <ScanBatch key={item.region} region={item.region} onReady={async () => {
               const refreshed = await api<Item>(`/api/review-items/${item.id}`);
@@ -1032,62 +1194,37 @@ export default function App() {
               }
             }}
           >
-            {lastSaved && (
-              <div className="saved" role="status">
-                <span>✓ {lastSaved.text} · saved here</span>
-                <button
-                  className="btn sm"
-                  disabled={busy || !!pending || stopped || correcting}
-                  onClick={() => void run(() => undo(lastSaved.item.id, lastSaved.decisionId))}
-                >
-                  Undo
-                </button>
+            {cardReviewed && (
+              <div className="card-complete" role="status">
+                <h2>Card reviewed</h2>
+                <p>All {cardItems.length} queued fields on this card are reviewed.</p>
+                {!queue?.diagnostics.length && !dwellingItems?.diagnostics.length && !dwelling.some((field) => !field.resolved) && !groups.some((row) => row.status === 'blocked' || (row.id !== item.dwelling_id && row.unresolved > 0)) && <p>All queued cards in this region are reviewed.</p>}
+                {completedCard === item.source.card_id && <div className="completion-actions">
+                  <button className="btn primary" disabled={!canNavigate} onClick={() => void run(nextCard)}>{hasNextCard ? 'Next card' : 'Back to queue'}</button>
+                  <button className="btn" disabled={!canNavigate} onClick={() => setCompletedCard(null)}>Stay here</button>
+                </div>}
               </div>
             )}
+            <div className="field-nav" aria-label="Field navigation">
+              <button className="btn sm" disabled={!canNavigate || fieldIndex <= 0} onClick={() => void run(() => openItem(cardItems[fieldIndex - 1].id))}>Previous field</button>
+              <span className="small">{fieldIndex + 1} of {cardItems.length}</span>
+              <button className="btn sm" disabled={!canNavigate || fieldIndex < 0 || fieldIndex >= cardItems.length - 1} onClick={() => void run(() => openItem(cardItems[fieldIndex + 1].id))}>Next field</button>
+            </div>
             <div className="p-head">
-              <h2>Needs your review ({cardItems.length})</h2>
+              <h2>{cardReviewed ? 'Reviewed fields' : 'Needs your review'} ({cardItems.length})</h2>
               <span className="small muted">
                 {cardItems.filter((i) => i.resolved).length} of {cardItems.length} decided · in
                 card order
               </span>
             </div>
             <div className="p-list">
-              {cardFields.map((row, index) => {
+              {visibleCardFields.map((row, index) => {
                 const column = row.column;
-                const rows = cardFields.filter((field) => field.column === column);
-                const completed =
-                  !!column &&
-                  rows.some((field) => field.id) &&
-                  rows.every((field) => !field.id || field.review_state !== 'pending') &&
-                  !rows.some((field) => field.id === item.id);
-                const folded = completed && !expandedColumns.includes(column!);
-                const heading = column && cardFields[index - 1]?.column !== column;
+                const heading = column && visibleCardFields[index - 1]?.column !== column;
                 return (
                   <div key={row.field_path}>
-                    {heading &&
-                      (completed ? (
-                        <button
-                          className="column-heading"
-                          aria-expanded={!folded}
-                          onClick={() =>
-                            setExpandedColumns((previous) =>
-                              folded
-                                ? [...previous, column]
-                                : previous.filter((value) => value !== column),
-                            )
-                          }
-                        >
-                          <b>{column}</b> · {rows[0].label} to {rows.at(-1)!.label}{' '}
-                          <span>
-                            {rows.filter((field) => field.id).length} decided ·{' '}
-                            {folded ? 'Show' : 'Hide'}
-                          </span>
-                        </button>
-                      ) : (
-                        <h3 className="column-heading">{column}</h3>
-                      ))}
-                    {!folded &&
-                      (row.id === item.id ? (
+                    {heading && <h3 className="column-heading">{column}</h3>}
+                    {row.id === item.id ? (
                         <article
                           className="open"
                           key={row.field_path}
@@ -1120,7 +1257,7 @@ export default function App() {
                               ? 'MACHINE'
                               : item.review_state.toUpperCase()}
                           </span>
-                          <details className="why" open>
+                          <details className="why">
                             <summary>How reliable is this?</summary>
                             <p>
                               {item.field.confidence === 0.91
@@ -1179,7 +1316,7 @@ export default function App() {
                                   value={draft}
                                   onChange={(e) => setDraft(e.target.value)}
                                   disabled={busy || !!pending}
-                                  inputMode="numeric"
+                                  inputMode={item.identity_kind === 'dwelling' ? 'text' : 'numeric'}
                                   maxLength={64}
                                   autoComplete="off"
                                   autoFocus
@@ -1187,11 +1324,11 @@ export default function App() {
                                 />
                               )}
                               <p id="correction-help" className="small">
-                                {textField ? 'Copy the text as written. Line breaks and Unicode are kept. Use Nothing on the card for a blank source.' : 'Digits only. Type exactly what the card shows. Leading zeros are kept.'}
+                                {correctionHelp}
                               </p>
                               {draft && !validCorrection && (
                                 <p className="errbox">
-                                  {textField ? 'Enter up to 10,000 characters without NUL, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
+                                  {item.identity_kind ? correctionHelp : textField ? 'Enter up to 10,000 characters without NUL, or use Nothing on the card.' : 'Digits only. If the card shows a 1, type 1.'}
                                 </p>
                               )}
                               {item.code_list.length > 0 && (
@@ -1246,7 +1383,7 @@ export default function App() {
                                     !item.allowed_actions.includes('correct')
                                   }
                                 >
-                                  {textField ? 'Save correction' : `Save ${validCorrection ? draft : '(fix the digits first)'}`}
+                                  {textField ? 'Save correction' : `Save ${validCorrection ? draft : item.identity_kind ? '(check the identity)' : '(fix the digits first)'}`}
                                 </button>
                                 <button
                                   className="btn lg"
@@ -1259,6 +1396,7 @@ export default function App() {
                                 >
                                   Cancel
                                 </button>
+                                {saving && <div className="saving-overlay" role="status">Saving…</div>}
                               </div>
                             </form>
                           ) : (
@@ -1284,8 +1422,9 @@ export default function App() {
                                     setAlternatives(false);
                                   }}
                                 >
-                                  Correct
+                                  Fix
                                 </button>
+                                {saving && <div className="saving-overlay" role="status">Saving…</div>}
                               </div>
                               {item.allowed_actions.includes('no_data') && (
                                 <div className="alt">
@@ -1326,7 +1465,7 @@ export default function App() {
                           )}
                           {scanLoaded !== scanKey && (
                             <p className="small muted">
-                              Accept and Correct switch on once the scan and every detail
+                              Accept and Fix switch on once the scan and every detail
                               have loaded.
                             </p>
                           )}
@@ -1380,10 +1519,27 @@ export default function App() {
                                 : row.review_state.toUpperCase()}
                           </span>
                         </button>
-                      ))}
+                      )}
                   </div>
                 );
               })}
+              {optionalCardFields.length > 0 && (
+                <details className="optional-fields" key={item.source.card_id}>
+                  <summary>High-confidence fields not queued for review ({optionalCardFields.length})</summary>
+                  <p className="small muted">Machine confidence is at least 0.98. These fields are read-only context outside this review queue.</p>
+                  {optionalCardFields.map((row, index) => (
+                    <div key={row.field_path}>
+                      {row.column && optionalCardFields[index - 1]?.column !== row.column && <h3 className="column-heading">{row.column}</h3>}
+                      <div className="r context-field">
+                        <span className="nm">{row.label}</span>
+                        <b className="val">{row.field.value ?? statuses[row.field.status]}</b>
+                        <Confidence score={row.field.confidence} />
+                        <span className="tag machine">NOT QUEUED</span>
+                      </div>
+                    </div>
+                  ))}
+                </details>
+              )}
             </div>
             <div className="exitbar">
               <button
@@ -1395,8 +1551,7 @@ export default function App() {
               </button>
             </div>
             <p className="agreed small muted">
-              Fields follow the printed card order. Fields outside the supplied queue are shown
-              for context only.
+              Review fields follow the printed card order. High-confidence fields outside the queue can be expanded for context.
             </p>
           </section>
         </main>
@@ -1413,6 +1568,22 @@ export default function App() {
           }}
           onClose={closeHelp}
         />
+      )}
+      {duplicateDialog && (
+        <Dialog title="Confirm duplicate identity" wide onClose={() => { if (!busy) setDuplicateDialog(null); }}>
+          <p>This correction reads as {duplicateDialog.preview.duplicate?.identity}, also present on another physical coding card. Save anyway preserves every card and flags the conflict. The flag does not block transcription completion.</p>
+          <p>The comparison shows currently saved readings. Your proposed correction has not been saved yet.</p>
+          <button className="btn" disabled={busy} onClick={() => setShowDuplicateComparison((shown) => !shown)}>Compare</button>
+          {showDuplicateComparison && <CardComparison cardIds={duplicateDialog.cardIds} />}
+          <div className="dfoot">
+            <button className="btn" disabled={busy} onClick={() => setDuplicateDialog(null)}>Go back</button>
+            <button className="btn primary" disabled={busy} onClick={() => void run(async () => {
+              await submit({ ...duplicateDialog.request, body: { ...duplicateDialog.request.body,
+                duplicate_confirmation: duplicateDialog.preview.duplicate_confirmation } });
+              setDuplicateDialog(null);
+            })}>Save anyway</button>
+          </div>
+        </Dialog>
       )}
       {exited && (
         <Dialog title="You're all saved" compact onClose={() => setExited(false)}>

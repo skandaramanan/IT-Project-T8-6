@@ -1,7 +1,7 @@
 """Read one coding card with the Qwen server and add its record to the results.
 
 QWEN_SERVER_MODEL=qwen/qwen2.5-vl-7b QWEN_MAX_PIXELS=2000000 \\
-    uv run python scripts/read_qwen_card.py <region> <pdf> <page>
+    uv run python scripts/read_qwen_card.py <region> <pdf> <page> [--cache DIR]
 
 For a card the segmenter takes for a front, once it is in
 ``docs/runs/it123-verified-coding.json``: the Gemini run recovers such a card by
@@ -43,6 +43,9 @@ def main() -> None:
     parser.add_argument("region")
     parser.add_argument("pdf", help="the PDF's file name, as in the results")
     parser.add_argument("page", type=int)
+    parser.add_argument(
+        "--cache", type=Path, default=REPO / "data/runs", help="the run's readings"
+    )
     args = parser.parse_args()
     region, page = args.region, args.page
     verified = read_verified_coding(
@@ -55,7 +58,7 @@ def main() -> None:
     extractor = QwenServerExtractor()
     if not extractor.is_available():
         raise SystemExit(extractor.unavailable)
-    raw_dir = REPO / "data/runs" / region
+    raw_dir = args.cache / region
     out = REPO / "results" / extractor.name / f"{region}.jsonl"
     _check_config(raw_dir / extractor.cache_name, extractor.config)
     _check_config(out.parent, extractor.config)

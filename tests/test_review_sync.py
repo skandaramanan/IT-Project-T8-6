@@ -7,6 +7,8 @@ from review_support import decide, git, refs, setup_review
 from survey.records import RecordStore, ReviewError
 from survey.review.sync import GitSync, WriterLock
 
+pytestmark = pytest.mark.integration
+
 
 def make_sync(tmp_path):
     service, settings = setup_review(tmp_path, with_git=True)
@@ -282,6 +284,51 @@ def test_git_errors_never_expose_stderr_or_remote_secrets(tmp_path, monkeypatch)
     with pytest.raises(ReviewError) as error:
         sync.git("push", "origin", "review-data")
     assert "secret-token" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "code"),
+    [
+        (
+            (
+                "!\tHEAD:refs/heads/review-data\t[remote rejected] "
+                "(cannot lock ref 'refs/heads/review-data': is at abc but expected def)"
+            ),
+            "error: failed to push some refs",
+            "push_rejected",
+        ),
+        (
+            "!\tHEAD:refs/heads/review-data\t[remote rejected] (failed to update ref)",
+            "remote: error: cannot lock ref 'refs/heads/review-data': is at abc but expected def",
+            "push_rejected",
+        ),
+        (
+            "!\tHEAD:refs/heads/review-data\t[remote rejected] (failed to update ref)",
+            "remote: permission denied",
+            "git_failed",
+        ),
+        (
+            "!\tHEAD:refs/heads/review-data\t[remote rejected] (hook declined)",
+            "remote: branch protection rejected this push",
+            "git_failed",
+        ),
+    ],
+)
+def test_stale_remote_ref_is_retryable_but_other_server_rejections_are_not(
+    tmp_path, monkeypatch, stdout, stderr, code
+):
+    import subprocess
+
+    _, _, sync = make_sync(tmp_path)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 1, stdout, stderr),
+    )
+    with pytest.raises(ReviewError) as error:
+        sync.git("push", "--porcelain", "origin", "review-data")
+    assert error.value.code == code
+    assert stderr not in str(error.value)
 
 
 def test_fetch_failure_never_commits_and_local_decisions_remain(tmp_path, monkeypatch):
@@ -565,7 +612,7 @@ def test_same_region_different_fields_still_require_manual_reconciliation(tmp_pa
 def test_new_audit_collision_during_incoming_validation_is_rechecked(
     tmp_path, monkeypatch
 ):
-    from survey.review import service as module
+    from survey.review import prepared_service, service
 
     first, first_sync, second, second_sync, second_ref = region_reviewers(tmp_path)
     remote_decision = decide(first, value="11")["decision"]
@@ -574,7 +621,8 @@ def test_new_audit_collision_during_incoming_validation_is_rechecked(
 
     def raced(*args):
         candidate = original(*args)
-        monkeypatch.setattr(module, "uuid4", lambda: remote_decision["id"])
+        for module in (service, prepared_service):
+            monkeypatch.setattr(module, "uuid4", lambda: remote_decision["id"])
         decide(second, ref=second_ref, value="22", request_id="colliding-event")
         return candidate
 
@@ -639,3 +687,26 @@ def test_same_region_push_race_preserves_both_reviewers_commits(tmp_path, monkey
     assert git(first_sync.checkout, "rev-parse", "HEAD") != git(
         second_sync.checkout, "rev-parse", "HEAD"
     )
+
+
+def test_incoming_region_with_other_schema_is_refused_before_install(
+    tmp_path, monkeypatch
+):
+    import review_support
+    from review_support import card_record, legacy, write_record
+
+    monkeypatch.setattr(review_support, "PREPARED", True)
+    service, settings, sync = make_sync(tmp_path)
+    head = git(settings.data_checkout, "rev-parse", "HEAD")
+    before = dict(service.store.regions)
+    other = other_clone(tmp_path)
+    record = legacy(card_record())
+    record["region"] = "other"
+    write_record(other / "results/other.jsonl", record)
+    git(other, "add", "results/other.jsonl")
+    git(other, "commit", "-m", "Published-schema region")
+    git(other, "push", "origin", "review-data")
+    status = sync.sync(service.reindex_history)
+    assert status["error"]["code"] == "review_preparation_required"
+    assert git(settings.data_checkout, "rev-parse", "HEAD") == head
+    assert service.store.regions == before

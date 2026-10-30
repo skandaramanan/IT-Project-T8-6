@@ -1,5 +1,11 @@
 # IT-113: local review backend
 
+Per-card ownership is schema `0.7.0`, written by extraction, association, merge
+scoring and the pipeline. `results/` holds converted `0.7.0` data. Legacy `0.6.0`
+data still loads with the shared first-card reviewer; a dataset mixing the
+two is refused at startup. Published files are not converted at startup. See [review preparation, relinking and Undo](review-relinking.md)
+before adopting a fresh dataset; a code update does not replace production data.
+
 The review store indexes region JSONL in memory for direct lookup. Region JSONL
 is the only durable record: each field's current payload and append-only audit
 history are replaced together in one atomic file save. There is no database or
@@ -103,7 +109,7 @@ uv run python scripts/review_fixture.py "/tmp/survey-r01-review-test" \
 ```
 
 Choose a new empty directory. The helper verifies that original PDF pages 1-4
-match the committed r01 JPEG streams byte-for-byte, adapts a copy to schema 0.4.0
+match the committed r01 JPEG streams byte-for-byte, adapts a copy to schema 0.7.0
 and original region/PDF provenance, and marks illustrative confidence scores as
 unknown. It retains the example's values/annotations and legacy correction; it
 does not certify them as a new extraction or ground truth. Weekly Rent, Age of
@@ -130,8 +136,8 @@ and prints the review launch command (default port 8875). It does not extract
 records, rank confidence, modify source records/scans or contact GitHub.
 
 Use `--pdf BASENAME.pdf` and repeated `--page N` to select specific original cards.
-Only each household's first coding card owns its stored fields; shared fields
-are selected only on household zero. Page bounds/readability are checked by the
+In 0.7.0 each household's own coding card owns its stored fields; in 0.6.0 data
+only the first coding card does and shared fields are selected only on household zero. Page bounds/readability are checked by the
 review backend when opened. If extraction has not produced regional JSONL yet,
 that remains the prerequisite; PDFs alone are insufficient. Windows paths differ.
 
@@ -193,11 +199,51 @@ generating coding flags, and expose the generated dwelling Municipality pointer
 as an actionable field on the first coding card. Explicit household Municipality
 flags remain supported, including assignments containing both stored copies.
 Both `/dwelling/municipality` and `/dwelling/households/<index>/municipality`
-are accept-only identity fields. Acceptance preserves the stored value;
-correction, no-data and illegible decisions are rejected. If a Municipality is
-wrong, leave it pending for a separate data repair. Reviewing either copy does
-not rewrite the other copy. The shared path aliases the first household only;
-later households retain their own Municipality values.
+accept explicit corrections as well as acceptance. Coding Municipality and
+Household Number require 1–2 ASCII digits; Dwelling Number requires 1–4 ASCII
+digits and an optional ASCII letter. Leading zeros and the written letter's case
+are retained in the field; derived IDs use the existing canonical padding and
+uppercase suffix. No-data and illegible are unavailable for coding identity.
+
+The shared Municipality and first household's Municipality describe the same
+physical field. A correction mirrors the other copy only when it has no active
+review decision and is not crossed out. An active decision must be undone first;
+crossed-out editing remains deferred. Audit events retain `identity_changes` snapshots for this mirror without
+copying or duplicating review history. Later households retain their own
+Municipality readings. Household IDs and linked note IDs update atomically,
+without changing physical card IDs, membership, queue item IDs or associations.
+New collisions against any coding household in the region are rejected, including
+identities whose stored ID was withheld. Front handwritten identity corrections
+change only that front's reading; they never regroup coding cards.
+
+`identity_ids` and `identity_links` event snapshots make Undo restore exact prior
+IDs, including null IDs, and note links. Undo refuses to overwrite later identity,
+linked-note or active Municipality-copy decisions. After those later decisions
+are undone, the earlier correction can be undone while keeping all audit history.
+Unrelated field corrections remain intact.
+
+`identity_conflicts` records the physical owners of pre-existing duplicate IDs.
+Undo may restore those original duplicates, but refuses conflicts with new or
+replacement owners, even if the number of duplicates is unchanged. Older events
+without this evidence remain conservative about collisions.
+
+Legacy card IDs retain Municipality evidence when the per-card field is absent;
+editing the shared Municipality changes the first card only when later cards
+have their own stored-ID evidence. Missing, conflicting legacy evidence requires
+rebuilding from cache. Municipality aliases keep distinct extraction metadata
+across reruns. Identity Undo verifies `identity_note_topology` before restoring
+links; changed ownership or order is a conflict, not an opportunity to relink by
+list index. Older link snapshots without topology evidence also refuse Undo.
+Null note links are filled only for an unambiguous single-household repair and
+restored by Undo.
+
+Items expose nullable `identity_kind` and live `review_issues`. Missing/invalid
+coding identity, duplicate IDs and Municipality disagreements are checked from
+current fields. The duplicate index is cached per region version. Structural
+association/extraction problems remain actionable because identity edits cannot
+recover omitted person assignments, unread cards or ambiguous front grouping.
+Raw `dwelling_flags` remain unchanged as source notes; historical reread and
+position-pairing flags alone do not present an outstanding identity warning.
 An empty generated assignment is now a healthy startup case.
 
 Each nonblank line is an object with exactly these keys, plus optional `reason`:
@@ -208,7 +254,9 @@ Each nonblank line is an object with exactly these keys, plus optional `reason`:
 
 This is a synthetic example, not a real transcription. Region and PDF are plain
 names; page is a positive integer. Household indexes must match the physically
-identified card's current owner. Shared `/dwelling/house/...` and identity fields
+identified card's current owner. In 0.7.0 pointers are per-card by default
+(`/dwelling/households/<i>/house/...`, `.../municipality`); `field_pointer(shared=True)`
+gives the legacy 0.6.0 form, where `/dwelling/house/...` and identity fields
 belong to the first coding household and its first coding card. Other household
 cards cannot review independently stored copies of a shared field. Descriptors follow the existing C1/C2 `FIELD_MAP`, survey-front dwelling field
 definitions and IT-89 interview notes. A front dwelling field requires exactly one
@@ -338,8 +386,8 @@ an identical decision displays an informational message and adds no audit event.
 
 ## Durable data and reruns
 
-New builders use schema `0.6.0` (IT-123: per-household municipality, dwelling flags, nullable
-`record_id`); review metadata arrived in `0.4.0`. IT-89 owns `0.3.0` for
+New builders use schema `0.7.0` (per-card municipality, dwelling number and house; nullable,
+nonunique `record_id`; `0.6.0` added dwelling flags); review metadata arrived in `0.4.0`. IT-89 owns `0.3.0` for
 `dwelling.notes`. Existing `0.1.0`, `0.2.0`, and IT-89 `0.3.0` records remain
 readable. Review upgrades only the changed record; startup does not rewrite files.
 Old versions cannot carry review metadata: the shared Python validator checks this
@@ -374,7 +422,7 @@ unknown codes are retained. Only closed categories warn about unlisted codes;
 ordinary numeric-sentinel values need no label. Sentinel meanings come from the
 existing field-specific codebook, never a generic `999 => missing` rule.
 
-Identity and existing negated fields are accept-only: if wrong, leave pending.
+Coding identity fields support validated corrections as described above. Existing negated fields remain accept-only: if wrong, leave pending.
 Missing `negated` means unknown; no false value is manufactured. Supported text preserves Unicode, whitespace and multiline content without numeric
 normalization. Empty/whitespace-only corrections use no-data instead. Person and
 ambiguous-front fields remain unresolved. Negation editing and
@@ -567,7 +615,8 @@ and upstream schema boundaries are documented in [reviewer-ui.md](reviewer-ui.md
 Only supported supplied flag IDs are actionable. `card_fields` includes lightweight
 snapshots in `FIELD_SCHEMA` printed order, with `id: null` for read-only context;
 these snapshots omit audit history. Detailed selected fields retain their normal
-history, version and allowed actions. Household 0 owns shared fields. Summary rows
+history, version and allowed actions. In 0.6.0 data household 0 owns shared fields;
+in 0.7.0 each household owns its own. Summary rows
 omit field values/history and do not render scans. Unknown confidences remain null.
 
 
@@ -599,8 +648,8 @@ reads across multiple dwellings without relying on machine-specific timings.
 
 The follow-up extends the locally available IT-115 stack, reusing its endpoints,
 dwelling summaries, retries, scan gate, history and navigation. Text corrections
-use a multiline control; code lists remain numeric-field-specific. Identity and
-negated fields stay accept-only. `damaged` remains an extraction status; there is
+use a multiline control; code lists remain numeric-field-specific. Coding identity
+uses explicit validated corrections; existing negated fields stay accept-only. `damaged` remains an extraction status; there is
 no damaged action. Acceptance keeps it, and illegible explicitly replaces it.
 
 Reviewed fronts refuse rerun ownership changes. Reviewed notes follow a unique

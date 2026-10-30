@@ -231,7 +231,7 @@ at the configured scan root (`Node ID`/`Node Title`, including UTF-8 BOM); missi
 metadata falls back to the region ID. Region IDs are never replaced by guessed suburbs.
 Coding fields follow `FIELD_SCHEMA` printed order, not `FIELD_MAP` domain grouping.
 Other stored fields are visible but only supplied flags can be opened for decisions.
-Shared building fields appear on household 0 only. The active field scrolls into view.
+In 0.6.0 data shared building fields appear on household 0 only; in 0.7.0 each card shows its own. The active field scrolls into view.
 Card tabs show scan page and remaining flags. Code meanings use the existing closed
 and sentinel maps; ordinary amounts remain valid and unknown digit codes can still
 be saved with the backend's warning. No new validation policy is introduced.
@@ -338,14 +338,31 @@ Only the backend-provided latest applicable decision can be undone. Undo adds an
 audit entry and never deletes previous decisions.
 
 The field locator names its printed column and label, without claiming a pixel
-location or universal line number (C2 prints an extra field). Completed columns
-can fold, expand and reopen their decided fields. The active column stays open.
-Card context adds `column`, `household_count`, `dwelling_flags`, per-field column,
-and each coding card's score. Unqueued coding cards are visible in the tabs as
-“Not queued” without an action ID. The actual shared building fields remain on
-household 0. Front/person/back editing, record-ID changes, Damaged and crossed-out
-mutations remain deferred. Grouping/identity warnings are translated to plain
-language; unknown flags still ask the team to check the grouping/identity.
+location or universal line number (C2 prints an extra field). Columns remain
+expanded, including decided fields. The card selector omits unqueued coding
+cards and places reviewed cards last; Open survey front exposes the front scan
+directly. In 0.6.0 data the shared building fields remain on household 0.
+
+Readable, pending fields outside the supplied queue with confidence at least
+0.98 appear under High-confidence fields not queued for review. This disclosure
+starts closed and retains the exact values and printed-column labels as read-only
+context. It stays open while navigating the same card and resets when changing
+physical cards. Queued fields remain visible regardless of score; other context
+stays in the main list. Expansion does not affect review counts or completion.
+
+Coding municipality and household numbers accept one or two digits. Coding
+dwelling numbers accept one to four digits with an optional final letter.
+Corrections update derived record IDs and existing note links while preserving
+the original card and person associations. Conflicting identities are rejected;
+Undo restores the prior values and links, subject to checks for later edits.
+Survey-front fields and verified note text are independently editable, without
+changing coding identities. Person editing, Damaged and crossed-out mutations
+remain deferred.
+
+Current identity and structural issues appear under Needs attention. Original
+extraction and association flags remain available in collapsed, neutral Source
+notes; correcting an identity does not regroup cards or people. Historical notes
+do not leave a yellow warning after the current issue is resolved.
 
 Save and Exit opens a modal over the current review context. It confirms local
 persistence separately from a confirmed uploaded sharing state and timestamp.
@@ -523,3 +540,31 @@ be configured. See [backend setup and Drive catalogue refresh](review-backend.md
 Drive is authoritative; historical local hashes do not restrict transfers.
 Build the React frontend to make these controls available; the plain integration fallback remains for
 backend testing.
+
+### IT-115 usability follow-up
+
+The card selector separates survey fronts and interview notes from coding cards.
+**Open survey front** opens the supplied front directly; cards without queued
+fields are omitted from the selector. Printed field columns remain expanded,
+including decided fields and read-only context. **Previous field** and **Next
+field** browse without making a decision; unsaved edits must be saved or cancelled.
+The correction action is labelled **Fix** (keyboard shortcut E).
+
+A confirmed decision advances only within its card. Finishing its queued fields
+shows **Card reviewed**, with **Next card** (or **Back to queue**) and **Stay here**.
+The next card is pending work in this dwelling, then the next pending dwelling.
+Reviewed cards and dwellings move behind unfinished work and remain available for
+inspection and Undo. A **High · reviewed** badge reflects completion of supplied
+fields; original machine scores and field confidence are preserved. Diagnostics
+prevent a card being labelled reviewed, and Undo restores unfinished priority.
+
+This follow-up branches from `origin/main` at `06aaaec`, rather than PR 4 (#71):
+PR 4's acceptance work is independent, while main includes the later survey-front,
+notes, download and queue integration needed to preserve existing functionality.
+
+Queue progress, machine averages and scan controls are under
+**Review details and scans**. Refresh queue and CSV export remain visible alongside
+the enlarged Region selector and primary review actions. During a decision, **Saving…** covers the action buttons
+without changing their dimensions. Saved confirmations and informational notices
+float above the page and can be dismissed without removing decision history or
+the Undo shortcut. Unconfirmed saves retain their explicit retry control.

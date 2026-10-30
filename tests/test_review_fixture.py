@@ -14,7 +14,7 @@ def test_fixture_adaptation_preserves_values_and_original_example():
     before = deepcopy(example)
     record = FIXTURE["adapt_record"](example)
     assert example == before
-    assert record["schema_version"] == "0.4.0"
+    assert record["schema_version"] == "0.7.0"
     assert record["region"] == "216460"
     validate_records([record], "216460")
     old_fields = dict(current_fields(example))

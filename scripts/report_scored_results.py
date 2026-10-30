@@ -46,7 +46,11 @@ def _cards(node):
 
 
 def _jsonl(path):
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _check_equal(label, actual, expected):
@@ -121,8 +125,7 @@ def report(
         region_score_sum = 0.0
         for record in records:
             # Most coding fields deliberately have no source attribute. Follow
-            # actual envelope ownership, including both municipality aliases
-            # and shared fields stored only on the first household.
+            # actual envelope ownership: every household owns its own fields.
             owned_coding_fields = {
                 id(field)
                 for index, _ in enumerate(record["dwelling"]["households"])

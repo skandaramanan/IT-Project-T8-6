@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from survey.extraction.record import build_record
+from survey.review.relinking import finish_records
 
 
 def git(where, *args):
@@ -98,12 +99,13 @@ def create_demo(root: Path):
         draw.text((50, 150), label, fill="black", font_size=30)
         draw.text((50, 250), value, fill="black", font_size=30)
         pages.append(image)
+    finish_records([record])  # build_record output is already schema 0.7.0
     (results / "demo.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
     pages[0].save(scan_dir / "synthetic.pdf", save_all=True, append_images=pages[1:])
     pointers = [
         (1, "/dwelling/households/0/coding/weekly_rent"),
         (2, "/dwelling/households/1/coding/weekly_rent"),
-        (1, "/dwelling/house/garden"),
+        (1, "/dwelling/households/0/house/garden"),
         (3, "/dwelling/address"),
         (4, "/dwelling/notes/0/text"),
     ]

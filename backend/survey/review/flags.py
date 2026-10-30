@@ -8,10 +8,18 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from survey.extraction.card_fields import FIELD_SCHEMA
-from survey.extraction.record import FIELD_MAP, IDENTITY_LABELS
+from survey.extraction.record import FIELD_MAP, IDENTITY_LABELS, SCHEMA_VERSION
 from survey.records import card_index, field_pointer
 from survey.review.routing import needs_review
 from survey.review.service import state
+
+# Dwelling-level identity flags a prepared record queues per household instead.
+_DWELLING_IDENTITY_FLAGS = {
+    "duplicate_record_id",
+    "missing_record_id",
+    "municipality_mismatch",
+    "dwelling_number_mismatch",
+}
 
 
 def _reason(field: Mapping[str, Any]) -> str:
@@ -22,9 +30,20 @@ def _reason(field: Mapping[str, Any]) -> str:
     return f"score {field['confidence']}"
 
 
-def _pointers(index: int) -> Iterator[tuple[int, str, str]]:
+def _pointers(index: int, *, review=False) -> Iterator[tuple[int, str, str]]:
     """Household ``index``'s coding-card fields in printed order (FIELD_SCHEMA),
     as (order, label, pointer)."""
+    if review:
+        from survey.review.fields import field_pointers
+
+        pointers = {
+            label: pointer
+            for label, pointer, kind in field_pointers(index, review=True)
+            if kind != "front"
+        }
+        for order, spec in enumerate(FIELD_SCHEMA):
+            yield order, spec.name, pointers[spec.name]
+        return
     for order, spec in enumerate(FIELD_SCHEMA):
         key, group = FIELD_MAP[spec.name]
         # Every household keeps its own municipality; the first's is the
@@ -34,7 +53,7 @@ def _pointers(index: int) -> Iterator[tuple[int, str, str]]:
         # Other dwelling-level fields belong to the first household.
         elif group in {"dwelling", "house"} and index:
             continue
-        yield order, spec.name, field_pointer(key, group, index)
+        yield order, spec.name, field_pointer(key, group, index, shared=True)
 
 
 def build_flags(
@@ -78,7 +97,13 @@ def build_flags(
             )
             score = card.get("confidence")
             dwelling_flags = record["dwelling"].get("flags", [])
-            for order, label, pointer in _pointers(index):
+            prepared = record["schema_version"] == SCHEMA_VERSION
+            if prepared:
+                dwelling_flags = sorted(
+                    (set(dwelling_flags) - _DWELLING_IDENTITY_FLAGS)
+                    | set(record["dwelling"]["households"][index].get("flags", []))
+                )
+            for order, label, pointer in _pointers(index, review=prepared):
                 field = record
                 try:
                     for part in pointer.split("/")[1:]:
