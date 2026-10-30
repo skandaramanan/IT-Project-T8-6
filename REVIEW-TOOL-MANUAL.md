@@ -5,8 +5,8 @@ and fix the ones it got wrong.
 
 | Section | Jump to |
 | --- | --- |
-| **[Setup](#setup)**<br>Once per computer, about 30 min | [Install](#1-install-git-and-uv) · [Code](#2-get-the-code) · [Data](#3-get-the-data) · [GitHub sign-in](#4-sign-in-to-github) · [Review list](#5-make-the-review-list) · [Settings](#6-fill-in-the-settings-file) · [Drive API key](#7-set-up-scan-downloads-optional) · [Shortcut](#8-make-a-desktop-shortcut) |
-| **[Reviewing](#reviewing)**<br>Every session | [Start](#start-the-tool) · [Sign in](#sign-in) · [Pick a dwelling](#pick-a-dwelling) · [Scans](#getting-the-scans) · [Review screen](#the-review-screen) · [Decide](#make-a-decision) · [Undo](#undo) · [Shortcuts](#keyboard-shortcuts) |
+| **[Setup](#setup)**<br>Once per computer, about 30 min | [Install](#1-install-git-and-uv) · [Code](#2-get-the-code) · [Data](#3-get-the-data) · [GitHub sign-in](#4-sign-in-to-github) · [Review list](#5-make-the-review-list) · [Settings](#6-fill-in-the-settings-file) · [Drive API key](#7-set-up-scan-downloads-optional) · [Shortcut](#8-make-a-desktop-shortcut) · [Updating](#updating) |
+| **[Reviewing](#reviewing)**<br>Every session | [Start](#start-the-tool) · [Sign in](#sign-in) · [Pick a dwelling](#pick-a-dwelling) · [Scans](#getting-the-scans) · [Review screen](#the-review-screen) · [Decide](#make-a-decision) · [Dwelling numbers](#fixing-a-municipality-or-dwelling-number) · [Undo](#undo) · [Shortcuts](#keyboard-shortcuts) |
 | **[Saving and sharing](#saving-and-sharing)** | [Saving](#saving) · [Sharing](#sharing) · [Stopping](#stopping) |
 | **[Troubleshooting](#troubleshooting)** | Errors and what to do |
 | **[Practice run](#practice-run)** | Try it on fake data first |
@@ -109,7 +109,8 @@ uv run survey flags "C:\Survey Review Data\results" > "C:\Survey Review\flags.js
 
 Both commands should finish without an error. Keep `flags.jsonl` and reuse it
 every time you open the tool. Your progress is not stored in this file, so
-there's no need to remake it. Only remake it if the team re-runs the extraction.
+there's no need to remake it after a session. Only remake it when the data
+itself changes: see [Updating](#updating).
 
 Don't save the flags file inside the data folder's `results` folder.
 
@@ -167,6 +168,19 @@ cd "/path/to/survey-review"
 uv run survey review --open-browser
 ```
 
+### Updating
+
+When the team says there's a new version, stop the tool, then update the code
+and data together and remake the review list:
+
+```bat
+git -C "C:\Survey Review\survey-review" pull
+git -C "C:\Survey Review Data" pull
+cd /d "C:\Survey Review\survey-review"
+uv sync --locked
+uv run survey flags "C:\Survey Review Data\results" > "C:\Survey Review\flags.jsonl"
+```
+
 ---
 
 ## Reviewing
@@ -217,7 +231,8 @@ scans** above the list.
 - Without one, choose **Open in Drive**, download the PDF in your browser, then
   choose **Import downloaded PDF** and pick the file you downloaded.
 
-You only need to do this once per region.
+You only need to do this once per region. The panel also counts duplicate
+cards and pending links. These don't stop a region being finished.
 
 ### The review screen
 
@@ -238,7 +253,8 @@ a closer look, use the **+** and **−** buttons, or click the scan and press
 
 A dwelling can have more than one card. Use **Card to review** at the top to
 switch between them. **Open survey front** jumps to the handwritten front of
-the survey.
+the survey. Each card has its own municipality, dwelling number and building
+fields, so check them on every card.
 
 ### Make a decision
 
@@ -269,11 +285,40 @@ field:
 
 ![A saved correction, with Undo](docs/images/review-tool-manual/06-saved.png)
 
+### Fixing a municipality or dwelling number
+
+These two fields decide which dwelling a card belongs to, so fixing one can
+move the card. If exactly one other dwelling matches, and its survey front
+agrees, the card moves there by itself.
+
+If a fix to any of the card's numbers (including household) makes them match
+another card's, you're asked to confirm first:
+
+![The duplicate check, with Compare, Go back and Save anyway](docs/images/review-tool-manual/09-duplicate.png)
+
+**Compare** shows both cards side by side. **Save anyway** keeps both cards and
+flags them. A yellow bar then stays on the card. Its **Compare** lets you fix
+the *other* card instead, if that's the wrong one.
+
+To move a card yourself, choose **Link to dwelling**, pick a dwelling (or
+**Keep in a separate coding-only provisional dwelling**), then **Save link**.
+
+![Choosing a dwelling to link the card to](docs/images/review-tool-manual/10-link.png)
+
+If the card is the last one in its dwelling, tick **Retain all former
+fronts…** first. That dwelling's front, notes and people are kept read-only
+under **Retained evidence**.
+
+Not sure which dwelling is right? Leave it and tell the team.
+
 ### Undo
 
 Choose **Undo** on the green bar, or press **U**. You can undo several times in
 a row, newest first. Nothing is ever deleted: **Show history** under each field
 lists every decision made on it, who made it, and when.
+
+To undo a move, choose **Undo last link** on the card. Later fixes to the card
+are kept.
 
 ### Fields you can't change
 
@@ -345,6 +390,9 @@ Next time, sign in with the same name and choose **Continue**.
 | "Startup failed" in the console | Read the lines above it. A wrong path in `.env`, a GitHub sign-in problem, or the tool already running in another console window are the usual causes. Only one copy can run at a time. |
 | The scan won't load | The PDF isn't in the scans folder. See [Getting the scans](#getting-the-scans). |
 | "Try again" after saving | The save wasn't confirmed. Choose **Try again**. Your typed value is kept. |
+| "Reload the current card before continuing" | Your decision is saved. Refresh the browser page. |
+| A link or **Undo last link** is refused | The message says why. Pick another dwelling, or tell the team. |
+| The tool won't start after an update | See [Updating](#updating). |
 | "Couldn't share yet" won't go away | Check your internet connection, then **Share now**. If it still fails, redo step 4 (Sign in to GitHub). |
 | "Ask the team to reconcile this region" | Someone else changed the same region at the same time. Stop the tool and contact the team. Don't try to fix it in Git yourself. Both copies of the work are kept. |
 | The tool asks for your name again | It was restarted. Type the same name as before. |
