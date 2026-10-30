@@ -1,16 +1,60 @@
-# IT-Project-T8-6
+# Wilfred Prest Survey
 
-Wilfred Prest Survey IT Project — Team 8/6.
+Tools developed by Team 8/6 for University of Melbourne Archives to extract
+structured data from historical survey cards and support human review of
+uncertain readings.
 
-## What this is
+The project has two main parts:
 
-A data project analysing the Wilfred Prest survey for our client, The University of Melbourne Archives Team.
-The goal is to turn the raw survey responses into clean, analysable data and
-findings the client can use.
+- **Extraction pipeline:** reads scanned PDFs and produces structured records
+  with source references, field statuses and confidence scores.
+- **Review tool:** lets reviewers compare extracted readings with the original
+  scans, accept or correct values, and share their decisions.
+
+## Start here
+
+| What you want to do | Where to start |
+| --- | --- |
+| Review extracted records | [Review tool user manual](REVIEW-TOOL-MANUAL.md) |
+| Extract a new batch of scans | [Extractor user manual](EXTRACTOR-MANUAL.md) |
+| Build or maintain the application | [Developer setup](#developer-setup) and [technical documentation](#technical-documentation) |
+| Understand the output format | [Record schema guide](docs/decisions/D007-output-record-schema.md) |
+
+The review tool runs locally in your browser. Reviewing existing records
+does not require a Gemini API key. Follow the relevant user manual for
+installation, everyday use and troubleshooting. Maintainers can find additional
+configuration and implementation details in the
+[technical documentation](#technical-documentation) below.
+
+## How the workflow fits together
+
+Scanned PDFs → extraction → structured records → review queue →
+human review → corrected records
+
+1. **Extract:** the pipeline reads a region's scanned PDFs and writes
+   structured records to a regional JSONL file. An optional second model
+   reading can be merged to score confidence from model agreement.
+2. **Prepare review:** an operator provides matching records, a review
+   assignment and access to the source PDFs. Reviewed data lives in a separate
+   checkout of the `review-data` branch.
+3. **Review:** choose a region and dwelling, compare each queued field with
+   its scan, then accept the reading, fix it, or mark it blank or unreadable
+   where those actions are supported. Identity problems can also require
+   comparing cards and correcting their dwelling links.
+4. **Save and share:** decisions and history save locally. The tool shares
+   changes through the `review-data` Git branch. The interface distinguishes
+   locally saved work from successfully shared work.
+5. **Continue:** reopen the same data checkout and assignment to resume.
+   History and Undo support checking and reversing earlier decisions.
+
+Assign different regions to concurrent reviewers. Do not run extraction
+against a data checkout while it is being reviewed. Detailed setup, recovery
+and relinking behaviour are covered by the guides linked below.
 
 ## Layout
 
 - `backend/survey/` — the pipeline, installed as the `survey` package
+- `frontend/` — the React review interface and its browser/component tests
 - `benchmark/` — calibration harness; imports `survey`, never the reverse
 - `schema/` — the output record schema the pipeline, tests and review tool share
 - `results/` — the extracted dataset, one `<region>.jsonl` per region (committed)
@@ -21,7 +65,7 @@ findings the client can use.
 Why it's laid out this way:
 [docs/decisions/D024-repository-layout.md](docs/decisions/D024-repository-layout.md).
 
-## Setup
+## Developer setup
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) once:
 
@@ -38,8 +82,8 @@ cd IT-Project-T8-6
 uv sync
 ```
 
-That is the whole setup. `uv sync` creates the virtualenv and installs
-everything from `uv.lock`. You do not need to install Python yourself — the
+This installs the Python dependencies. `uv sync` creates the virtualenv and
+installs everything from `uv.lock`. You do not need to install Python yourself — the
 version is pinned in `.python-version` and uv fetches it for you. The first
 sync downloads Python and the packages, so give it a minute; later ones are
 near-instant.
@@ -51,6 +95,26 @@ dependencies with `uv add <package>`, which updates `pyproject.toml` and
 
 Why uv, and why Python 3.12:
 [docs/decisions/D001-dependency-manager.md](docs/decisions/D001-dependency-manager.md).
+
+### Build the review interface
+
+Building the React reviewer also requires Node **22.12+ in 22.x, or 24+**, and
+npm. From the repository root:
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run build
+```
+
+This creates `frontend/dist`, which the local Python backend serves. A fresh
+source clone does not include these built assets. Without them the backend
+serves a small API integration page instead of the full reviewer. Restart the
+backend after building. A prepared reviewer package can include the built
+assets, so its operator does not need Node.
+
+See the [frontend guide](docs/reviewer-ui.md#build-and-run) for development
+commands and the [review runbook](docs/review-backend.md#setup-and-launch) for
+configuration and launch instructions.
 
 ## Data and secrets
 
@@ -273,6 +337,65 @@ are saved in regional records; flags define a stable assignment and are not
 rewritten as work completes. See [the review runbook](docs/review-backend.md#generate-and-retain-a-review-assignment)
 for preparation, regeneration and integration-test instructions.
 
+### Merge the two saved runs (IT-125, offline)
+
+**19 October status:** PRs #63/#64 and Jacob’s refreshed 216436 raw
+handoff are integrated. The local publication is `results/<region>.jsonl`:
+5,375 dwellings / 5,430 coding sources across 44 nonempty regions; front-only
+216461 accounts for the 45th region. All 34 protected field payloads are
+preserved. Every stored card has a numeric score; uncalibrated fronts/backs
+use zero as a no-evidence marker and supplementary handwriting stays as-is.
+See [the integration evidence](docs/runs/it125-216436-integration.md).
+
+The independent Qwen export stays in
+`results/qwen2.5-vl-server-2000000px/`. The [merge report](docs/runs/it125-merge-report.md)
+contains per-region agreement, review eligibility, calibration limitations and
+known C3/S3/R1 sample counts. Unsupported forms are outside the agreed scored
+scope; these counts do not claim full-corpus prevalence. Review queue behaviour
+and handwriting priority belong to IT-109/IT-115.
+
+```bash
+uv run python scripts/merge_scored_results.py \
+  --primary data/it125-inputs-after216436/results \
+  --qwen-cache data/it125-closeout-20261019/qwen-cache \
+  --output data/it125-new-candidate
+uv run survey validate-results data/it125-new-candidate
+uv run python scripts/report_scored_results.py \
+  --dataset data/it125-new-candidate --output data/it125-new-report
+```
+
+The primary snapshot includes the source-verified Gemini additions. The isolated
+Qwen cache tree uses the fresh 216436 handoff for that entire region and the
+original handoff for the other regions; extracting the replacement over old
+caches is unsafe. Both original archives and the original Gemini snapshot are
+preserved. The completed candidate, pairing audit and repeat build are in
+`data/it125-closeout-20261019/`. Optional report `--runtime` and `--evidence`
+arguments attach measured runtime and candidate-specific verification; report
+generation never invents validation or publication evidence.
+
+The output must be separate from all inputs and new or empty. `--primary` can
+also name a reviewed Gemini dataset: human decisions and their full payloads
+are preserved. Raw caches are required for every published source; no model
+clients are constructed. A missing or incompatible configuration refuses the
+merge. The supplied archive was safety-checked and matched to the separate
+extraction above; `--qwen-cache` can point to another safely extracted copy.
+Pairing evidence remains beside the candidate in `pairing/`, outside Git.
+Original inputs and caches are unchanged. A normal single-extractor rerun does
+not recreate paired confidence; run this offline merge again after extraction.
+
+## Technical documentation
+
+| Guide | Covers |
+| --- | --- |
+| [Review runbook](docs/review-backend.md) | Configuration, launch, assignments, saving, Git sharing and recovery |
+| [Frontend guide](docs/reviewer-ui.md) | Building the React interface and running frontend/browser tests |
+| [Card relinking guide](docs/review-relinking.md) | Per-card ownership, identity fixes, comparing/linking cards, retained evidence and Undo |
+| [Windows installation and operator checklist](docs/review-windows-acceptance.md) | Building a reviewer package, Windows setup and operator checks |
+| [Record schema guide](docs/decisions/D007-output-record-schema.md) | Output structure, field metadata and relationships |
+| [Review persistence decision](docs/decisions/D029-review-persistence.md) | JSONL storage and sharing through the data branch |
+| [Decision records](docs/decisions/README.md) | Technical decisions and historical audit notes |
+| [Third-party licences and notices](THIRD_PARTY_NOTICES.md) | Dependency licences, fonts, optional model tools and external service terms |
+
 ## Contributing
 
 One branch per Linear issue, one PR per branch, reviewed by someone else.
@@ -321,72 +444,4 @@ One branch per Linear issue, one PR per branch, reviewed by someone else.
 
 ## Project management
 
-Work is tracked in Linear: https://linear.app/um-it-project
-
-### Reviewing flagged C1/C2 fields (IT-113)
-
-The local review backend reads teammate-supplied flagged JSONL, saves decisions
-and undo history in the region records, and shares them through a separate
-`review-data` checkout. It does not require Gemini credentials. The React reviewer
-in `frontend/` opens when its build is present; otherwise the small API integration
-page remains available. See [docs/reviewer-ui.md](docs/reviewer-ui.md) for building
-the UI, the IT-115 PR split, and testing against disposable copies.
-
-```sh
-uv run python scripts/review_demo.py "/tmp/survey-review-demo"
-# Run the launch command printed by the synthetic demo.
-uv run survey validate-results "/path/to/review-data/results"
-```
-
-The demo uses synthetic cards and a local Git remote. For production paths,
-Windows shortcut setup, frontend API examples, rerun semantics and rollout gates,
-see [docs/review-backend.md](docs/review-backend.md) and
-[D029](docs/decisions/D029-review-persistence.md). Live use requires matching
-extracted records/flags, branch provisioning/rules/credentials, and Windows
-acceptance. Use one dataset writer; stop extraction while reviewing.
-
-### Merge the two saved runs (IT-125, offline)
-
-**19 October status:** PRs #63/#64 and Jacob’s refreshed 216436 raw
-handoff are integrated. The local publication is `results/<region>.jsonl`:
-5,375 dwellings / 5,430 coding sources across 44 nonempty regions; front-only
-216461 accounts for the 45th region. All 34 protected field payloads are
-preserved. Every stored card has a numeric score; uncalibrated fronts/backs
-use zero as a no-evidence marker and supplementary handwriting stays as-is.
-See [the integration evidence](docs/runs/it125-216436-integration.md).
-
-The independent Qwen export stays in
-`results/qwen2.5-vl-server-2000000px/`. The [merge report](docs/runs/it125-merge-report.md)
-contains per-region agreement, review eligibility, calibration limitations and
-known C3/S3/R1 sample counts. Unsupported forms are outside the agreed scored
-scope; these counts do not claim full-corpus prevalence. Review queue behaviour
-and handwriting priority belong to IT-109/IT-115.
-
-```bash
-uv run python scripts/merge_scored_results.py \
-  --primary data/it125-inputs-after216436/results \
-  --qwen-cache data/it125-closeout-20261019/qwen-cache \
-  --output data/it125-new-candidate
-uv run survey validate-results data/it125-new-candidate
-uv run python scripts/report_scored_results.py \
-  --dataset data/it125-new-candidate --output data/it125-new-report
-```
-
-The primary snapshot includes the source-verified Gemini additions. The isolated
-Qwen cache tree uses the fresh 216436 handoff for that entire region and the
-original handoff for the other regions; extracting the replacement over old
-caches is unsafe. Both original archives and the original Gemini snapshot are
-preserved. The completed candidate, pairing audit and repeat build are in
-`data/it125-closeout-20261019/`. Optional report `--runtime` and `--evidence`
-arguments attach measured runtime and candidate-specific verification; report
-generation never invents validation or publication evidence.
-
-The output must be separate from all inputs and new or empty. `--primary` can
-also name a reviewed Gemini dataset: human decisions and their full payloads
-are preserved. Raw caches are required for every published source; no model
-clients are constructed. A missing or incompatible configuration refuses the
-merge. The supplied archive was safety-checked and matched to the separate
-extraction above; `--qwen-cache` can point to another safely extracted copy.
-Pairing evidence remains beside the candidate in `pairing/`, outside Git.
-Original inputs and caches are unchanged. A normal single-extractor rerun does
-not recreate paired confidence; run this offline merge again after extraction.
+Work is tracked in [Linear](https://linear.app/um-it-project).
